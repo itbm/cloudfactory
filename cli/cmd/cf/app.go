@@ -840,6 +840,14 @@ func (a *app) change(ctx context.Context, method, path string, body any) error {
 			fmt.Fprintln(a.out, "Copy the passwords now. The panel does not show them again.")
 		}
 	}
+	// A staging copy of a WordPress site: the agent sets the database copy in wp-config.php.
+	if raw, ok := out["wordpress"]; ok {
+		var wp struct{ Database, User string }
+		json.Unmarshal(raw, &wp)
+		if wp.Database != "" && wp.User != "" {
+			fmt.Fprintf(a.out, "WordPress in the copy uses the database copy %s with the user %s. When the copy runs, the panel changes the site address and asks search engines not to index the copy.\n", wp.Database, wp.User)
+		}
+	}
 	if raw, ok := out["domain"]; ok {
 		var d struct {
 			Name         string `json:"name"`

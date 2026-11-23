@@ -42,6 +42,10 @@ func wordpressPanel(t *testing.T, exitCode int) (*httptest.Server, *[]siteCall) 
 		case "POST /websites/W1/wordpress/check", "POST /websites/W1/wordpress/updates", "POST /websites/W1/wordpress/restore":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{` + job + `}`))
+		case "POST /websites/W1/staging":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"website":{"id":"W2","name":"staging.acme.example"},"databaseCredentials":[{"engine":"mariadb","user":"staging_ab12_app","password":"Copy-secret-1234","databases":["staging_ab12_wp"]}],` +
+				`"wordpress":{"database":"staging_ab12_wp","user":"staging_ab12_app"},` + job + `}`))
 		case "POST /websites/W1/wordpress/cli":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"command":{"id":"C1","command":"wp plugin list","status":"running"},` + job + `}`))
@@ -124,6 +128,27 @@ func TestWordPressUpdates(t *testing.T) {
 	}
 	if err := a.dispatch(ctx, []string{"wordpress", "settings", "acme.example", "--plugins", "yes"}); err == nil {
 		t.Error("--plugins yes gave no error")
+	}
+}
+
+func TestWordPressStagingCopy(t *testing.T) {
+	srv, _ := wordpressPanel(t, 0)
+	a, out := testApp(srv)
+	if err := a.dispatch(context.Background(), []string{"websites", "staging", "acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Database user staging_ab12_app (mariadb) for staging_ab12_wp: Copy-secret-1234", "WordPress in the copy uses the database copy staging_ab12_wp with the user staging_ab12_app."} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("no %q in:\n%s", want, out)
+		}
+	}
+	// The settings of a site also have the key "wordpress", with no database copy.
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"wordpress", "settings", "acme.example", "--core", "off"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "database copy") {
+		t.Errorf("settings output = %s", out)
 	}
 }
 

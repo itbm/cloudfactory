@@ -440,13 +440,28 @@ export interface StagingCredential {
   databaseServerId?: string | null;
 }
 
-export function createStagingCopy(websiteId: string): Promise<{ websiteId: string; job: Promise<Job>; credentials?: StagingCredential[] }> | { websiteId: string; job: Promise<Job>; credentials?: StagingCredential[] } {
+/** The database copy and its user that the agent sets in wp-config.php of a staging copy. */
+export interface StagingWordPress {
+  database: string;
+  user: string;
+}
+
+export interface StagingCopy {
+  websiteId: string;
+  /** The name of the copy. */
+  name: string;
+  job: Promise<Job>;
+  credentials?: StagingCredential[];
+  wordpress?: StagingWordPress;
+}
+
+export function createStagingCopy(websiteId: string): Promise<StagingCopy> | StagingCopy {
   return call(async () => {
-    const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob; databaseCredentials?: StagingCredential[] }>("POST", `/websites/${websiteId}/staging`);
+    const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob; databaseCredentials?: StagingCredential[]; wordpress?: StagingWordPress }>("POST", `/websites/${websiteId}/staging`);
     update((d) => {
       d.websites = [live.toWebsite(r.website), ...d.websites.filter((w) => w.id !== r.website.id)];
     });
-    return { websiteId: r.website.id, job: track(r.job), credentials: r.databaseCredentials ?? [] };
+    return { websiteId: r.website.id, name: r.website.name, job: track(r.job), credentials: r.databaseCredentials ?? [], wordpress: r.wordpress };
   });
 }
 

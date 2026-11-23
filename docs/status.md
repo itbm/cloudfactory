@@ -93,9 +93,9 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `api/app/Http/Controllers/Api/FileController.php`, `LogController.php`, `CronJobController.php`, `DeployController.php`, `agent/internal/actions/files.go`, `cron.go`, `deploy.go`, `agent/internal/sitefiles`, `web/src/features/FileManager.tsx`, `web/src/pages/website/`, `cli/cmd/cf/sitetools.go`
 
-- WordPress (FR-206): a one-click install on the **New website** page or on the **WordPress** tab, with a MariaDB database and user. Updates of WordPress, plugins and themes with a restore point (the files with no uploads, and the database), a health check and an automatic roll back. Automatic updates in the maintenance window of the server, with settings for each site. **Roll back** of the last update. WP-CLI commands with no shell, with a history and an audit log with no passwords. In the API, the agent, the web panel and the CLI (`cf wordpress`)
+- WordPress (FR-206): a one-click install on the **New website** page or on the **WordPress** tab, with a MariaDB database and user. Updates of WordPress, plugins and themes with a restore point (the files with no uploads, and the database), a health check and an automatic roll back. Automatic updates in the maintenance window of the server, with settings for each site. **Roll back** of the last update. WP-CLI commands with no shell, with a history and an audit log with no passwords. A staging copy of a WordPress site connects to its database copy, gets the address of the copy and asks search engines not to index it. In the API, the agent, the web panel and the CLI (`cf wordpress`)
 
-  Where: `api/app/Services/WordPress.php`, `api/app/Http/Controllers/Api/WordPressController.php`, `agent/internal/actions/wordpress.go`, `web/src/pages/website/WordPressTab.tsx`, `cli/cmd/cf/wordpress.go`
+  Where: `api/app/Services/WordPress.php`, `api/app/Http/Controllers/Api/WordPressController.php`, `agent/internal/actions/wordpress.go`, `agent/internal/actions/wordpress_staging.go`, `web/src/pages/website/WordPressTab.tsx`, `cli/cmd/cf/wordpress.go`
 
 - Protection of each website in the edge proxy: a firewall (Coraza with the OWASP Core Rule Set) in the mode off, detect or block, with rules that are off and paths with no firewall, the last firewall events, IP address allow and block lists, password-protected paths and a sign-in limit for each IP address. The **Security** tab of a website, `cf security` and `/v1/websites/{id}/security`. The change applies with no restart of the website. Not tested on a real server: the edge image with the two new Caddy modules in gVisor
 
@@ -219,9 +219,9 @@ after the item that is nearest to it in subject, not at the end of the list.
 
 - **Deploys**: The build and the migration command run in the runtime image of the website. The PHP images have Git and Composer but not Node.js: to build front-end files with npm, use a Node.js website or build the files before the push. A website with a custom image cannot deploy from Git. A preview of a pull request does not get a copy of the databases or the files of the website, and the panel does not show its address on the pull request.
 
-- **WordPress**: The panel installs WordPress only, not WooCommerce: install the plugin in WordPress or with WP-CLI. WP-CLI commands that need a terminal, such as `wp shell` and `wp db cli`, do not run. The restore point has the database only when the database is in a MariaDB server of the customer on the same server. A staging copy of a WordPress site uses the live database. Nobody has tested WP-CLI in a gVisor container on a real server yet.
+- **WordPress**: The panel installs WordPress only, not WooCommerce: install the plugin in WordPress or with WP-CLI. WP-CLI commands that need a terminal, such as `wp shell` and `wp db cli`, do not run. The restore point has the database only when the database is in a MariaDB server of the customer on the same server. In a staging copy of a multisite network, the panel does not change the domains of the sites of the network. Nobody has tested WP-CLI in a gVisor container on a real server yet.
 
-- **Staging copy**: A staging copy gets the files only. It keeps the database settings of the original website, so it uses the live databases.
+- **Staging copy**: A staging copy gets its own copies of the databases. The panel changes the database settings only of a WordPress site. A different application keeps the database settings of the original website, so it uses the live databases until the owner changes its configuration.
 
 - **Restore of a full website**: A restore of the full website restores the files only. Restore each database separately.
 

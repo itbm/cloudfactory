@@ -1563,7 +1563,8 @@ export interface WordPressAutoUpdates {
 
 /** WordPress in the document root of a website. */
 export interface WordPressSite {
-  status: "installing" | "checking" | "ready" | "failed";
+  /** copying: the panel makes the WordPress site of a new staging copy. */
+  status: "installing" | "checking" | "copying" | "ready" | "failed";
   version: string | null;
   /** The newest version of the same major version, or null. */
   coreMinor: string | null;

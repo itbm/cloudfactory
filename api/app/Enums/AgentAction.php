@@ -77,6 +77,7 @@ enum AgentAction: string
     case SetSftp = 'SetSftp';
     case SetWebsitePower = 'SetWebsitePower';
     case SetWebsiteSecurity = 'SetWebsiteSecurity';
+    case StageWordPress = 'StageWordPress';
     case UpdateAgent = 'UpdateAgent';
     case UpdateWordPress = 'UpdateWordPress';
 
@@ -156,6 +157,8 @@ enum AgentAction: string
             self::SetSftp => ['Set SFTP access'],
             self::SetWebsitePower => ['Change container state', 'Health check'],
             self::SetWebsiteSecurity => ['Set edge proxy rules'],
+            // FR-205: the WordPress site of a new staging copy gets the address of the copy.
+            self::StageWordPress => ['Replace the site address', 'Hide from search engines', 'Check WordPress'],
             self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],
             // When a step after "Save a restore point" fails, the agent puts back the restore point.
             self::UpdateWordPress => ['Check WordPress', 'Save a restore point', 'Update WordPress', 'Update plugins', 'Update themes', 'Health check'],

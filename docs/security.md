@@ -191,6 +191,13 @@ The product specification, section 6.4, gives the requirements.
   the website. The website, its cron jobs and SFTP see only the directory of the website,
   so they cannot read or change the restore point. It has a dump of the database with the
   data of the site: the files have the mode `0600`.
+- A staging copy of a WordPress site never connects to the live database. The agent sets the
+  database copy and its own user in `wp-config.php` of the copy before the container of the
+  copy starts. When it cannot, the job fails and the copy does not start. The website user
+  of the copy reads and writes the file (CF-05), so a symbolic link to a file of the live
+  site gives an error, not a change of the live site. The password goes on standard input.
+- A staging copy of a WordPress site asks search engines not to index it (`blog_public` is
+  0), and its automatic updates are off.
 - WordPress does not update itself: the panel writes `AUTOMATIC_UPDATER_DISABLED` to
   `wp-config.php`. The panel does each update with a restore point and a health check, in
   the maintenance window of the server or when a user starts it.

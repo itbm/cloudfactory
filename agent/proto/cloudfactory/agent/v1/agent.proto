@@ -126,6 +126,10 @@ service AgentService {
   // the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
   // value with the website and changes only the edge route. The container does not restart.
   rpc SetWebsiteSecurity(SetWebsiteSecurityRequest) returns (JobAccepted);
+  // Makes the WordPress site of a new staging copy use the address of the copy: the agent
+  // replaces the address of the live site in the database copy, and asks search engines not to
+  // index the copy.
+  rpc StageWordPress(StageWordPressRequest) returns (JobAccepted);
   rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
   // Saves a restore point, then updates WordPress, plugins and themes, then does a health
   // check. When an update or the health check fails, the agent puts back the restore point.
@@ -500,6 +504,19 @@ message WebsiteRequest {
   // CreateWebsite with copy_from: the database servers of the copies. The agent makes a
   // database server that it does not have.
   repeated DatabaseServer database_servers = 10;
+  // CreateWebsite with copy_from: the source has a WordPress site (FR-206). The agent sets the
+  // database copy and its user in wp-config.php of the copy, so that the copy never uses the
+  // database of the live site.
+  WordPressCopy copy_wordpress = 11;
+}
+
+// The database of the WordPress site of a staging copy.
+message WordPressCopy {
+  // The database copy: the "to" of a MariaDB database in copy_databases.
+  string database = 1;
+  // The user of the copy: the name of a MariaDB user in copy_users, in the same database
+  // server. The password of the user comes from copy_users.
+  string user = 2;
 }
 
 // A staging copy copies the database "from" of the source website into the new database "to".
@@ -1540,6 +1557,17 @@ message RunWpCliRequest {
   string job_id = 1;
   string website_id = 2;
   repeated string args = 3;
+}
+
+// StageWordPress. The agent replaces each address of the live site with the address of the
+// copy. It also reads the address in the database copy.
+message StageWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The address of the copy: "https://" and the name of the copy.
+  string url = 3;
+  // The addresses of the live site that the panel knows.
+  repeated string from_urls = 4;
 }
 
 message GetFirewallEventsRequest {

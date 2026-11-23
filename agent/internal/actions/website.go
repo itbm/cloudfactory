@@ -565,7 +565,11 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			)
 		}},
 		{Name: "Copy databases", Do: func(ctx context.Context) error {
-			return d.copyDatabases(ctx, req, valkeyNumbers)
+			if err := d.copyDatabases(ctx, req, valkeyNumbers); err != nil {
+				return err
+			}
+			// A WordPress copy connects to its database copy (wordpress_staging.go).
+			return d.connectWordPressCopy(ctx, req)
 		}},
 		{Name: "Pull and check image signature", Do: func(ctx context.Context) error {
 			return d.pullImage(ctx, w)
@@ -675,7 +679,7 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 			errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
 		}
 	}
-	return errors.Join(errs...)
+	return errors.Join(append(errs, checkWordPressCopy(req))...)
 }
 
 // copyDatabase makes the database toName in the database server to, when it is not there, and

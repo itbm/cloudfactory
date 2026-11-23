@@ -2,7 +2,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../api/hooks";
-import { createStagingCopy, deleteWebsite, setPower, type StagingCredential } from "../api/store";
+import { createStagingCopy, deleteWebsite, setPower, type StagingCredential, type StagingWordPress } from "../api/store";
 import type { Website } from "../api/types";
 import { engineName } from "../lib/labels";
 import { CopyField } from "../pages/website/AccessTab";
@@ -17,7 +17,7 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
   const admin = useStore().session.user.role === "administrator";
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<{ title: string; text: string } | null>(null);
-  const [staging, setStaging] = useState<{ websiteId: string; credentials: StagingCredential[] } | null>(null);
+  const [staging, setStaging] = useState<{ websiteId: string; name: string; credentials: StagingCredential[]; wordpress?: StagingWordPress } | null>(null);
   // Batch 2, finding 11: show the error of each action.
   const attempt = (title: string, fn: () => unknown) => {
     void (async () => {
@@ -85,9 +85,9 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
             : item("Start", () => attempt("Cannot start the website", () => setPower(website.id, "start")), busy)}
           {item("Restart", () => attempt("Cannot restart the website", () => setPower(website.id, "restart")), !running || moving)}
           {item("Make staging copy", () => attempt("Cannot make a staging copy", async () => {
-            const { websiteId, credentials } = await createStagingCopy(website.id);
+            const { websiteId, name, credentials, wordpress } = await createStagingCopy(website.id);
             // The API shows the passwords of the new database users once.
-            if (credentials?.length) setStaging({ websiteId, credentials });
+            if (credentials?.length) setStaging({ websiteId, name, credentials, wordpress });
             else navigate(`/websites/${websiteId}`);
           }), !!website.stagingOf || moving)}
           {admin && item("Move to a different server", () => setConfirm("move"), website.status !== "running" && website.status !== "stopped")}
@@ -106,7 +106,14 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
           onClose={() => setStaging(null)}
           footer={<button type="button" className="btn btn-primary" onClick={() => { const id = staging.websiteId; setStaging(null); navigate(`/websites/${id}`); }}>Open the staging copy</button>}
         >
-          <p>The copy has its own copies of the databases, in the database server of each source database. Each database server has a new database user with access to the copies. Put these users in the configuration of the copy, so that it does not change the live data.</p>
+          <p>The copy has its own copies of the databases, in the database server of each source database. Each database server has a new database user with access to the copies.</p>
+          {staging.wordpress ? (
+            <div className="alert alert-info" role="status">
+              <span>WordPress in the copy uses the database copy <code>{staging.wordpress.database}</code> with the user <code>{staging.wordpress.user}</code>: the panel writes them to <code>wp-config.php</code>. When the copy runs, the panel changes the site address to <code>https://{staging.name}</code> and asks search engines not to index the copy.</span>
+            </div>
+          ) : (
+            <p>Put these users in the configuration of the copy, so that it does not change the live data.</p>
+          )}
           {staging.credentials.some((c) => c.engine === "valkey") && <p>The data of a Valkey database is not copied. The copy gets a new, empty Valkey database with its own number. Find the number on the Databases page of the copy.</p>}
           <p><strong>Copy the passwords now.</strong> The panel shows them only once.</p>
           {staging.credentials.map((c) => (

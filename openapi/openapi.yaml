@@ -1069,6 +1069,12 @@ paths:
                         host: { type: string, description: The host name that the application of the copy connects to. }
                         port: { type: integer }
                         databaseServerId: { type: string }
+                  wordpress:
+                    type: object
+                    description: Only when the source has a WordPress site with a known database. The agent sets this database copy and its user in wp-config.php of the copy, and then changes the site address to the address of the copy.
+                    properties:
+                      database: { type: string }
+                      user: { type: string }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{id}/move:
@@ -8491,7 +8497,7 @@ components:
     WordPress:
       type: object
       properties:
-        status: { type: string, enum: [installing, checking, ready, failed] }
+        status: { type: string, enum: [installing, checking, copying, ready, failed], description: 'copying: the panel makes the WordPress site of a new staging copy.' }
         version: { type: [string, 'null'] }
         coreMinor: { type: [string, 'null'], description: The latest version with the same major version, when it is newer. }
         coreLatest: { type: [string, 'null'], description: The latest version, when it is a newer major version. }

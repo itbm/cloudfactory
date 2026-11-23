@@ -67,3 +67,23 @@ A reseller sees an update that failed the health check. The agent put back the r
 The **WordPress** tab at phone width (390 px).
 
 ![10-phone-wordpress-tab](10-phone-wordpress-tab.png)
+
+### 11-staging-copy-dialog
+
+**Make staging copy** of a WordPress site. The agent writes the database copy and its user to
+`wp-config.php` of the copy, so the copy never uses the live database.
+
+![11-staging-copy-dialog](11-staging-copy-dialog.png)
+
+### 12-staging-copy-in-progress
+
+The **WordPress** tab of the copy while the panel changes the site address and asks search
+engines not to index the copy.
+
+![12-staging-copy-in-progress](12-staging-copy-in-progress.png)
+
+### 13-staging-copy-ready
+
+The WordPress copy at its own address. Its automatic updates are off.
+
+![13-staging-copy-ready](13-staging-copy-ready.png)
