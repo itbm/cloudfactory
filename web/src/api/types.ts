@@ -1267,6 +1267,38 @@ export interface FirewallEvent {
   rules: { id: number; message: string; data: string }[];
 }
 
+export type MalwareScanState = "running" | "clean" | "infected" | "failed";
+
+/** One malware scan of the files of a website (MalwareScans::forApi). */
+export interface MalwareScan {
+  id: string;
+  trigger: "manual" | "scheduled";
+  state: MalwareScanState;
+  scannedFiles: number;
+  infectedFiles: number;
+  /** The number of files that ClamAV could not read. */
+  errors: number;
+  signatures: number;
+  engine: string | null;
+  /** The path is a path in the directory of the website, as in the file manager. */
+  findings: { path: string; signature: string; removed: boolean }[];
+  /** True when the scan found more files than the findings have. */
+  truncated: boolean;
+  error: string | null;
+  jobId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export type MalwareScanSchedule = "weekly" | "off";
+
+export interface MalwareScans {
+  schedule: MalwareScanSchedule;
+  nextScanAt: string | null;
+  /** The newest first. */
+  scans: MalwareScan[];
+}
+
 export interface CronJob {
   id: string;
   schedule: string;

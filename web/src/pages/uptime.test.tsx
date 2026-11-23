@@ -29,7 +29,8 @@ describe("the uptime checks", () => {
   it("shows the checks of a website, the details of a check and the result of a check now", async () => {
     const api = await open("owner", (w) => `/websites/${w("shop.acme.example.com").id}/uptime`);
     await waitFor(() => expect(within(main()).getByRole("button", { name: /^https:\/\/shop\.acme\.example\.com\/wp-json\// })).toBeTruthy());
-    const rows = within(main()).getAllByRole("row").slice(1);
+    // Count the rows of the list only: the details of the first check can load at the same time.
+    const rows = within(card("Uptime checks")).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain("Up");
     expect(rows[0].textContent).toContain("Every 1 minute · Status 200 to 399");
@@ -51,7 +52,7 @@ describe("the uptime checks", () => {
     await open("owner", (w) => `/websites/${w("storefront.acme.example.com").id}/uptime`);
     await waitFor(() => expect(within(main()).getByRole("alert").textContent).toContain("This address is down."));
     expect(within(main()).getByRole("alert").textContent).toContain('The answer does not have the text "Order now".');
-    expect(within(main()).getAllByRole("row")[1].textContent).toContain('Status 200 to 399 and the text "Order now"');
+    expect(within(card("Uptime checks")).getAllByRole("row")[1].textContent).toContain('Status 200 to 399 and the text "Order now"');
     cleanup();
     render(<MemoryRouter initialEntries={[`/websites/${website("storefront.acme.example.com").id}`]}><App /></MemoryRouter>);
     await waitFor(() => expect(card("Uptime").textContent).toContain("Down"));
