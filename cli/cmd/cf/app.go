@@ -254,6 +254,10 @@ Usage:
   cf backups policy set [--daily N] [--weekly N] [--monthly N] [--time HH:MM] [--target REPOSITORY]
                         [--credentials-from-env | --remove-credentials]
                        The credentials come from AWS_ACCESS_KEY_ID, B2_ACCOUNT_ID and the other restic variables.
+  cf exports list [--customer ID]
+  cf exports create [--customer ID] [--no-files] [--no-databases]   Export an account: settings, files, databases and DNS zones.
+  cf exports get|delete EXPORT
+  cf exports download EXPORT [--output FILE]   Download the archive. Run it again to continue a download that stopped.
   cf jobs list [--website WEBSITE] [--limit N | --all]
   cf jobs get|wait JOB
   cf servers list
@@ -538,6 +542,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.mailServer(ctx, sub, rest)
 	case "backups", "backup":
 		return a.backups(ctx, sub, rest)
+	case "exports", "export":
+		return a.exports(ctx, sub, rest)
 	case "jobs", "job":
 		return a.jobs(ctx, sub, rest)
 	case "servers", "server":

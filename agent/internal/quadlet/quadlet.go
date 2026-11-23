@@ -862,6 +862,9 @@ func PanelUnits(p Panel) map[string]string {
 		"Environment=CF_REGISTRY=" + p.Registry,
 		"EnvironmentFile=" + p.DataDir + "/panel.env",
 		"Volume=" + p.DataDir + ":/data:Z",
+		// The parts of the account exports (docs/account-export.md). The API receives them, and
+		// the queue worker and the scheduler complete and remove them.
+		"Environment=CF_EXPORT_PATH=/data/exports",
 		// The panel checks the signatures of new image tags with the release key.
 		"Environment=CF_COSIGN_PUBLIC_KEY=/run/cloudfactory/cosign.pub",
 		"Volume=" + CosignPublicKey + ":/run/cloudfactory/cosign.pub:ro",

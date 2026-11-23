@@ -177,6 +177,10 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `agent/internal/migrate`, `agent/internal/actions/imports.go`, `api/app/Services/Imports`, `api/app/Http/Controllers/Api/ImportController.php`, `web/src/pages/ImportsPage.tsx`, `cli/cmd/cf/imports.go`, [imports.md](imports.md)
 
+- Account export: an owner, a reseller or an administrator exports an account as one tar archive with the description of the account (`cf-account/1`), the files of the websites, a dump of each MariaDB and PostgreSQL database and the DNS zones. The agents send the parts to the panel in pieces, and the panel keeps the archive for 7 days. A download can continue after it stops. Not done yet: the email messages
+
+  Where: `agent/internal/actions/export.go`, `agent/internal/sitearchive`, `api/app/Services/Exports`, `api/app/Http/Controllers/Api/AccountExportController.php`, `web/src/features/AccountExports.tsx`, `cli/cmd/cf/exports.go`, [account-export.md](account-export.md)
+
 - `cf` CLI for all public API areas, with `--json` and `--no-wait`. Lists read all pages
 
   Where: `cli/`

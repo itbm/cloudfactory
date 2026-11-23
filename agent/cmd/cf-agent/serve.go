@@ -586,6 +586,8 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
 	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256)
 	dialLocal(reporter, deps)
+	// The parts of an account export go to the panel on the connection of the reports.
+	deps.Exports = reporter
 	deps.TerminalPanel = reporter
 	deps.PanelDownload = reporter.Download
 

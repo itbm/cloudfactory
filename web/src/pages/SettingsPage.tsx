@@ -13,7 +13,7 @@ import { IdentityProviders, SignOnCard } from "../features/SingleSignOn";
 import { DefaultBrandSettings } from "./BrandPage";
 import { CopyField } from "./website/AccessTab";
 
-const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "dns:read", "dns:write", "mail:read", "mail:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "notifications:read", "notifications:write", "tokens:read", "tokens:write", "plugins:read", "plugins:write"];
+const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "dns:read", "dns:write", "mail:read", "mail:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "notifications:read", "notifications:write", "tokens:read", "tokens:write", "plugins:read", "plugins:write", "exports:read", "exports:write"];
 
 export function SettingsPage() {
   const state = useStore();

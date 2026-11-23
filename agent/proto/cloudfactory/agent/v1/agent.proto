@@ -27,6 +27,10 @@ service AgentService {
   rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
   rpc Backup(BackupRequest) returns (JobAccepted);
   rpc Restore(RestoreRequest) returns (JobAccepted);
+  // Account export (docs/account-export.md): the agent sends the files and the database dumps
+  // of a website to the panel, as parts of an export. Each part goes to
+  // /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
+  rpc ExportWebsite(ExportWebsiteRequest) returns (JobAccepted);
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
   rpc Reboot(HostRequest) returns (JobAccepted);
   rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
@@ -660,6 +664,33 @@ message SetPanelCertificateRequest {
 message SetPanelBrandsRequest {
   string job_id = 1;
   repeated string domains = 2;
+}
+
+// The parts of an account export that this agent sends to the panel.
+message ExportWebsiteRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // The ID of the part for the files of the website. Empty: this job sends no files, for
+  // example a job for the databases of a website of a different server.
+  string files_part = 4;
+  // The databases in the database servers on this server.
+  repeated ExportDatabase databases = 5;
+  // True: the website is on a different server. This job sends only the dumps of its
+  // databases in the database servers on this server.
+  bool databases_only = 6;
+  // The ID of the customer of the website. It is necessary with databases_only: the agent
+  // has no record of a website of a different server.
+  string customer = 7;
+}
+
+message ExportDatabase {
+  string engine = 1;
+  string name = 2;
+  // The ID of its database server.
+  string database_server = 3;
+  // The ID of the part for the dump of this database.
+  string part = 4;
 }
 
 message SetPacksRequest {
