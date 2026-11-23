@@ -317,7 +317,7 @@ class DemoSite
      * @param  list<string>  $paths
      * @return array<string, mixed>
      */
-    public static function archive(Website $website, array $paths, string $to): array
+    public static function makeArchive(Website $website, array $paths, string $to): array
     {
         $tree = self::tree($website);
         $entries = [];
