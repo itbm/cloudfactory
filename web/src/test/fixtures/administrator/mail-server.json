@@ -1,0 +1,19 @@
+{
+    "request": "GET /mail-server",
+    "status": 200,
+    "body": {
+        "configured": true,
+        "enabled": true,
+        "host": "smtp.mail.example",
+        "port": 587,
+        "encryption": "starttls",
+        "username": "panel@example.com",
+        "hasPassword": true,
+        "fromAddress": "panel@example.com",
+        "fromName": "Cloudfactory",
+        "replyTo": null,
+        "testedAt": "2026-11-11T10:00:00+00:00",
+        "testError": null,
+        "panelFallback": null
+    }
+}

@@ -4,9 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getState, signIn } from "../api/store";
 import type { AccountExport } from "../api/types";
-import { EMAIL, panelApi, reset } from "../test/panelApi";
-import owner from "../test/fixtures/owner.json";
-import reseller from "../test/fixtures/reseller.json";
+import { EMAIL, fixture, panelApi, reset } from "../test/panelApi";
 import { AccountPage } from "../pages/AccountPage";
 import { CustomersPage } from "../pages/CustomersPage";
 
@@ -20,10 +18,10 @@ const exportsCard = () => screen.getByRole("heading", { name: "Account export" }
 
 // The tests give the exports themselves, so that they do not depend on the exports of the
 // fixtures. The IDs of the customers come from the fixtures.
-const customerId = (fixture: unknown, name: string) =>
-  (fixture as Record<string, { body: { data: { id: string; name: string }[] } }>)["GET /customers"].body.data.find((c) => c.name === name)!.id;
-const acme = customerId(owner, "Acme Ltd");
-const books = customerId(reseller, "Harbour Books");
+const customerId = (role: "owner" | "reseller", name: string) =>
+  fixture<{ data: { id: string; name: string }[] }>(role, "GET /customers").body.data.find((c) => c.name === name)!.id;
+const acme = customerId("owner", "Acme Ltd");
+const books = customerId("reseller", "Harbour Books");
 
 const anExport = (over: Partial<AccountExport>): AccountExport => ({
   id: "E1", customerId: acme, customerName: "Acme Ltd", state: "ready", files: true, databases: true,

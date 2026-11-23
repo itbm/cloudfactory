@@ -1,1 +1,4 @@
 cosign.key
+
+# The Go code of the agent protocol. "go generate" in agent/ makes it.
+/agent/gen/

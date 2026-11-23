@@ -1,0 +1,7 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000e/security/events",
+    "status": 200,
+    "body": {
+        "events": []
+    }
+}

@@ -1,0 +1,38 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000c/snapshots",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806s2hhx0000000015",
+                "kind": "scheduled",
+                "sizeBytes": 53477376,
+                "databases": [],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-14T03:03:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000016",
+                "kind": "scheduled",
+                "sizeBytes": 50331648,
+                "databases": [],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-13T03:03:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000017",
+                "kind": "scheduled",
+                "sizeBytes": 47185920,
+                "databases": [],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-12T03:03:00+00:00"
+            }
+        ]
+    }
+}

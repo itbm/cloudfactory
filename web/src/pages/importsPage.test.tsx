@@ -5,8 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { CHUNK_BYTES, uploadArchive } from "../api/imports";
 import { NAVIGATION, canOpen } from "../lib/roles";
-import { reset, signedIn } from "../test/panelApi";
-import administrator from "../test/fixtures/administrator.json";
+import { fixture, reset, signedIn } from "../test/panelApi";
 
 afterEach(() => {
   cleanup();
@@ -15,7 +14,7 @@ afterEach(() => {
 
 /** The sample data has a cPanel import that is ready, and a DirectAdmin import that is complete. */
 interface ApiImport { id: string; status: string; fileName: string }
-const imports = (administrator as unknown as Record<string, { body: { data: ApiImport[] } }>)["GET /imports"].body.data;
+const imports = fixture<{ data: ApiImport[] }>("administrator", "GET /imports").body.data;
 const ready = imports.find((i) => i.status === "ready")!;
 const done = imports.find((i) => i.status === "done")!;
 
@@ -38,7 +37,7 @@ describe("the imports", () => {
 
   it("shows the plan, and starts the import of the selected parts", async () => {
     const api = await signedIn("administrator");
-    api.on("POST /imports/*/start", () => [202, { ...(administrator as never as Record<string, { body: object }>)[`GET /imports/${ready.id}`].body, status: "running", plan: null, items: [{ id: "i1", kind: "website", name: "bakeryclub.example.org", state: "running", error: null, detail: null, jobId: "j1" }], progress: { total: 1, done: 0, failed: 0 } }]);
+    api.on("POST /imports/*/start", () => [202, { ...fixture<object>("administrator", `GET /imports/${ready.id}`).body, status: "running", plan: null, items: [{ id: "i1", kind: "website", name: "bakeryclub.example.org", state: "running", error: null, detail: null, jobId: "j1" }], progress: { total: 1, done: 0, failed: 0 } }]);
     render(<MemoryRouter initialEntries={[`/imports/${ready.id}`]}><App /></MemoryRouter>);
 
     // The website with a name that the panel has already cannot be selected.
@@ -100,7 +99,7 @@ describe("the imports", () => {
   it("starts an import from a URL", async () => {
     const api = await signedIn("administrator");
     api.on("POST /imports", () => [201, { import: { id: "imp-2" }, job: null }]);
-    api.on("GET /imports/imp-2", () => ({ ...(administrator as never as Record<string, { body: object }>)[`GET /imports/${ready.id}`].body, id: "imp-2", status: "fetching", plan: null }));
+    api.on("GET /imports/imp-2", () => ({ ...fixture<object>("administrator", `GET /imports/${ready.id}`).body, id: "imp-2", status: "fetching", plan: null }));
     render(<MemoryRouter initialEntries={["/imports"]}><App /></MemoryRouter>);
     fireEvent.click(await screen.findByRole("button", { name: "Import account" }));
     const dialog = screen.getByRole("dialog");

@@ -1,0 +1,56 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000001/snapshots",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806s2hhx0000000004",
+                "kind": "manual",
+                "sizeBytes": 3900702720,
+                "databases": [
+                    "mariadb:acmeexam_322a_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-14T05:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000001",
+                "kind": "scheduled",
+                "sizeBytes": 3897556992,
+                "databases": [
+                    "mariadb:acmeexam_322a_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-14T03:09:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000002",
+                "kind": "scheduled",
+                "sizeBytes": 3894411264,
+                "databases": [
+                    "mariadb:acmeexam_322a_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-13T03:09:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000003",
+                "kind": "scheduled",
+                "sizeBytes": 3891265536,
+                "databases": [
+                    "mariadb:acmeexam_322a_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-12T03:09:00+00:00"
+            }
+        ]
+    }
+}

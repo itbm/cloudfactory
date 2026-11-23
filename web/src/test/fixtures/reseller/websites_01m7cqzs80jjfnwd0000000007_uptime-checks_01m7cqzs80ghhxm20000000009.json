@@ -1,0 +1,538 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000007/uptime-checks/01m7cqzs80ghhxm20000000009",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs80ghhxm20000000009",
+        "websiteId": "01m7cqzs80jjfnwd0000000007",
+        "websiteName": "cornerbakery.example.org",
+        "domain": "cornerbakery.example.org",
+        "scheme": "https",
+        "path": "/",
+        "url": "https://cornerbakery.example.org/",
+        "intervalSeconds": 600,
+        "timeoutSeconds": 10,
+        "expectedStatus": null,
+        "keyword": null,
+        "failuresBeforeAlert": 2,
+        "enabled": true,
+        "state": "up",
+        "pausedReason": null,
+        "since": "2026-11-13T04:00:00+00:00",
+        "failures": 0,
+        "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+        "lastResult": {
+            "ok": true,
+            "status": 200,
+            "responseMs": 96,
+            "error": null
+        },
+        "nextCheckAt": "2026-11-14T10:10:00+00:00",
+        "uptime": {
+            "day": 100,
+            "week": 99.59,
+            "month": 99.9
+        },
+        "incident": null,
+        "createdAt": "2026-09-15T10:00:00+00:00",
+        "history": [
+            {
+                "at": "2026-11-13T10:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 111,
+                "maxResponseMs": 123
+            },
+            {
+                "at": "2026-11-13T11:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 115,
+                "maxResponseMs": 129
+            },
+            {
+                "at": "2026-11-13T11:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 116,
+                "maxResponseMs": 134
+            },
+            {
+                "at": "2026-11-13T12:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 130,
+                "maxResponseMs": 140
+            },
+            {
+                "at": "2026-11-13T12:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 132,
+                "maxResponseMs": 139
+            },
+            {
+                "at": "2026-11-13T13:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 119,
+                "maxResponseMs": 126
+            },
+            {
+                "at": "2026-11-13T13:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 128,
+                "maxResponseMs": 146
+            },
+            {
+                "at": "2026-11-13T14:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 132,
+                "maxResponseMs": 137
+            },
+            {
+                "at": "2026-11-13T14:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 124,
+                "maxResponseMs": 129
+            },
+            {
+                "at": "2026-11-13T15:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 135,
+                "maxResponseMs": 147
+            },
+            {
+                "at": "2026-11-13T15:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 122,
+                "maxResponseMs": 132
+            },
+            {
+                "at": "2026-11-13T16:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 128,
+                "maxResponseMs": 134
+            },
+            {
+                "at": "2026-11-13T16:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 127,
+                "maxResponseMs": 131
+            },
+            {
+                "at": "2026-11-13T17:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 126,
+                "maxResponseMs": 136
+            },
+            {
+                "at": "2026-11-13T17:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 132,
+                "maxResponseMs": 135
+            },
+            {
+                "at": "2026-11-13T18:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 121,
+                "maxResponseMs": 129
+            },
+            {
+                "at": "2026-11-13T18:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 113,
+                "maxResponseMs": 122
+            },
+            {
+                "at": "2026-11-13T19:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 108,
+                "maxResponseMs": 116
+            },
+            {
+                "at": "2026-11-13T19:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 97,
+                "maxResponseMs": 105
+            },
+            {
+                "at": "2026-11-13T20:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 113,
+                "maxResponseMs": 117
+            },
+            {
+                "at": "2026-11-13T20:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 95,
+                "maxResponseMs": 108
+            },
+            {
+                "at": "2026-11-13T21:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 89,
+                "maxResponseMs": 109
+            },
+            {
+                "at": "2026-11-13T21:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 87,
+                "maxResponseMs": 102
+            },
+            {
+                "at": "2026-11-13T22:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 84,
+                "maxResponseMs": 94
+            },
+            {
+                "at": "2026-11-13T22:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 57,
+                "maxResponseMs": 59
+            },
+            {
+                "at": "2026-11-13T23:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 69,
+                "maxResponseMs": 77
+            },
+            {
+                "at": "2026-11-13T23:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 72,
+                "maxResponseMs": 77
+            },
+            {
+                "at": "2026-11-14T00:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 57,
+                "maxResponseMs": 61
+            },
+            {
+                "at": "2026-11-14T00:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 58,
+                "maxResponseMs": 74
+            },
+            {
+                "at": "2026-11-14T01:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 56,
+                "maxResponseMs": 67
+            },
+            {
+                "at": "2026-11-14T01:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 35,
+                "maxResponseMs": 39
+            },
+            {
+                "at": "2026-11-14T02:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 42,
+                "maxResponseMs": 47
+            },
+            {
+                "at": "2026-11-14T02:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 56,
+                "maxResponseMs": 70
+            },
+            {
+                "at": "2026-11-14T03:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 66,
+                "maxResponseMs": 69
+            },
+            {
+                "at": "2026-11-14T03:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 57,
+                "maxResponseMs": 71
+            },
+            {
+                "at": "2026-11-14T04:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 61,
+                "maxResponseMs": 72
+            },
+            {
+                "at": "2026-11-14T04:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 65,
+                "maxResponseMs": 71
+            },
+            {
+                "at": "2026-11-14T05:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 67,
+                "maxResponseMs": 69
+            },
+            {
+                "at": "2026-11-14T05:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 71,
+                "maxResponseMs": 80
+            },
+            {
+                "at": "2026-11-14T06:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 66,
+                "maxResponseMs": 75
+            },
+            {
+                "at": "2026-11-14T06:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 66,
+                "maxResponseMs": 87
+            },
+            {
+                "at": "2026-11-14T07:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 60,
+                "maxResponseMs": 64
+            },
+            {
+                "at": "2026-11-14T07:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 64,
+                "maxResponseMs": 75
+            },
+            {
+                "at": "2026-11-14T08:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 71,
+                "maxResponseMs": 78
+            },
+            {
+                "at": "2026-11-14T08:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 72,
+                "maxResponseMs": 77
+            },
+            {
+                "at": "2026-11-14T09:00:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 97,
+                "maxResponseMs": 110
+            },
+            {
+                "at": "2026-11-14T09:30:00Z",
+                "checks": 3,
+                "failures": 0,
+                "responseMs": 112,
+                "maxResponseMs": 116
+            },
+            {
+                "at": "2026-11-14T10:00:00Z",
+                "checks": 1,
+                "failures": 0,
+                "responseMs": 96,
+                "maxResponseMs": 96
+            }
+        ],
+        "days": [
+            {
+                "date": "2026-10-16",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-17",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-18",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-19",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-20",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-21",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-22",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-23",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-24",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-25",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-26",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-27",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-28",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-29",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-30",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-31",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-01",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-02",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-03",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-04",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-05",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-06",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-07",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-08",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-09",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-10",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-11",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-12",
+                "uptime": 97.15,
+                "downSeconds": 2460
+            },
+            {
+                "date": "2026-11-13",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-14",
+                "uptime": 100,
+                "downSeconds": 0
+            }
+        ],
+        "incidents": [
+            {
+                "id": "01m7cqzs80n49e1s0000000006",
+                "startedAt": "2026-11-12T05:12:00+00:00",
+                "resolvedAt": "2026-11-12T05:53:00+00:00",
+                "durationSeconds": 2460,
+                "error": "The TLS certificate is not valid: SSL certificate problem: certificate has expired",
+                "endedByPause": false
+            }
+        ]
+    }
+}

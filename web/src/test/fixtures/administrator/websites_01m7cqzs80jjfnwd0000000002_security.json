@@ -1,0 +1,26 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000002/security",
+    "status": 200,
+    "body": {
+        "security": {
+            "firewall": {
+                "mode": "block",
+                "excludedRules": [
+                    942100
+                ],
+                "skippedPaths": [
+                    "/wp-admin/"
+                ]
+            },
+            "ipRules": {
+                "allow": [],
+                "block": []
+            },
+            "protectedPaths": [],
+            "signInLimit": {
+                "requestsPerMinute": 0,
+                "paths": []
+            }
+        }
+    }
+}

@@ -1,0 +1,267 @@
+{
+    "request": "GET /dns-zones/01m7cqzs800neg3e0000000001",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs800neg3e0000000001",
+        "name": "acme.example.com",
+        "customerId": "01m7cqzs80h56kh10000000004",
+        "status": "active",
+        "serial": 1794592800,
+        "recordCount": 24,
+        "nameServers": [
+            "ns1.panel.example",
+            "ns2.panel.example"
+        ],
+        "provider": null,
+        "delegation": {
+            "state": "here",
+            "nameServers": [
+                "ns1.panel.example",
+                "ns2.panel.example"
+            ],
+            "checkedAt": "2026-11-14T09:51:00+00:00"
+        },
+        "dnssec": {
+            "enabled": true,
+            "state": "active",
+            "ds": {
+                "keyTag": 31959,
+                "algorithm": 13,
+                "digestType": 2,
+                "digest": "574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492",
+                "record": "acme.example.com. IN DS 31959 13 2 574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492"
+            },
+            "dnskey": "acme.example.com. IN DNSKEY 257 3 13 xouWXR6lNIfgHzR5q3HGtUwwehAnRz/iqKeC/jSDkjBzfc28BJl+OM9IjTvgOWainGwzDWQOe+M9mZn3Axgwrg=="
+        },
+        "servers": [
+            {
+                "nameServer": "ns1.panel.example",
+                "state": "ok"
+            },
+            {
+                "nameServer": "ns2.panel.example",
+                "state": "ok"
+            }
+        ],
+        "websites": 7,
+        "createdAt": "2025-11-09T10:00:00+00:00",
+        "records": [
+            {
+                "id": "01m7cqzs8007vyeq0000000003",
+                "name": "@",
+                "type": "A",
+                "value": "203.0.113.10",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000004",
+                "name": "@",
+                "type": "AAAA",
+                "value": "2001:db8:10::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000018",
+                "name": "@",
+                "type": "CAA",
+                "value": "0 issue \"letsencrypt.org\"",
+                "ttl": 3600,
+                "priority": null,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000014",
+                "name": "@",
+                "type": "MX",
+                "value": "mx1.mail.example",
+                "ttl": 3600,
+                "priority": 10,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000015",
+                "name": "@",
+                "type": "MX",
+                "value": "mx2.mail.example",
+                "ttl": 3600,
+                "priority": 20,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000001",
+                "name": "@",
+                "type": "NS",
+                "value": "ns1.panel.example",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000002",
+                "name": "@",
+                "type": "NS",
+                "value": "ns2.panel.example",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000016",
+                "name": "@",
+                "type": "TXT",
+                "value": "v=spf1 include:_spf.mail.example -all",
+                "ttl": 3600,
+                "priority": null,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000017",
+                "name": "_dmarc",
+                "type": "TXT",
+                "value": "v=DMARC1; p=quarantine; rua=mailto:dmarc@acme.example.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001a",
+                "name": "_sip._tcp",
+                "type": "SRV",
+                "value": "5 5060 sip.voice.example",
+                "ttl": 3600,
+                "priority": 10,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000009",
+                "name": "api",
+                "type": "A",
+                "value": "203.0.113.10",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000a",
+                "name": "api",
+                "type": "AAAA",
+                "value": "2001:db8:10::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000f",
+                "name": "dashboard",
+                "type": "A",
+                "value": "203.0.113.20",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000g",
+                "name": "dashboard",
+                "type": "AAAA",
+                "value": "2001:db8:20::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000d",
+                "name": "old",
+                "type": "A",
+                "value": "203.0.113.10",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000e",
+                "name": "old",
+                "type": "AAAA",
+                "value": "2001:db8:10::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000007",
+                "name": "shop",
+                "type": "A",
+                "value": "203.0.113.10",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000008",
+                "name": "shop",
+                "type": "AAAA",
+                "value": "2001:db8:10::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000019",
+                "name": "status",
+                "type": "CNAME",
+                "value": "acme.status.example",
+                "ttl": 300,
+                "priority": null,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000b",
+                "name": "storefront",
+                "type": "A",
+                "value": "203.0.113.20",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000c",
+                "name": "storefront",
+                "type": "AAAA",
+                "value": "2001:db8:20::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001b",
+                "name": "vpn",
+                "type": "A",
+                "value": "198.51.100.24",
+                "ttl": 3600,
+                "priority": null,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000005",
+                "name": "www",
+                "type": "A",
+                "value": "203.0.113.10",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000006",
+                "name": "www",
+                "type": "AAAA",
+                "value": "2001:db8:10::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            }
+        ]
+    }
+}

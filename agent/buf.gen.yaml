@@ -1,8 +1,10 @@
+# The generated code is not in Git: "go generate" in this directory makes it (generate.go).
+# The plugins are tools of go.mod, so they have the same versions as the runtime libraries.
 version: v2
 plugins:
-  - local: protoc-gen-go
+  - local: [go, tool, protoc-gen-go]
     out: gen
     opt: paths=source_relative
-  - local: protoc-gen-connect-go
+  - local: [go, tool, protoc-gen-connect-go]
     out: gen
     opt: paths=source_relative
