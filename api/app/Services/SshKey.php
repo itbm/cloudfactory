@@ -9,12 +9,13 @@ namespace App\Services;
 class SshKey
 {
     /**
+     * @param  ?string  $seed  32 bytes that give the key. Without them, the key is random.
      * @return array{public: string, private: string} The public key as one line, and the private
      *                                                key as an OpenSSH private key file.
      */
-    public static function generate(string $comment): array
+    public static function generate(string $comment, ?string $seed = null): array
     {
-        $pair = sodium_crypto_sign_keypair();
+        $pair = $seed === null ? sodium_crypto_sign_keypair() : sodium_crypto_sign_seed_keypair($seed);
         $public = sodium_crypto_sign_publickey($pair);
         // The secret key of libsodium is the seed and then the public key, as in OpenSSH.
         $secret = sodium_crypto_sign_secretkey($pair);
