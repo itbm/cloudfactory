@@ -54,10 +54,12 @@ func TestReplacePortChangesEachRuleForPort25(t *testing.T) {
 
 // TestRealServer uses a Stalwart container. It runs only with CF_TEST_STALWART, the address
 // of the management API, and CF_TEST_STALWART_PASSWORD, the password of the administrator.
+// CF_TEST_STALWART_SPAM_RULES is the path of the rules of the spam filter in the container.
 // For example:
 //
-//	docker run -d -e STALWART_RECOVERY_ADMIN=admin:secret -p 18080:8080 stalwartlabs/stalwart:v1.1
-//	CF_TEST_STALWART=http://127.0.0.1:18080 CF_TEST_STALWART_PASSWORD=secret go test ./internal/stalwart/
+//	curl -LO https://github.com/stalwartlabs/spam-filter/releases/download/v3.0.4/spam-filter-rules.json.gz
+//	docker run -d -e STALWART_RECOVERY_ADMIN=admin:secret -p 18080:8080 -v $PWD/spam-filter-rules.json.gz:/rules.json.gz:ro stalwartlabs/stalwart:v1.1
+//	CF_TEST_STALWART=http://127.0.0.1:18080 CF_TEST_STALWART_PASSWORD=secret CF_TEST_STALWART_SPAM_RULES=/rules.json.gz go test ./internal/stalwart/
 func TestRealServer(t *testing.T) {
 	url := os.Getenv("CF_TEST_STALWART")
 	if url == "" {
@@ -69,7 +71,7 @@ func TestRealServer(t *testing.T) {
 	if err := c.Ready(ctx); err != nil {
 		t.Fatal(err)
 	}
-	settings := Settings{Hostname: "mail.host.example.com", Ports: Ports{SMTP: 2025, Submissions: 2465, Submission: 2587, IMAPS: 2993, HTTP: 8080}, CertFile: "/etc/stalwart-certs/tls.crt", KeyFile: "/etc/stalwart-certs/tls.key"}
+	settings := Settings{Hostname: "mail.host.example.com", Ports: Ports{SMTP: 2025, Submissions: 2465, Submission: 2587, IMAPS: 2993, HTTP: 8080}, CertFile: "/etc/stalwart-certs/tls.crt", KeyFile: "/etc/stalwart-certs/tls.key", SpamRules: os.Getenv("CF_TEST_STALWART_SPAM_RULES")}
 	if _, err := c.Configure(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +88,17 @@ func TestRealServer(t *testing.T) {
 	if err != nil || len(listeners) != 5 {
 		t.Fatalf("listeners %v, err %v", listeners, err)
 	}
+	if settings.SpamRules != "" {
+		// The server reads the rules from the file in a task.
+		deadline := time.Now().Add(time.Minute)
+		for n, err := c.SpamRules(ctx); n == 0; n, err = c.SpamRules(ctx) {
+			if err != nil || time.Now().After(deadline) {
+				t.Fatalf("the spam filter has no rules: %v", err)
+			}
+			time.Sleep(time.Second)
+		}
+	}
+	testSettings(ctx, t, c)
 
 	const domain = "cf-test.example.com"
 	records, err := c.SetDomain(ctx, domain)
@@ -188,5 +201,63 @@ func TestRealServer(t *testing.T) {
 	if keys, err := c.get(ctx, "x:DkimSignature", nil, "domainId"); err != nil || len(keys) != 2 {
 		// The 2 keys of the host name stay.
 		t.Fatalf("keys %v, err %v", keys, err)
+	}
+}
+
+// testSettings sets the spam filter and the outbound relay two times, and removes the relay.
+func testSettings(ctx context.Context, t *testing.T, c *Client) {
+	t.Helper()
+	for range 2 {
+		if err := c.SetSpamFilter(ctx, SpamFilter{Enable: true, SpamScore: 6.5, RejectScore: 15}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spam, err := c.get(ctx, "x:SpamSettings", []string{singleton}, "enable", "scoreSpam", "scoreReject")
+	if err != nil || len(spam) != 1 || spam[0]["enable"] != true || spam[0]["scoreSpam"] != 6.5 || spam[0]["scoreReject"] != 15.0 {
+		t.Fatalf("spam settings %v, err %v", spam, err)
+	}
+	relay := &Relay{Host: "smtp.relay.example.net", Port: 587, Username: "mailer", Password: "secret"}
+	for range 2 {
+		if err := c.SetRelay(ctx, relay); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The server also has the routes "mx" and "local".
+	relays := func() []object {
+		routes, err := c.get(ctx, "x:MtaRoute", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []object
+		for _, r := range routes {
+			if r["name"] == relayRoute {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	routes := relays()
+	if len(routes) != 1 || routes[0]["host"] != "smtp.relay.example.net" || routes[0]["port"] != 587.0 || routes[0]["authUsername"] != "mailer" || routes[0]["implicitTls"] != false {
+		t.Fatalf("routes %v", routes)
+	}
+	strategy, err := c.get(ctx, "x:MtaOutboundStrategy", []string{singleton}, "route")
+	if err != nil || strategy[0]["route"].(object)["else"] != "'relay'" {
+		t.Fatalf("strategy %v, err %v", strategy, err)
+	}
+	// A relay with no sign-in on port 465, then no relay.
+	if err := c.SetRelay(ctx, &Relay{Host: "relay.example.net", Port: 465}); err != nil {
+		t.Fatal(err)
+	}
+	if routes = relays(); len(routes) != 1 || routes[0]["implicitTls"] != true || routes[0]["authSecret"].(object)["@type"] != "None" {
+		t.Fatalf("routes %v", routes)
+	}
+	for range 2 {
+		if err := c.SetRelay(ctx, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	strategy, err = c.get(ctx, "x:MtaOutboundStrategy", []string{singleton}, "route")
+	if routes = relays(); err != nil || len(routes) != 0 || strategy[0]["route"].(object)["else"] != "'mx'" {
+		t.Fatalf("routes %v, strategy %v, err %v", routes, strategy, err)
 	}
 }

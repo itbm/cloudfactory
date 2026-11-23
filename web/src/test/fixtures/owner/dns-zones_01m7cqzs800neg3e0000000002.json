@@ -7,10 +7,11 @@
         "customerId": "01m7cqzs80h56kh10000000004",
         "status": "active",
         "serial": 1794567600,
-        "recordCount": 4,
+        "recordCount": 5,
         "nameServers": [
             "ns1.panel.example",
-            "ns2.panel.example"
+            "ns2.panel.example",
+            "ns3.backup-dns.example"
         ],
         "provider": null,
         "delegation": {
@@ -25,7 +26,21 @@
             "enabled": false,
             "state": "off",
             "ds": null,
-            "dnskey": null
+            "dnskey": null,
+            "rollover": null,
+            "parent": null
+        },
+        "transfers": {
+            "addresses": [],
+            "notify": false,
+            "nameServers": [],
+            "tsig": null,
+            "primaries": [
+                "203.0.113.10",
+                "2001:db8:10::1",
+                "203.0.113.20",
+                "2001:db8:20::1"
+            ]
         },
         "servers": [
             {
@@ -41,7 +56,7 @@
         "createdAt": "2026-11-14T10:00:00+00:00",
         "records": [
             {
-                "id": "01m7cqzs8007vyeq000000000k",
+                "id": "01m7cqzs8007vyeq000000000p",
                 "name": "@",
                 "type": "A",
                 "value": "203.0.113.10",
@@ -50,7 +65,7 @@
                 "managed": "website"
             },
             {
-                "id": "01m7cqzs8007vyeq000000000m",
+                "id": "01m7cqzs8007vyeq000000000q",
                 "name": "@",
                 "type": "AAAA",
                 "value": "2001:db8:10::1",
@@ -59,7 +74,7 @@
                 "managed": "website"
             },
             {
-                "id": "01m7cqzs8007vyeq000000000h",
+                "id": "01m7cqzs8007vyeq000000000k",
                 "name": "@",
                 "type": "NS",
                 "value": "ns1.panel.example",
@@ -68,10 +83,19 @@
                 "managed": "ns"
             },
             {
-                "id": "01m7cqzs8007vyeq000000000j",
+                "id": "01m7cqzs8007vyeq000000000m",
                 "name": "@",
                 "type": "NS",
                 "value": "ns2.panel.example",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000n",
+                "name": "@",
+                "type": "NS",
+                "value": "ns3.backup-dns.example",
                 "ttl": 3600,
                 "priority": null,
                 "managed": "ns"

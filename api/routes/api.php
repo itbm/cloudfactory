@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\DatabaseToolController;
 use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DeployController;
 use App\Http\Controllers\Api\DnsAccountController;
+use App\Http\Controllers\Api\DnsSecondaryController;
 use App\Http\Controllers\Api\DnsZoneController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\FileController;
@@ -273,11 +274,23 @@ Route::prefix('v1')->group(function () {
             Route::patch('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'updateRecord'])->middleware('throttle:dns-changes');
             Route::delete('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'destroyRecord'])->middleware('throttle:dns-changes');
             Route::put('dns-zones/{id}/dnssec', [DnsZoneController::class, 'dnssec'])->middleware('throttle:dns-changes');
+            Route::post('dns-zones/{id}/dnssec/rollover', [DnsZoneController::class, 'startRollover'])->middleware('throttle:dns-changes');
+            Route::delete('dns-zones/{id}/dnssec/rollover', [DnsZoneController::class, 'cancelRollover'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/check', [DnsZoneController::class, 'check'])->middleware('throttle:domain-checks');
             Route::post('dns-zones/{id}/sync', [DnsZoneController::class, 'sync'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/import', [DnsZoneController::class, 'import'])->middleware('throttle:dns-changes');
             Route::get('dns-zones/{id}/export', [DnsZoneController::class, 'export']);
             Route::post('dns-zones/{id}/move', [DnsZoneController::class, 'move'])->middleware('throttle:dns-changes');
+            // Zone transfers to the secondary DNS servers of the owner of a zone.
+            Route::put('dns-zones/{id}/transfers', [DnsZoneController::class, 'transfers'])->middleware('throttle:dns-changes');
+            Route::delete('dns-zones/{id}/transfers', [DnsZoneController::class, 'destroyTransfers'])->middleware('throttle:dns-changes');
+            Route::get('dns-zones/{id}/transfers/secret', [DnsZoneController::class, 'transfersSecret'])->middleware('throttle:10,1,get-dns-transfers-secret');
+            // The secondary DNS servers of the panel, which copy all zones.
+            Route::get('dns-secondaries', [DnsSecondaryController::class, 'index'])->middleware('admin');
+            Route::post('dns-secondaries', [DnsSecondaryController::class, 'store'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::patch('dns-secondaries/{id}', [DnsSecondaryController::class, 'update'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::delete('dns-secondaries/{id}', [DnsSecondaryController::class, 'destroy'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::get('dns-secondaries/{id}/secret', [DnsSecondaryController::class, 'secret'])->middleware(['admin', 'throttle:10,1,get-dns-secondary-secret']);
             Route::get('dns-accounts', [DnsAccountController::class, 'index']);
             Route::post('dns-accounts', [DnsAccountController::class, 'store'])->middleware('throttle:dns-changes');
             Route::patch('dns-accounts/{id}', [DnsAccountController::class, 'update'])->middleware('throttle:dns-changes');
@@ -334,6 +347,8 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
             // Turns on email for a server with the email role.
             Route::put('servers/{id}/mail', [ServerController::class, 'setMail']);
+            // The spam filter and the outbound relay of the mail server of a server.
+            Route::put('servers/{id}/mail/settings', [ServerController::class, 'setMailSettings']);
             // Mail clusters: mail servers on three or five servers that share their data.
             Route::get('mail-clusters', [MailClusterController::class, 'index']);
             Route::post('mail-clusters', [MailClusterController::class, 'store']);

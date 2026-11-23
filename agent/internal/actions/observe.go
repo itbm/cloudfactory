@@ -95,9 +95,14 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.SftpPort = d.SftpPortInUse()
 	r.DNS = true
 	r.Addresses = d.ReportAddresses()
-	r.DNSZones = d.DnsZones(ctx)
+	dns := d.dnsStatus(ctx)
+	r.DNSZones = dns.Zones
+	if r.DNSZones == nil {
+		r.DNSZones = []panel.DNSZoneState{}
+	}
+	r.DNSSecondaries = dns.Secondaries
 	// The DNS server is a service of this server only after its first zone job.
-	if d.DnsEnabled(ctx) {
+	if dns.Enabled {
 		state := "stopped"
 		out, _ := d.Host.Systemctl(ctx, host.DnsUser, "is-active", dnsServiceName)
 		switch strings.TrimSpace(out) {

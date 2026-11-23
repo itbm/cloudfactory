@@ -54,6 +54,28 @@ type Settings struct {
 	// CertFile and KeyFile are the paths, in the container, of the TLS certificate of
 	// Hostname and of its key.
 	CertFile, KeyFile string
+	// SpamRules is the path, in the container, of the file with the rules of the spam filter.
+	// Empty: the agent does not change the rules.
+	SpamRules string
+}
+
+// SpamFilter is the spam filter of the mail server.
+type SpamFilter struct {
+	// Enable is true when the mail server examines each new message.
+	Enable bool
+	// SpamScore is the score from which a message goes to the junk folder.
+	SpamScore float64
+	// RejectScore is the score from which the server refuses a message. 0: no refusal.
+	RejectScore float64
+}
+
+// Relay is a mail server that sends the outgoing mail of this mail server.
+type Relay struct {
+	Host string
+	// Port 465 uses TLS from the start. The other ports use STARTTLS.
+	Port     int
+	Username string
+	Password string
 }
 
 // Record is a DNS record that the owner of a mail domain adds.
@@ -290,7 +312,8 @@ func (c *Client) reload(ctx context.Context, action string) error {
 //   - the host name, with a domain of the same name for the reports of the server;
 //   - the TLS certificate from files;
 //   - the log on the standard output, for the journal of the host;
-//   - no download of the web interface or of the network lists from the internet.
+//   - no download of the web interface or of the network lists from the internet;
+//   - the rules of the spam filter from a file of the image.
 //
 // It reports true when the listeners changed: the server uses new listeners after a restart.
 func (c *Client) Configure(ctx context.Context, s Settings) (restart bool, err error) {
@@ -312,7 +335,133 @@ func (c *Client) Configure(ctx context.Context, s Settings) (restart bool, err e
 	if err := c.noDownloads(ctx); err != nil {
 		return false, err
 	}
-	return restart, c.reload(ctx, "ReloadSettings")
+	if err := c.reload(ctx, "ReloadSettings"); err != nil {
+		return false, err
+	}
+	return restart, c.spamRules(ctx, s.SpamRules)
+}
+
+// spamRulesTask is the task of the server that reads the rules of the spam filter again.
+var spamRulesTask = object{"@type": "SpamFilterMaintenance", "maintenanceType": "updateRules"}
+
+// spamRules makes the server read the rules of the spam filter from a file of the image. By
+// default, the server downloads them from GitHub. The firewall stops that download, and with
+// no rules the filter gives each message the score 0. The server reads the file again at each
+// start of the agent, so a new image gives new rules.
+func (c *Client) spamRules(ctx context.Context, file string) error {
+	if file == "" {
+		return nil
+	}
+	url := "file://" + file
+	current, err := c.get(ctx, "x:SpamSettings", []string{singleton}, "spamFilterRulesUrl")
+	if err != nil {
+		return err
+	}
+	if len(current) != 1 || current[0]["spamFilterRulesUrl"] != url {
+		if err := c.update(ctx, "x:SpamSettings", singleton, object{"spamFilterRulesUrl": url}); err != nil {
+			return err
+		}
+		if err := c.reload(ctx, "ReloadSettings"); err != nil {
+			return err
+		}
+	}
+	_, err = c.create(ctx, "x:Task", spamRulesTask)
+	return err
+}
+
+// SpamRules gives the number of rules that the spam filter has.
+func (c *Client) SpamRules(ctx context.Context) (int, error) {
+	ids, err := c.query(ctx, "x:SpamRule", nil)
+	return len(ids), err
+}
+
+// SetSpamFilter turns the spam filter on or off and sets its scores. The server adds the
+// header X-Spam-Status to each message, and puts a message with SpamScore or more in the junk
+// folder.
+func (c *Client) SetSpamFilter(ctx context.Context, f SpamFilter) error {
+	if err := c.update(ctx, "x:SpamSettings", singleton, object{"enable": f.Enable, "scoreSpam": f.SpamScore, "scoreReject": f.RejectScore}); err != nil {
+		return err
+	}
+	return c.reload(ctx, "ReloadSettings")
+}
+
+// relayRoute is the name of the route of the outbound relay.
+const relayRoute = "relay"
+
+// directRoute is the route of the outgoing mail with no relay: to the MX of the recipient.
+const directRoute = "'mx'"
+
+// SetRelay sends the outgoing mail through a relay, or with nil, directly to the mail server of
+// each recipient. Mail for a domain of this server always stays on this server.
+func (c *Client) SetRelay(ctx context.Context, r *Relay) error {
+	routes, err := c.get(ctx, "x:MtaRoute", nil, "name")
+	if err != nil {
+		return err
+	}
+	id := ""
+	var others []string
+	for _, route := range routes {
+		rid, _ := route["id"].(string)
+		if route["name"] == relayRoute && route["@type"] == "Relay" && id == "" {
+			id = rid
+		} else if route["name"] == relayRoute {
+			others = append(others, rid)
+		}
+	}
+	if err := c.destroy(ctx, "x:MtaRoute", others...); err != nil {
+		return err
+	}
+	target := directRoute
+	if r != nil {
+		secret := object{"@type": "None"}
+		if r.Username != "" {
+			secret = object{"@type": "Value", "secret": r.Password}
+		}
+		route := object{
+			"@type": "Relay", "name": relayRoute, "description": "The outbound relay of the panel",
+			"host": r.Host, "port": r.Port, "protocol": "smtp", "implicitTls": r.Port == 465,
+			"allowInvalidCerts": false, "authUsername": nullIfEmpty(r.Username), "authSecret": secret,
+		}
+		if id == "" {
+			if _, err := c.create(ctx, "x:MtaRoute", route); err != nil {
+				return err
+			}
+		} else if err := c.update(ctx, "x:MtaRoute", id, route); err != nil {
+			return err
+		}
+		target = "'" + relayRoute + "'"
+	}
+	if err := c.outboundRoute(ctx, target); err != nil {
+		return err
+	}
+	if r == nil && id != "" {
+		// The strategy does not name the route now: the server lets it go.
+		if err := c.destroy(ctx, "x:MtaRoute", id); err != nil {
+			return err
+		}
+	}
+	return c.reload(ctx, "ReloadSettings")
+}
+
+// outboundRoute sets the route of the outgoing mail. The rule for the local domains stays
+// first, so that mail for a domain of this server never goes to the relay.
+func (c *Client) outboundRoute(ctx context.Context, target string) error {
+	current, err := c.get(ctx, "x:MtaOutboundStrategy", []string{singleton}, "route")
+	if err != nil {
+		return err
+	}
+	want := object{"match": object{"0": object{"if": "is_local_domain(rcpt_domain)", "then": "'local'"}}, "else": target}
+	if len(current) == 1 && reflect.DeepEqual(current[0]["route"], want) {
+		return nil
+	}
+	return c.update(ctx, "x:MtaOutboundStrategy", singleton, object{"route": want})
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func (c *Client) listeners(ctx context.Context, p Ports) (changed bool, err error) {

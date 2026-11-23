@@ -97,12 +97,14 @@ service AgentService {
   rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc SetDatabaseUser(SetDatabaseUserRequest) returns (JobAccepted);
+  rpc SetDnsSecondaries(SetDnsSecondariesRequest) returns (JobAccepted);
   rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
   rpc SetLimits(SetLimitsRequest) returns (JobAccepted);
   rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
   rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
   rpc SetMailNode(SetMailNodeRequest) returns (JobAccepted);
   rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
+  rpc SetMailSettings(SetMailSettingsRequest) returns (JobAccepted);
   rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
   rpc SetMesh(SetMeshRequest) returns (JobAccepted);
   // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
@@ -403,6 +405,34 @@ message SetMailAliasRequest {
   string domain = 2;
   string local_part = 3;
   repeated string destinations = 4;
+}
+
+// SetMailSettings sets the spam filter and the outbound relay of the mail server.
+message SetMailSettingsRequest {
+  string job_id = 1;
+  // True: the mail server examines each new message and gives it a spam score.
+  bool spam_filter = 2;
+  // A message with this score or more goes to the junk folder of the mailbox. From 1 to 50.
+  double spam_score = 3;
+  // The mail server refuses a message with this score or more. 0: it refuses no message for
+  // its score. Not 0: more than spam_score, and 100 or less.
+  double reject_score = 4;
+  // Not set: the mail server sends each message to the mail server of the recipient (port 25).
+  MailRelay relay = 5;
+}
+
+// A mail server that sends the outgoing mail for this mail server, for example the SMTP
+// service of a provider. Mail for the mail domains of this server does not go through it.
+message MailRelay {
+  // The host name of the relay. It must have a public address.
+  string host = 1;
+  // 25, 465, 587 or 2525. 465 uses TLS from the start. The other ports use STARTTLS.
+  int32 port = 2;
+  // Empty: the relay accepts the mail with no sign-in.
+  string username = 3;
+  // The panel adds the password each time that it sends the job: the job record does not
+  // have it.
+  string password = 4;
 }
 
 // Stops a database server and removes its data. The panel sends it only for a database
@@ -966,12 +996,79 @@ message DnsZone {
   // that has a smaller serial.
   int64 serial = 2;
   repeated DnsRecord records = 3;
-  // The private DNSSEC key of the zone: an ECDSA P-256 key in the PKCS #8 PEM format. Empty
-  // when DNSSEC is off. The DNS server then removes the keys and the signatures of the zone.
-  string dnssec_key = 4;
+  reserved 4, 5;
+  // The zone transfers to the secondary DNS servers of the owner of the zone. Empty: only
+  // the secondaries of SetDnsSecondaries copy the zone.
+  DnsTransfers transfers = 6;
+  // The DNSSEC keys of the zone: one key, or two keys during a change of the key. Empty when
+  // DNSSEC is off. The DNS server then removes the keys and the signatures of the zone.
+  repeated DnssecKey dnssec_keys = 7;
+}
+
+// A DNSSEC key of a zone. The key signs the zone and its keys (a combined signing key).
+message DnssecKey {
+  // The private key: an ECDSA P-256 key in the PKCS #8 PEM format. The panel adds it each
+  // time that it sends the job.
+  string key = 1;
   // The key tag of the key. The agent imports the key only when the DNS server does not
   // have a key with this tag.
-  int32 dnssec_key_tag = 5;
+  int32 key_tag = 2;
+  // "active": the key signs the zone. "ready": the key is in the DNSKEY records and signs
+  // them, but it does not sign the other records. "submit": as "ready", and the zone has
+  // CDS and CDNSKEY records for the key (RFC 7344), so that the registry can get the new DS
+  // record.
+  string state = 3;
+}
+
+// A TSIG key (RFC 8945) that signs the zone transfers and the NOTIFY messages.
+message TsigKey {
+  // The name of the key: a DNS name in lower case, with no dot at the end. The other server
+  // uses the same name.
+  string name = 1;
+  // "hmac-sha256" or "hmac-sha512".
+  string algorithm = 2;
+  // The secret in base64, 16 to 64 bytes. The panel adds it each time that it sends the job.
+  string secret = 3;
+}
+
+// The zone transfers (AXFR and IXFR) of one zone to secondary DNS servers outside the panel.
+// Only these addresses can ask for a transfer of the zone.
+message DnsTransfers {
+  // Public IPv4 and IPv6 addresses, from 1 to 10.
+  repeated string addresses = 1;
+  // The key of the transfers, or no key for transfers with no TSIG. Its name is "transfer."
+  // and the name of the zone.
+  TsigKey tsig = 2;
+  // true: the DNS server sends NOTIFY to the addresses after each change of the zone.
+  bool notify = 3;
+}
+
+// A secondary DNS server outside the panel that copies all the zones of the DNS servers.
+message DnsSecondary {
+  // The ID of the secondary in the panel.
+  string id = 1;
+  // IPv4 and IPv6 addresses, from 1 to 10.
+  repeated string addresses = 2;
+  // The key of the transfers, or no key for transfers with no TSIG.
+  TsigKey tsig = 3;
+  // true: the DNS server sends NOTIFY to the addresses after each change of a zone.
+  bool notify = 4;
+  // true: the secondary also copies the catalog zone (RFC 9432), the list of the zones.
+  bool catalog = 5;
+}
+
+// Sets the secondary DNS servers that copy all the zones of this server, and the catalog
+// zone. The list replaces the list that the server has.
+message SetDnsSecondariesRequest {
+  string job_id = 1;
+  // At most 10.
+  repeated DnsSecondary secondaries = 2;
+  // The name of the catalog zone, for example "catalog.cloudfactory.invalid". The DNS server
+  // makes the catalog zone only when a secondary has "catalog".
+  string catalog_zone = 3;
+  // The version of the list in the panel. The agent gives it in its report, so the panel
+  // sends the list again to a server that does not have it.
+  int64 version = 4;
 }
 
 // Writes DNS zones on this server, and starts the DNS server (the container cf-dns) if it

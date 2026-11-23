@@ -254,6 +254,23 @@
       "echo": false,
       "message": "Enter a private key in the PKCS #8 PEM format."
     },
+    "tsigName": {
+      "what": "TSIG key name",
+      "go": "TSIGName",
+      "doc": "The name of a TSIG key (RFC 8945) for zone transfers: a DNS name in lower case, with no dot at the end. Both servers of a transfer use the same name.",
+      "pattern": "^{label}(\\.{label})*$",
+      "maxLength": 253,
+      "message": "Enter a key name in lower-case letters, digits, \"-\" and \".\", for example cf-transfer.example.net."
+    },
+    "tsigSecret": {
+      "what": "TSIG secret",
+      "go": "TSIGSecret",
+      "doc": "The secret of a TSIG key in base64: 16 to 64 bytes. The panel makes it, or the administrator copies it from the secondary DNS service.",
+      "pattern": "^([A-Za-z0-9+/]{4}){5,21}([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+      "maxLength": 88,
+      "echo": false,
+      "message": "Enter the secret in base64, with 16 to 64 bytes."
+    },
     "filePath": {
       "what": "path",
       "doc": "The path of a file or a directory in the files of a website, for the file manager. \"/\" is the directory of the website, which the container has at /app. The path has no empty part, no \".\" part, no \"..\" part, no control characters and no \"/\" at the end.",
@@ -477,6 +494,10 @@
       "doc": "The types of DNS record that a user can make.",
       "values": ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"]
     },
+    "tsigAlgorithms": {
+      "doc": "The algorithms of a TSIG key for zone transfers.",
+      "values": ["hmac-sha256", "hmac-sha512"]
+    },
     "phpRuntimes": {
       "doc": "The built-in PHP runtimes. A PHP pack (cf-php/1) adds versions of PHP to one of them.",
       "values": ["frankenphp", "apache-php-fpm"]
@@ -511,6 +532,14 @@
     "dnsZonesPerJob": {
       "doc": "The largest number of DNS zones in one job of the agent.",
       "value": 100
+    },
+    "dnsSecondaries": {
+      "doc": "The largest number of secondary DNS servers of the panel.",
+      "value": 10
+    },
+    "dnsTransferAddresses": {
+      "doc": "The largest number of addresses of one secondary DNS server, or of the zone transfers of one zone.",
+      "value": 10
     },
     "cronJobs": {
       "doc": "The largest number of cron jobs of a website.",

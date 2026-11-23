@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\Dns\Dnssec;
+use App\Services\Dns\Rollover;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,9 +20,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'customer_id', 'name', 'serial', 'status', 'delegation', 'delegation_name_servers', 'delegation_checked_at',
     'dnssec', 'dnssec_key', 'dnssec_key_tag', 'dnssec_public_key', 'sync',
+    'dnssec_rollover', 'dnssec_next_key', 'dnssec_next_key_tag', 'dnssec_next_public_key', 'dnssec_rollover_at', 'dnssec_rollover_until', 'dnssec_parent',
     'dns_account_id', 'provider_state', 'handover', 'handover_ends_at',
+    'transfer_addresses', 'transfer_notify', 'transfer_tsig_algorithm', 'transfer_tsig_secret', 'transfer_name_servers',
 ])]
-#[Hidden(['dnssec_key'])]
+#[Hidden(['dnssec_key', 'dnssec_next_key', 'transfer_tsig_secret'])]
 class DnsZone extends Model
 {
     use HasUlids;
@@ -50,13 +53,30 @@ class DnsZone extends Model
             // The private key of the zone. Each DNS server gets it with the zone.
             'dnssec_key' => 'encrypted',
             'dnssec_key_tag' => 'integer',
+            // A change of the key (App\Services\Dns\Rollover).
+            'dnssec_next_key' => 'encrypted',
+            'dnssec_next_key_tag' => 'integer',
+            'dnssec_rollover_at' => 'datetime',
+            'dnssec_rollover_until' => 'datetime',
+            'dnssec_parent' => 'array',
             'delegation_name_servers' => 'array',
             'delegation_checked_at' => 'datetime',
             'sync' => 'array',
             'provider_state' => 'array',
             'handover' => 'boolean',
             'handover_ends_at' => 'datetime',
+            // The secondaries of the owner of the zone (App\Services\Dns\Secondaries).
+            'transfer_addresses' => 'array',
+            'transfer_notify' => 'boolean',
+            'transfer_tsig_secret' => 'encrypted',
+            'transfer_name_servers' => 'array',
         ];
+    }
+
+    /** The name of the TSIG key of the transfers of the zone. */
+    public function transferKeyName(): string
+    {
+        return 'transfer.'.$this->name;
     }
 
     /** The account at the external DNS provider of the zone, or null for the DNS servers of the panel. */
@@ -140,6 +160,9 @@ class DnsZone extends Model
             return $ds ? $ds + ['record' => "{$this->name}. IN DS {$ds['keyTag']} {$ds['algorithm']} {$ds['digestType']} {$ds['digest']}"] : null;
         }
 
-        return $this->dnssec && $this->dnssec_public_key ? Dnssec::ds($this->name, $this->dnssec_public_key) : null;
+        // From the step "submit" of a change of the key, the registrar must have the DS record of the new key.
+        $public = in_array($this->dnssec_rollover, [Rollover::SUBMIT, Rollover::RETIRE], true) ? $this->dnssec_next_public_key : $this->dnssec_public_key;
+
+        return $this->dnssec && $public ? Dnssec::ds($this->name, $public) : null;
     }
 }

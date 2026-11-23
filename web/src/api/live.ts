@@ -26,7 +26,11 @@ import type {
   DnsRecord,
   DnsAccount,
   DnsProvider,
+  DnsSecondaries,
   DnsZone,
+  DnssecParent,
+  DnssecRollover,
+  DsRecord,
   DnsZoneProvider,
   DomainVerification,
   Job,
@@ -46,6 +50,7 @@ import type {
   SetupChecklist,
   Snapshot,
   State,
+  TsigAlgorithm,
   UsageAlert,
   UsageAlertSettings,
   User,
@@ -212,10 +217,19 @@ interface ApiDnsRecord extends Omit<DnsRecord, "priority" | "managed"> { priorit
 interface ApiDnsZoneProvider extends Omit<DnsZoneProvider, "error" | "syncedAt" | "changes" | "imported" | "handover"> {
   error: string | null; syncedAt: string | null; changes: DnsZoneProvider["changes"] | null; imported: DnsZoneProvider["imported"] | null; handover: { endsAt: string | null } | null;
 }
-interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" | "createdAt" | "provider"> {
+interface ApiTsig { name: string; algorithm: TsigAlgorithm }
+export interface ApiDnsTransfers { addresses: string[]; notify: boolean; nameServers: string[]; tsig: ApiTsig | null; primaries: string[] }
+export interface ApiDnsSecondary { id: string; name: string; addresses: string[]; nameServer: string | null; tsig: ApiTsig | null; notify: boolean; catalog: boolean; createdAt: string | null }
+export interface ApiDnsSecondaries extends Omit<DnsSecondaries, "data"> { data: ApiDnsSecondary[] }
+interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" | "createdAt" | "provider" | "transfers"> {
   delegation: { state: DnsZone["delegation"]["state"]; nameServers: string[]; checkedAt: string | null };
+  transfers?: ApiDnsTransfers | null;
   // A panel API of an earlier release has no state and no provider.
-  dnssec: { enabled: boolean; state?: DnsZone["dnssec"]["state"]; ds: DnsZone["dnssec"]["ds"] | null; dnskey: string | null };
+  dnssec: {
+    enabled: boolean; state?: DnsZone["dnssec"]["state"]; ds: DsRecord | null; dnskey: string | null;
+    rollover?: (Omit<DnssecRollover, "startedAt" | "until"> & { startedAt: string | null; until: string | null }) | null;
+    parent?: (Omit<DnssecParent, "checkedAt"> & { checkedAt: string | null }) | null;
+  };
   provider?: ApiDnsZoneProvider | null;
   createdAt: string | null;
   records?: ApiDnsRecord[];
@@ -386,10 +400,20 @@ const toDnsZoneProvider = (p: ApiDnsZoneProvider): DnsZoneProvider => ({
 export const toDnsZone = (z: ApiDnsZone): DnsZone => ({
   ...z,
   delegation: { state: z.delegation.state, nameServers: z.delegation.nameServers ?? [], checkedAt: z.delegation.checkedAt ?? undefined },
-  dnssec: { enabled: z.dnssec.enabled, state: z.dnssec.state ?? (z.dnssec.enabled ? "active" : "off"), ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined },
+  dnssec: {
+    enabled: z.dnssec.enabled, state: z.dnssec.state ?? (z.dnssec.enabled ? "active" : "off"), ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined,
+    rollover: z.dnssec.rollover ? { ...z.dnssec.rollover, startedAt: z.dnssec.rollover.startedAt ?? undefined, until: z.dnssec.rollover.until ?? undefined } : undefined,
+    parent: z.dnssec.parent ? { ...z.dnssec.parent, checkedAt: z.dnssec.parent.checkedAt ?? undefined } : undefined,
+  },
   provider: z.provider ? toDnsZoneProvider(z.provider) : undefined,
+  transfers: z.transfers ? { ...z.transfers, tsig: z.transfers.tsig ?? undefined } : undefined,
   createdAt: z.createdAt ?? "",
   records: z.records?.map(toDnsRecord),
+});
+
+export const toDnsSecondaries = (s: ApiDnsSecondaries): DnsSecondaries => ({
+  ...s,
+  data: s.data.map((x) => ({ ...x, nameServer: x.nameServer ?? undefined, tsig: x.tsig ?? undefined, createdAt: x.createdAt ?? "" })),
 });
 
 /** The zones that the user opened. Each load reads their records again. */
@@ -511,6 +535,7 @@ export async function load(previous: State): Promise<State> {
     databaseServers,
     dns,
     dnsAccounts,
+    dnsSecondaries,
     exports,
     images,
     jobs,
@@ -547,6 +572,8 @@ export async function load(previous: State): Promise<State> {
     dns: optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
     // The accounts at external DNS providers, and the providers of the plugins.
     dnsAccounts: optional(request<{ data: ApiDnsAccount[]; providers: DnsProvider[] }>("GET", "/dns-accounts"), { data: [], providers: [] }),
+    // The secondary DNS servers of the panel, which copy all zones.
+    dnsSecondaries: admin ? optional(request<ApiDnsSecondaries>("GET", "/dns-secondaries").then(toDnsSecondaries), undefined) : Promise.resolve(undefined),
     // The account exports. A token with no exports scope gets none.
     exports: optional(request<{ data: AccountExport[] }>("GET", "/exports").then((r) => r.data), []),
     images: admin ? request<{ data: ApiImage[] }>("GET", "/images").then((r) => r.data) : Promise.resolve([] as ApiImage[]),
@@ -625,6 +652,7 @@ export async function load(previous: State): Promise<State> {
     nameServers: dns.nameServers ?? [],
     dnsAccounts: dnsAccounts.data.map(toDnsAccount),
     dnsProviders: dnsAccounts.providers,
+    dnsSecondaries,
     // The chain stays from the page of the certificate, while the certificate is the same.
     certificates: certificates.map((c) => {
       const next = toCertificate(c);

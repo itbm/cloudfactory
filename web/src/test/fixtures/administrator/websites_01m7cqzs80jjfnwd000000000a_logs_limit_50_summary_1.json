@@ -174,7 +174,7 @@
                     "proto": "HTTP/2.0",
                     "status": 304,
                     "sizeBytes": 0,
-                    "durationMs": 107.2,
+                    "durationMs": 107.1,
                     "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
                     "referer": "https://lawson.example.org/products"
                 }

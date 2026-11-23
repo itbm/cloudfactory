@@ -335,9 +335,13 @@ The product specification, section 6.4, gives the requirements.
   the mailbox keeps its password. The mail server can check these hashes.
 - A customer adds a domain that a different customer could own only after a DNS TXT record
   shows that the customer controls the domain, as for a website domain.
-- The mail server opens connections only to the DNS and to port 25 of public addresses. It
-  cannot connect to a service of the server, to a private network or to the metadata service
-  of a cloud provider.
+- The mail server opens connections only to the DNS and to the ports 25, 465, 587 and 2525 of
+  public addresses. The ports 465, 587 and 2525 are for an outbound relay. It cannot connect
+  to a service of the server, to a private network or to the metadata service of a cloud
+  provider.
+- The panel keeps the password of an outbound relay encrypted with the key of the
+  application. The job record does not have it: the panel adds it each time that it sends the
+  job. The API never shows it again.
 - The mail server refuses mail for a domain that it does not have (no open relay). A mail
   program must sign in to send mail.
 - A private key that the panel makes is protected with the password of the mailbox, and the
@@ -456,7 +460,11 @@ The product specification, section 6.4, gives the requirements.
 - The container `cf-dns` runs in gVisor with a Unix user that has no other work. It can read
   the zone files and cannot change them. It can write only its keys and signatures.
 - The private DNSSEC key of a zone is encrypted in the panel database. On a DNS server, only
-  the user `cf-dns` and root can read it.
+  the user `cf-dns` and root can read it. During a change of the key, the same is true for
+  the new key. The DNS servers remove the old key after the change.
+- The panel asks the public DNS for the DS records of each zone with DNSSEC each day. The page
+  of the zone shows a DS record for a different key, which stops the domain for the
+  resolvers that check DNSSEC.
 - The DNS server answers only for its zones. It has no recursion, and it limits the rate of
   the answers to one network.
 
@@ -480,6 +488,32 @@ The product specification, section 6.4, gives the requirements.
   `POWERDNS_ALLOW`. It checks each address of the host name, connects to the address that it
   checked, does not follow redirects, and needs HTTPS. Do the same in a plugin that connects to
   an address from a user.
+
+### Zone transfers to secondary DNS servers
+
+- A DNS server of the panel gives a zone transfer only to an address in the list of the
+  secondaries of the zone. A TSIG key signs the transfer and the NOTIFY messages, unless the
+  user turns off the key. Without a key, only the address limits the transfers.
+- The owner of a zone can give only public addresses for the transfers of the zone. The panel
+  and the agent refuse private, loopback, link-local, multicast and other special addresses,
+  and IPv4 addresses in IPv6 form. Thus a user cannot let a container or a different server
+  in a private network copy a zone. Only an administrator can give a private address, for a
+  secondary of the panel.
+- The panel keeps each TSIG secret encrypted. The secrets are not in the jobs table: the panel
+  adds them when it sends the job to the agent. On a DNS server, the secrets are in
+  `keys.conf`, which only root and the user `cf-dns` can read.
+- The API gives a secret only through the routes `GET /v1/dns-secondaries/{id}/secret` and
+  `GET /v1/dns-zones/{id}/transfers/secret`. Each user can call them 10 times in one minute,
+  and the audit log records each call. The other answers give only the name and the algorithm
+  of the key.
+- The panel makes each secret from random bytes: 32 bytes for HMAC-SHA256 and 64 bytes for
+  HMAC-SHA512. A user can give the secret of a secondary DNS service. It must have 16 to 64
+  bytes in base64.
+- The TSIG key of the transfers of one zone has the name `transfer.<zone>`. A secondary of the
+  panel cannot have a key name that starts with `transfer.`, so a key of one zone cannot open
+  the transfers of all zones.
+- Only an administrator can see and change the secondaries of the panel, because they copy
+  the zones of all customers.
 
 ## Account imports
 
@@ -1331,7 +1365,7 @@ The table also limits the outgoing connections:
 - On a server with email, the agent adds the file `/etc/cloudfactory/firewall/mail.nft`. It
   opens the mail ports 25, 465, 587 and 993 and redirects them to the ports of the mail
   container. The chain `mail` gets each new connection of the user `cf-mail`. It permits DNS
-  and port 25 of public addresses, and refuses all other connections.
+  and the ports 25, 465, 587 and 2525 of public addresses, and refuses all other connections.
 - The chain `webmail` gets each new connection of the user `cf-webmail`. It permits DNS, the
   edge proxy of the server (port 443, which the firewall sends to 8443) and port 443 of public
   addresses. It refuses all other addresses of the server and the private networks.

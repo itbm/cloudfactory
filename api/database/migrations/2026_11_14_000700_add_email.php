@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Schema;
  *
  * - "mail_hostname" of a server is the name that mail programs and other mail servers connect
  *   to. "mail_status" is null until an administrator turns email on.
+ * - "mail_settings" of a server has the spam filter and the outbound relay of its mail server
+ *   (App\Services\MailSettings). Null: the default settings. The panel keeps the password of
+ *   the relay encrypted in "mail_relay_password".
  * - A plan gives the number of mailboxes of a customer ("mailboxes", from the first release)
  *   and the total size of these mailboxes ("mail_storage_bytes").
  * - The panel keeps no mailbox password. It sends only a hash to the agent.
@@ -21,6 +24,8 @@ return new class extends Migration
         Schema::table('servers', function (Blueprint $table) {
             $table->string('mail_hostname')->nullable();
             $table->string('mail_status')->nullable();
+            $table->json('mail_settings')->nullable();
+            $table->text('mail_relay_password')->nullable();
         });
         Schema::table('plans', function (Blueprint $table) {
             $table->unsignedBigInteger('mail_storage_bytes')->default(10 * 1024 ** 3);
@@ -77,6 +82,6 @@ return new class extends Migration
         Schema::dropIfExists('mailboxes');
         Schema::dropIfExists('mail_domains');
         Schema::table('plans', fn (Blueprint $table) => $table->dropColumn('mail_storage_bytes'));
-        Schema::table('servers', fn (Blueprint $table) => $table->dropColumn(['mail_hostname', 'mail_status']));
+        Schema::table('servers', fn (Blueprint $table) => $table->dropColumn(['mail_hostname', 'mail_status', 'mail_settings', 'mail_relay_password']));
     }
 };
