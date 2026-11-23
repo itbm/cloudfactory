@@ -70,6 +70,18 @@ Usage:
   cf cron set WEBSITE CRON_ID [--schedule SCHEDULE] [--command COMMAND] [--on | --off]
   cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
   cf cron delete WEBSITE CRON_ID
+  cf uptime-checks list [WEBSITE] [--state up|down|pending|paused]
+                                                       The checks that are down come first.
+  cf uptime-checks get WEBSITE CHECK_ID                The state, the uptime and the incidents of a check.
+  cf uptime-checks add WEBSITE [--domain DOMAIN] [--path PATH] [--http] [--interval SECONDS] [--timeout SECONDS]
+                       [--status CODE] [--text TEXT] [--failures N] [--off]
+                                                       The panel requests the address on a schedule, and sends an email
+                                                       when it is down. The default is the primary domain, "/", every 300 seconds.
+  cf uptime-checks set WEBSITE CHECK_ID [--domain DOMAIN] [--path PATH] [--http | --https] [--interval SECONDS]
+                       [--timeout SECONDS] [--status CODE | --any-status] [--text TEXT | --no-text] [--failures N] [--on | --off]
+  cf uptime-checks run WEBSITE CHECK_ID                Request the address now. The exit code is 1 when the request fails.
+  cf uptime-checks remove WEBSITE CHECK_ID
+  cf uptime-checks incidents [--website WEBSITE] [--open]
   cf commands run WEBSITE [--timeout SECONDS] -- COMMAND...
                                                        Run one command line now in the container of the website, in /app, as
                                                        the user of the website. cf waits and shows the output. The exit code
@@ -573,6 +585,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.logs(ctx, sub, rest)
 	case "cron":
 		return a.cron(ctx, sub, rest)
+	case "uptime-checks", "uptime-check":
+		return a.uptime(ctx, sub, rest)
 	case "commands", "command":
 		return a.commands(ctx, sub, rest)
 	case "deploys", "deploy":

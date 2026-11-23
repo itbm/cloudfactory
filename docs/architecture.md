@@ -1041,6 +1041,72 @@ example `php artisan migrate --force` or `composer install`. The web panel has t
   sees "Administrator" or "Your provider" in place of the name of a person of the operator
   or of the reseller, and no IP address.
 
+### The web terminal
+
+A user can open a shell in the container of a website from the web panel (tab **Commands**,
+part **Terminal**). The shell runs as the website user, in `/app`, with the limits of the
+website. The command log keeps each command that the user types.
+
+```text
+ browser ── wss://<panel>/api/terminal/<session>/browser ──┐
+                                                           ▼
+                                   cf-panel-terminal (cf-terminal-relay)
+                                                           ▲
+ agent ──── wss://<panel>/api/terminal/<session>/agent ────┘
+   │
+   └── root helper ── PTY ── runuser … podman exec -it … sh -l (gVisor container)
+```
+
+1. The browser sends `POST /websites/{id}/terminal-sessions` with the size of the terminal.
+   The API makes a terminal session in the state `opening`, adds an entry to the audit log
+   and sends the job `OpenTerminal` to the agent. The answer has the path of the WebSocket
+   and a ticket for the browser.
+2. The browser connects to the relay with its ticket. The agent gets its own ticket in the
+   job, and it connects to the relay. The relay sends `{"type":"paired"}` to the two sides
+   when both are connected.
+3. The agent asks the root helper to start the shell in a PTY:
+   `runuser -u <user> -- podman exec -it --workdir /app <container> sh -c <script>`. The
+   script starts `bash -l`, or `sh -l` when the image has no bash.
+4. The relay copies each message to the other side and does not read it. A binary message
+   is keys (from the browser) or output (from the shell). A text message is JSON:
+   `{"type":"resize","cols":120,"rows":40}` from the browser, and
+   `{"type":"exit","code":0}` from the agent when the shell ends.
+5. The agent finds the command lines in the output of the PTY (`internal/termlog`). It sends
+   them to the panel each 2 seconds (`POST /api/agent/v1/terminal-sessions/{id}/commands`).
+   The panel adds each command to the command log of the website, with the source
+   `terminal`, the user and the IP address of the session.
+6. The agent also records the output in the asciicast v2 format, to 1 MiB. When the session
+   ends, the agent sends the reason, the exit code, the last commands and the recording
+   (`POST /api/agent/v1/terminal-sessions/{id}/end`).
+
+The relay is the unit `cf-panel-terminal` on the panel server. It runs `cf-terminal-relay`
+from the image of the panel API, on port 8090 in the container and on
+`169.254.77.1:19082` on the host. It reads only `APP_KEY` from `panel.env`, and it has no
+connection to the database. The edge Caddy sends `/api/terminal/*` to the relay. A remote
+agent connects to `https://<panel domain>` with the TLS settings of its connection to the
+panel. The agent on the panel server connects to `http://169.254.77.1:19082`.
+
+A ticket is `<time limit>.<HMAC>`. The HMAC is of the role, the session and the time limit,
+with a key that the API and the relay make from `APP_KEY`. A ticket is good for one
+connection. The ticket of the browser is good for 60 seconds. The ticket of the agent is good
+for 5 minutes. The panel does not keep the ticket of the agent: the agent client of the API
+adds it to the job when it sends the job.
+
+Limits:
+
+- A website can have 2 open terminals. The API and the agent have the same limit.
+- The API refuses a terminal when the website does not run or its customer is suspended.
+- The shell closes after 30 minutes with no input (`TMOUT`). The relay closes a session after
+  30 minutes with no message, and after 12 hours. The agent closes a session after 12 hours.
+- When the panel does not get the commands for 2 minutes, the agent closes the terminal.
+  Thus a user cannot type commands that the command log does not keep.
+- When the browser or the agent closes the connection, the agent sends `SIGHUP` to the shell.
+  `podman exec` does not stop the process in the container when its client stops.
+- A session with no end report after 12 hours and 10 minutes shows as closed, and it does not
+  count for the limit of 2.
+- `GET /websites/{id}/terminal-sessions/{sessionId}/recording` gives the recording as a file
+  (`application/x-asciicast`). The lists do not have the recording.
+
 ### Deploys from Git
 
 A website can have one Git source: a repository, a branch, a web directory, build commands,
@@ -1189,6 +1255,100 @@ How the panel makes a preview:
 - A CI pipeline can make a preview with `POST /api/v1/websites/<id>/previews`, or with
   `cf previews create`. This is for a Git host that the panel does not read.
 - The plugin events `website.created` and `website.removed` also occur for a preview.
+
+## Uptime checks
+
+An uptime check is an address of a website that the panel requests on a schedule. When the
+address does not answer, or gives a wrong answer, the panel sends an email to the users of the
+website. When the address answers correctly again, the panel sends a second email.
+
+```text
+ scheduler (each minute) ──► cloudfactory:uptime ──► queue: RunUptimeChecks (25 checks)
+                                                        │
+                                                        ▼
+                                Probe: DNS ──► public address? ──► HTTP GET (no redirect)
+                                                        │
+                                                        ▼
+                         Monitor::record ──► uptime_results, uptime_incidents ──► Notifier, Events
+```
+
+The code is in `api/app/Services/Uptime`. The API is in
+`api/app/Http/Controllers/Api/UptimeController.php`.
+
+![The Uptime tab of a website that is down: the cause, the uptime, the last 24 hours, the response time, the last 30 days and the incidents](screenshots/uptime/1-website-uptime.png)
+
+The page **Uptime checks** shows the checks of all websites that the user can see, the checks
+that are down first, and the last incidents.
+
+![The page Uptime checks of an administrator, with one website that is down](screenshots/uptime/2-uptime-checks.png)
+
+### A check
+
+- A check has a domain of the website, the protocol (HTTPS or HTTP), a path and a query.
+- A public website can have 5 checks. A private website and a worker have no public address,
+  so they have no checks.
+- The interval is 1, 2, 5, 10, 15, 30 or 60 minutes. The default is 5 minutes.
+- The timeout is from 2 to 30 seconds. The default is 10 seconds.
+- A request succeeds when the HTTP status is from 200 to 399. A check can expect one status,
+  for example 204.
+- A check can also expect a text. The panel looks for the text in the first 1 MiB of the
+  answer. Upper case and lower case are different.
+
+![The form of an uptime check](screenshots/uptime/3-change-check.png)
+
+### The requests
+
+- The panel sends the requests from the panel server. It does not use the agent of the
+  server of the website. Thus a check also finds a problem of the edge proxy or of the
+  network of the server.
+- Each minute, `php artisan cloudfactory:uptime` finds the checks that must run, and puts
+  jobs of 25 checks in the queue. A job sends its requests at the same time.
+- Before the requests, the panel finds the addresses of each domain. It refuses an address
+  that is not public, for example `10.0.0.5` or `127.0.0.1`. An address of a server of the
+  panel is permitted. Then the panel connects only to the addresses that it checked
+  (`CURLOPT_RESOLVE`). Thus a change of DNS between the check and the connection cannot send
+  the request to the private network of the panel.
+- The panel does not follow a redirect, because a redirect can go to a different host. A
+  redirect has a status from 300 to 399, so it succeeds.
+- The panel reads 1 MiB of each answer, and ignores the rest.
+- The user agent is `Cloudfactory-Uptime/1`.
+
+### Down and up again
+
+- One failed request does not make the check "down". The panel tries again within 1 minute.
+  After the number of failed requests in a row that the check has (2 by default), the state
+  is "down". The panel opens an incident and sends the email `uptime.down`.
+- The incident starts at the time of the first failed request.
+- The first request that succeeds closes the incident. The panel sends the email `uptime.up`
+  with the length of the incident.
+- When 5 or more checks on 3 or more servers have no connection at the same time, the
+  network of the panel is the probable cause. The panel records no result, writes a warning
+  to the log, and tries again after 1 minute.
+- A check pauses when it is off, when the website does not run, or when the customer or its
+  reseller is suspended. A paused check sends no request. An open incident closes with no
+  email, and has the mark "ended by pause".
+- A change of the address or of the expected answer starts the check again, with no state.
+
+### Results and uptime
+
+- The panel keeps each result for 8 days, and each closed incident for 90 days.
+  `php artisan cloudfactory:prune-uptime` removes the old rows each day.
+- The uptime is the part of the time with no open incident, for the last 24 hours, 7 days and
+  30 days. The time before the check was made does not count. The panel rounds the uptime
+  down to 2 decimals, so a short incident does not show as 100%.
+- The details of a check show the results of the last 24 hours in parts of 30 minutes, and
+  the uptime of each of the last 30 days.
+
+### Who gets the emails
+
+The users of the customer of the website, the users of its reseller and the administrators
+get the emails. The emails are on by default for the users of a customer and of a reseller,
+and off by default for an administrator. Each
+user can change this in **Settings**, **Notifications**. Refer to
+[Email notifications](email-notifications.md).
+
+Plugins with the scope `websites:read` get the events `uptime.down` and `uptime.up`. Refer to
+[Plugins](plugins.md#events).
 
 ## Databases
 

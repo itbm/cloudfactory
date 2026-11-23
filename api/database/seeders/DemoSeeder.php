@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Demo\DemoAcme;
 use App\Demo\DemoImport;
 use App\Demo\DemoMailDns;
+use App\Demo\DemoUptimeProbe;
 use App\Demo\StableValues;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
@@ -45,6 +46,8 @@ use App\Models\Rollout;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Snapshot;
+use App\Models\TerminalSession;
+use App\Models\UptimeCheck;
 use App\Models\UsageAlert;
 use App\Models\User;
 use App\Models\Website;
@@ -147,6 +150,7 @@ class DemoSeeder extends Seeder
         $this->settleMesh();
         $this->backups();
         $this->cronJobsAndDeploys();
+        $this->uptime();
         $this->commandLog();
         $this->mail();
         $this->jobsAndRollout();
@@ -1240,8 +1244,83 @@ class DemoSeeder extends Seeder
     }
 
     /**
-     * The command log (FR-802): commands that users ran with "Run a command". The owner sees the
-     * commands of the administrator as "Administrator", with no address.
+     * Uptime checks with the results of the last 26 hours and the incidents of the last 30
+     * days. The Node.js storefront is down: its page does not have the text of its check. The
+     * check of the stopped website is paused, and one check is off.
+     */
+    private function uptime(): void
+    {
+        $now = now()->utc()->startOfMinute();
+        // website, path, interval in seconds, keyword, on, days since the check was made, incidents (days ago, minutes, error)
+        $rows = [
+            ['acme.example.com', '/', 60, null, true, 60, [[3.4, 14, 'HTTP status 503.'], [12.2, 6, 'No answer in 10 seconds.']]],
+            ['shop.acme.example.com', '/', 60, null, true, 60, [[0.3, 4, 'HTTP status 502.']]],
+            ['shop.acme.example.com', '/wp-json/', 300, null, true, 40, []],
+            ['api.acme.example.com', '/up', 60, null, true, 30, [[1.1, 3, 'The server closed the connection with no answer.']]],
+            ['storefront.acme.example.com', '/', 300, 'Order now', true, 15, []],
+            ['old.acme.example.com', '/', 300, null, true, 60, []],
+            ['dashboard.acme.example.com', '/api/health', 60, null, false, 5, []],
+            ['northwind.example.com', '/', 300, null, true, 60, []],
+            ['cornerbakery.example.org', '/', 600, null, true, 60, [[2.2, 41, 'The TLS certificate is not valid: SSL certificate problem: certificate has expired']]],
+            ['harbourbooks.example.net', '/', 120, null, true, 35, []],
+        ];
+        // The storefront is down for 25 minutes: the new release of the page has no "Order now".
+        $downSince = $now->copy()->subMinutes(25);
+        $results = [];
+        foreach ($rows as [$name, $path, $interval, $keyword, $enabled, $days, $incidents]) {
+            $website = $this->websites[$name];
+            $running = $website->status->value === 'running';
+            $down = $name === 'storefront.acme.example.com';
+            $check = new UptimeCheck([
+                'website_id' => $website->id, 'domain_id' => $website->domains()->where('kind', DomainKind::Primary)->value('id'), 'scheme' => 'https', 'path' => $path,
+                'interval_seconds' => $interval, 'timeout_seconds' => 10, 'keyword' => $keyword, 'failures_before_alert' => 2, 'enabled' => $enabled,
+            ]);
+            $check->created_at = $now->copy()->subDays($days);
+            $check->save();
+            foreach ($incidents as [$ago, $minutes, $error]) {
+                $start = $now->copy()->subMinutes((int) round($ago * 1440));
+                $check->incidents()->create(['started_at' => $start, 'resolved_at' => $start->copy()->addMinutes($minutes), 'error' => $error]);
+            }
+            if (! $enabled || ! $running) {
+                $check->update(['state' => UptimeCheck::PENDING, 'state_changed_at' => $now->copy()->subDays(20)]);
+
+                continue;
+            }
+            $windows = $check->incidents()->get(['started_at', 'resolved_at'])->map(fn ($i) => [$i->started_at, $i->resolved_at, $i]);
+            $last = null;
+            for ($at = $now->copy()->subHours(26)->startOfHour(); $at <= $now; $at->addSeconds($interval)) {
+                $incident = $windows->first(fn ($w) => $at >= $w[0] && $at < $w[1]);
+                $failing = $down && $at >= $downSince;
+                $ms = DemoUptimeProbe::latency($name.$path, $at);
+                $last = [
+                    'uptime_check_id' => $check->id, 'checked_at' => $at->format('Y-m-d H:i:s'), 'ok' => ! $incident && ! $failing,
+                    'status' => $incident && ! str_starts_with($incident[2]->error, 'HTTP') ? null : ($incident ? (int) substr($incident[2]->error, 12, 3) : 200),
+                    'response_ms' => $incident && ! str_starts_with($incident[2]->error, 'HTTP') ? null : $ms,
+                    'error' => $incident ? $incident[2]->error : ($failing ? 'The answer does not have the text "Order now".' : null),
+                ];
+                $results[] = $last;
+                if (count($results) >= 500) {
+                    DB::table('uptime_results')->insert($results);
+                    $results = [];
+                }
+            }
+            $check->update([
+                'state' => $down ? UptimeCheck::DOWN : UptimeCheck::UP, 'state_changed_at' => $down ? $downSince : $now->copy()->subHours(30),
+                'failures' => $down ? 6 : 0, 'failing_since' => $down ? $downSince : null,
+                'last_checked_at' => $last['checked_at'], 'last_status' => $last['status'], 'last_response_ms' => $last['response_ms'], 'last_error' => $last['error'],
+                'next_check_at' => Carbon::parse($last['checked_at'], 'UTC')->addSeconds($interval),
+            ]);
+            if ($down) {
+                $check->incidents()->create(['started_at' => $downSince, 'error' => 'The answer does not have the text "Order now".']);
+            }
+        }
+        DB::table('uptime_results')->insert($results);
+    }
+
+    /**
+     * The command log (FR-802): commands that users ran with "Run a command" and in the web
+     * terminal. The owner sees the commands of the administrator as "Administrator", with no
+     * address.
      */
     private function commandLog(): void
     {
@@ -1266,6 +1345,43 @@ class DemoSeeder extends Seeder
                 'started_at' => now()->subMinutes($minutes), 'finished_at' => now()->subMinutes($minutes)->addSeconds($seconds),
             ]);
             $entry->created_at = $entry->updated_at = now()->subMinutes($minutes);
+            $entry->save();
+        }
+
+        // A session of the web terminal: its commands are in the log, and it has a recording.
+        $website = $this->websites['api.acme.example.com'];
+        $start = now()->subMinutes(60);
+        $session = new TerminalSession([
+            'website_id' => $website->id, 'customer_id' => $website->customer_id, 'user_id' => $owner->id, 'actor' => $owner->name,
+            'ip' => '203.0.113.'.(10 + $owner->id), 'state' => TerminalSession::ENDED, 'cols' => 100, 'rows' => 30,
+            'end_reason' => 'The shell ended.', 'exit_code' => 0, 'started_at' => $start, 'ended_at' => $start->copy()->addSeconds(48),
+        ]);
+        $session->created_at = $session->updated_at = $start;
+        // seconds after the start, command, output
+        $steps = [
+            [6, 'cd storage/logs', ''],
+            [11, 'ls -lh', "total 1.4G\r\n-rw-r--r-- 1 app app 1.4G Nov 22 09:12 laravel.log\r\n"],
+            [24, 'tail -n 2 laravel.log', "[2026-11-22 09:11:58] production.INFO: Order 10482 paid.\r\n[2026-11-22 09:12:03] production.ERROR: The export directory is not writable.\r\n"],
+            [45, 'exit', "logout\r\n"],
+        ];
+        $events = [[0.4, 'app@api:/app$ ']];
+        foreach ($steps as [$second, $command, $output]) {
+            // The shell shows the keys, and then the output and the next prompt.
+            $events[] = [$second - 2.5, $command];
+            $events[] = [$second, "\r\n".$output.($command === 'exit' ? '' : 'app@api:/app/storage/logs$ ')];
+        }
+        $session->recording = json_encode(['version' => 2, 'width' => 100, 'height' => 30, 'timestamp' => $start->getTimestamp(), 'env' => ['TERM' => 'xterm-256color']])."\n"
+            .implode('', array_map(fn ($e) => json_encode([$e[0], 'o', $e[1]], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n", $events));
+        $session->command_count = count($steps);
+        $session->save();
+        foreach ($steps as [$second, $command]) {
+            $at = $start->copy()->addSeconds($second);
+            $entry = new WebsiteCommand([
+                'website_id' => $website->id, 'customer_id' => $website->customer_id, 'user_id' => $owner->id, 'actor' => $owner->name,
+                'ip' => $session->ip, 'source' => WebsiteCommand::SOURCE_TERMINAL, 'terminal_session_id' => $session->id,
+                'command' => $command, 'state' => WebsiteCommand::DONE, 'started_at' => $at, 'finished_at' => $at,
+            ]);
+            $entry->created_at = $entry->updated_at = $at;
             $entry->save();
         }
     }

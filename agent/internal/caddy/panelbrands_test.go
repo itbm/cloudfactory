@@ -45,7 +45,7 @@ func TestResellerPanelDomains(t *testing.T) {
 	if err := c.SetPanelBrands(ctx, "panel.example.com", []string{"panel.agency.example"}); err == nil {
 		t.Fatal("brands with no panel route")
 	}
-	if err := c.ApplyPanel(ctx, "panel.example.com", PanelLetsEncrypt, 8080, 8081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.example.com", PanelLetsEncrypt, 8080, 8081, 8082); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.SetPanelBrands(ctx, "panel.example.com", []string{"Panel.Agency.com", "panel.agency.test", "panel.example.com", "panel.agency.com"}); err != nil {
@@ -65,7 +65,7 @@ func TestResellerPanelDomains(t *testing.T) {
 	}
 
 	// A new install of the panel keeps the reseller panel domains in the route.
-	if err := c.ApplyPanel(ctx, "panel.example.com", PanelLetsEncrypt, 8080, 8081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.example.com", PanelLetsEncrypt, 8080, 8081, 8082); err != nil {
 		t.Fatal(err)
 	}
 	if got := panelHosts(t, fake); len(got) != 3 {

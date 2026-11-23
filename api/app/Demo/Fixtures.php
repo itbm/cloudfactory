@@ -5,6 +5,7 @@ namespace App\Demo;
 use App\Models\Certificate;
 use App\Models\DnsZone;
 use App\Models\Import;
+use App\Models\UptimeCheck;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Contracts\Http\Kernel;
@@ -30,6 +31,8 @@ class Fixtures
         '/certificates',
         // Single sign-on.
         '/identity-providers',
+        // The page "Uptime" reads the checks and the incidents when the user opens it.
+        '/uptime-checks?perPage=100&page=1', '/uptime-incidents',
     ];
 
     /**
@@ -41,12 +44,16 @@ class Fixtures
         $token = $user->createToken('Fixtures')->plainTextToken;
         $paths = self::PATHS;
         // The web panel reads the databases and the snapshots of each website that the user can see.
-        // It reads the cron jobs, the command log, the deploys, the files, the logs and the
-        // protection of a website when the user opens that part of the website.
+        // It reads the cron jobs, the command log, the terminal sessions, the deploys, the files,
+        // the logs and the protection of a website when the user opens that part of the website.
         foreach (self::websites($user) as $id) {
-            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/commands", "/websites/{$id}/deploy", "/websites/{$id}/previews",
+            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/commands", "/websites/{$id}/terminal-sessions", "/websites/{$id}/deploy", "/websites/{$id}/previews",
                 "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200",
-                "/websites/{$id}/security", "/websites/{$id}/security/events");
+                "/websites/{$id}/security", "/websites/{$id}/security/events", "/websites/{$id}/uptime-checks");
+            // The tab "Uptime" of a website reads each check with its history.
+            foreach (UptimeCheck::where('website_id', $id)->orderBy('created_at')->pluck('id') as $check) {
+                $paths[] = "/websites/{$id}/uptime-checks/{$check}";
+            }
         }
         // The page of a DNS zone reads the zone with its records.
         $visible = $user->visibleCustomerIds();
