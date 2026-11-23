@@ -143,6 +143,9 @@ const (
 	AgentServiceRunCronJobProcedure = "/cloudfactory.agent.v1.AgentService/RunCronJob"
 	// AgentServiceRunCommandProcedure is the fully-qualified name of the AgentService's RunCommand RPC.
 	AgentServiceRunCommandProcedure = "/cloudfactory.agent.v1.AgentService/RunCommand"
+	// AgentServiceOpenTerminalProcedure is the fully-qualified name of the AgentService's OpenTerminal
+	// RPC.
+	AgentServiceOpenTerminalProcedure = "/cloudfactory.agent.v1.AgentService/OpenTerminal"
 	// AgentServiceDeployProcedure is the fully-qualified name of the AgentService's Deploy RPC.
 	AgentServiceDeployProcedure = "/cloudfactory.agent.v1.AgentService/Deploy"
 	// AgentServiceActivateReleaseProcedure is the fully-qualified name of the AgentService's
@@ -256,6 +259,12 @@ type AgentServiceClient interface {
 	// website, the same as a cron job. The job succeeds when the command ran, also when its exit
 	// code is not 0. The result has the exit code and the end of the output.
 	RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Opens a shell in the container of a website for the web terminal of the panel. The agent
+	// connects to the terminal relay of the panel, and the relay connects the agent to the
+	// browser. The shell runs as the Unix user of the website, in the gVisor sandbox. The job
+	// succeeds when the shell started. The agent then sends the commands of the session and its
+	// end to the panel (/api/agent/v1/terminal-sessions/...).
+	OpenTerminal(context.Context, *connect.Request[v1.OpenTerminalRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -545,6 +554,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("RunCommand")),
 			connect.WithClientOptions(opts...),
 		),
+		openTerminal: connect.NewClient[v1.OpenTerminalRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceOpenTerminalProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("OpenTerminal")),
+			connect.WithClientOptions(opts...),
+		),
 		deploy: connect.NewClient[v1.DeployRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceDeployProcedure,
@@ -743,6 +758,7 @@ type agentServiceClient struct {
 	setCronJobs           *connect.Client[v1.SetCronJobsRequest, v1.JobAccepted]
 	runCronJob            *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
 	runCommand            *connect.Client[v1.RunCommandRequest, v1.JobAccepted]
+	openTerminal          *connect.Client[v1.OpenTerminalRequest, v1.JobAccepted]
 	deploy                *connect.Client[v1.DeployRequest, v1.JobAccepted]
 	activateRelease       *connect.Client[v1.ActivateReleaseRequest, v1.JobAccepted]
 	installDependencies   *connect.Client[v1.InstallDependenciesRequest, v1.JobAccepted]
@@ -956,6 +972,11 @@ func (c *agentServiceClient) RunCommand(ctx context.Context, req *connect.Reques
 	return c.runCommand.CallUnary(ctx, req)
 }
 
+// OpenTerminal calls cloudfactory.agent.v1.AgentService.OpenTerminal.
+func (c *agentServiceClient) OpenTerminal(ctx context.Context, req *connect.Request[v1.OpenTerminalRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.openTerminal.CallUnary(ctx, req)
+}
+
 // Deploy calls cloudfactory.agent.v1.AgentService.Deploy.
 func (c *agentServiceClient) Deploy(ctx context.Context, req *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.deploy.CallUnary(ctx, req)
@@ -1130,6 +1151,12 @@ type AgentServiceHandler interface {
 	// website, the same as a cron job. The job succeeds when the command ran, also when its exit
 	// code is not 0. The result has the exit code and the end of the output.
 	RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Opens a shell in the container of a website for the web terminal of the panel. The agent
+	// connects to the terminal relay of the panel, and the relay connects the agent to the
+	// browser. The shell runs as the Unix user of the website, in the gVisor sandbox. The job
+	// succeeds when the shell started. The agent then sends the commands of the session and its
+	// end to the panel (/api/agent/v1/terminal-sessions/...).
+	OpenTerminal(context.Context, *connect.Request[v1.OpenTerminalRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1415,6 +1442,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("RunCommand")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceOpenTerminalHandler := connect.NewUnaryHandler(
+		AgentServiceOpenTerminalProcedure,
+		svc.OpenTerminal,
+		connect.WithSchema(agentServiceMethods.ByName("OpenTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceDeployHandler := connect.NewUnaryHandler(
 		AgentServiceDeployProcedure,
 		svc.Deploy,
@@ -1647,6 +1680,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceRunCronJobHandler.ServeHTTP(w, r)
 		case AgentServiceRunCommandProcedure:
 			agentServiceRunCommandHandler.ServeHTTP(w, r)
+		case AgentServiceOpenTerminalProcedure:
+			agentServiceOpenTerminalHandler.ServeHTTP(w, r)
 		case AgentServiceDeployProcedure:
 			agentServiceDeployHandler.ServeHTTP(w, r)
 		case AgentServiceActivateReleaseProcedure:
@@ -1854,6 +1889,10 @@ func (UnimplementedAgentServiceHandler) RunCronJob(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RunCommand is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) OpenTerminal(context.Context, *connect.Request[v1.OpenTerminalRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.OpenTerminal is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error) {

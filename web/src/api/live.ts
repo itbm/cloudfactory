@@ -129,6 +129,21 @@ async function send<T>(method: string, path: string, body: BodyInit | undefined,
   throw new LiveError(message, fields, res.status, data);
 }
 
+/** Reads a text that is not JSON, for example a recording of the terminal. */
+export async function requestText(path: string): Promise<string> {
+  const headers: Record<string, string> = { Accept: "*/*" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, { method: "GET", headers });
+  } catch {
+    throw new LiveError("The panel API does not answer. Check your connection and try again.");
+  }
+  if (res.ok) return res.text();
+  const data = await res.json().catch(() => ({}));
+  throw new LiveError((data as { message?: string }).message || `The panel API gave status ${res.status}.`, {}, res.status, data);
+}
+
 /** Reads all pages of a paginated list. Batch 1, finding 9: it reads each page, with no limit. */
 async function all<T>(path: string): Promise<T[]> {
   const out: T[] = [];

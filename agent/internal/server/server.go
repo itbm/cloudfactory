@@ -243,6 +243,10 @@ func (s *Service) RunCommand(_ context.Context, r *connect.Request[agentv1.RunCo
 	return s.submit(s.Deps.RunCommand(r.Msg))
 }
 
+func (s *Service) OpenTerminal(_ context.Context, r *connect.Request[agentv1.OpenTerminalRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.OpenTerminal(r.Msg))
+}
+
 func (s *Service) Deploy(_ context.Context, r *connect.Request[agentv1.DeployRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.Deploy(r.Msg))
 }

@@ -1265,9 +1265,15 @@ export interface CronJob {
 export interface WebsiteCommand {
   id: string;
   websiteId: string;
-  source: "run";
+  /**
+   * "run": the action "Run a command". "terminal": a command that a user typed in the web
+   * terminal. It has no exit code and no output: the recording of the session has the output.
+   */
+  source: "run" | "terminal";
+  /** The session of the web terminal of a command from the terminal. */
+  sessionId: string | null;
   command: string;
-  /** "done": the command ran and has an exit code. "failed": the command did not start. */
+  /** "done": the command ran. "failed": the command did not start. */
   state: "running" | "done" | "failed";
   exitCode: number | null;
   /** True when the server stopped the command at its time limit. */
@@ -1285,6 +1291,42 @@ export interface WebsiteCommand {
 }
 
 /** A page of the command log, the newest command first. */
+/** A session of the web terminal of a website. */
+export interface TerminalSession {
+  id: string;
+  websiteId: string;
+  /** "opening": the server connects. "failed": the terminal did not open. */
+  state: "opening" | "open" | "ended" | "failed";
+  /** Who opened the terminal. A user who must not see the person gets a role name in its place. */
+  actor: string;
+  ip: string | null;
+  jobId: string | null;
+  /** The text that the browser showed at the end, for example "The shell ended.". */
+  endReason: string | null;
+  exitCode: number | null;
+  commandCount: number;
+  hasRecording: boolean;
+  /** True when the recording stopped at its maximum size (1 MiB). */
+  recordingCut: boolean;
+  createdAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+/** The answer when a user opens the terminal: the browser connects at once to the WebSocket. */
+export interface TerminalOpening {
+  session: TerminalSession;
+  /** The path of the WebSocket on the panel domain, for example "/api/terminal/<id>/browser". */
+  path: string;
+  /** The ticket for the WebSocket. It is good for one connection and for 60 seconds. */
+  ticket: string;
+}
+
+export interface TerminalSessionPage {
+  data: TerminalSession[];
+  meta: { currentPage: number; lastPage: number; total: number };
+}
+
 export interface CommandLogPage {
   data: WebsiteCommand[];
   meta: { currentPage: number; lastPage: number; total: number };

@@ -234,6 +234,9 @@ type Deps struct {
 	// AgentBinary is the path of the program of the agent. The file manager starts it as the
 	// Unix user of a website. The default is "/usr/local/bin/cf-agent".
 	AgentBinary string
+	// TerminalPanel is the part of the client of the panel for the web terminal. Nil means
+	// that the agent cannot open a terminal.
+	TerminalPanel TerminalPanel
 	// CronLimit is the time limit of the command of a cron job. The default is 1 hour.
 	CronLimit time.Duration
 	// BuildLimit is the time limit of each step of a deploy that runs commands. The default
@@ -293,12 +296,15 @@ type Deps struct {
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	// packsMu protects packs: the packs whose runtimes the agent has loaded.
-	packsMu  sync.Mutex
-	packs    []packs.Pack
-	rtMu     sync.RWMutex
-	obs      observer
-	cron     cronRuns
-	commands commandRuns
+	packsMu   sync.Mutex
+	packs     []packs.Pack
+	rtMu      sync.RWMutex
+	obs       observer
+	cron      cronRuns
+	commands  commandRuns
+	terminals commandRuns
+	// terminalRuns counts the sessions of the web terminal that did not report their end.
+	terminalRuns sync.WaitGroup
 }
 
 // Images is the part of the shared image store that the actions use (images.Store).
