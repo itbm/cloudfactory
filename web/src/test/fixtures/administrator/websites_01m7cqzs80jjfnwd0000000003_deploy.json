@@ -1,0 +1,120 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000003/deploy",
+    "status": 200,
+    "body": {
+        "source": {
+            "repository": "git@github.com:acme-example/api.git",
+            "branch": "main",
+            "webDirectory": "public",
+            "trigger": "webhook",
+            "checkMinutes": 5,
+            "checkedAt": null,
+            "checkError": null,
+            "buildCommands": [
+                "composer install --no-dev --optimize-autoloader",
+                "ln -s /app/shared/.env .env"
+            ],
+            "migrationCommand": "php artisan migrate --force",
+            "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBGFsicoOPB94GHXd46pGtXfJNWuJHkgvh2yjrCBcolx cloudfactory-apiacme_97c4",
+            "webhookUrl": "http://localhost/api/v1/hooks/deploy/16H7ykJdTkG5pMRXURFTceWP4rPcblfCfP2PsKTbVQSmNGHN",
+            "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
+            "deployQueued": false,
+            "secrets": [
+                "COMPOSER_AUTH",
+                "SENTRY_AUTH_TOKEN"
+            ]
+        },
+        "releases": [
+            {
+                "id": "01m7cqzs80w9ds6h0000000006",
+                "branch": "main",
+                "commit": "58171700017f6b3733a0f69ad0e891530abf778e",
+                "message": "Update the dependencies and the lock file",
+                "state": "ready",
+                "live": true,
+                "trigger": "webhook",
+                "migration": true,
+                "healthError": null,
+                "durationSeconds": 375,
+                "error": null,
+                "jobId": null,
+                "createdAt": "2026-11-13T09:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80w9ds6h0000000005",
+                "branch": "main",
+                "commit": "5550538d6ad175218db88ee7e0c822787ad5e9cd",
+                "message": "Update the dependencies",
+                "state": "failed",
+                "live": false,
+                "trigger": "webhook",
+                "migration": false,
+                "healthError": null,
+                "durationSeconds": 22,
+                "error": "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.\n\n  Problem 1\n    - laravel/framework is locked to version v13.2.0 and an update of this package was not requested.",
+                "jobId": null,
+                "createdAt": "2026-11-13T08:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80w9ds6h0000000004",
+                "branch": "main",
+                "commit": "93f6a1bd1bf0e5366ff2eb2be12270897dcd83d9",
+                "message": "Show the stock of each warehouse",
+                "state": "failed",
+                "live": false,
+                "trigger": "webhook",
+                "migration": false,
+                "healthError": null,
+                "durationSeconds": 352,
+                "error": "the health check failed after the switch: 9 of 30 checks failed, last error: status 500",
+                "jobId": null,
+                "createdAt": "2026-11-12T08:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80w9ds6h0000000003",
+                "branch": "main",
+                "commit": "07399c19e4864b027ebc1c0fc6e084df04a445c8",
+                "message": "Use the new stock service",
+                "state": "ready",
+                "live": false,
+                "trigger": "webhook",
+                "migration": true,
+                "healthError": null,
+                "durationSeconds": 369,
+                "error": null,
+                "jobId": null,
+                "createdAt": "2026-11-11T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80w9ds6h0000000002",
+                "branch": "main",
+                "commit": "c1315bc5f1b1c93e6d0fca33cc9b97487dcfcb5d",
+                "message": "Cache the product list",
+                "state": "ready",
+                "live": false,
+                "trigger": "webhook",
+                "migration": false,
+                "healthError": null,
+                "durationSeconds": 364,
+                "error": null,
+                "jobId": null,
+                "createdAt": "2026-11-07T08:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80w9ds6h0000000001",
+                "branch": "main",
+                "commit": "07b07e10c8f4621a71466bb5c865f45cb825ae22",
+                "message": "Add the invoice endpoints",
+                "state": "removed",
+                "live": false,
+                "trigger": "manual",
+                "migration": true,
+                "healthError": null,
+                "durationSeconds": 371,
+                "error": null,
+                "jobId": null,
+                "createdAt": "2026-10-28T18:00:00+00:00"
+            }
+        ]
+    }
+}

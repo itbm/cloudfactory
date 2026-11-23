@@ -1,0 +1,16 @@
+{
+    "request": "GET /me/passkeys",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs801btxs80000000003",
+                "name": "MacBook Pro",
+                "domain": "panel.cloudfactory.io",
+                "synced": true,
+                "createdAt": "2026-08-16T10:00:00+00:00",
+                "lastUsedAt": "2026-11-14T09:35:00+00:00"
+            }
+        ]
+    }
+}

@@ -1,0 +1,65 @@
+{
+    "request": "GET /setup",
+    "status": 200,
+    "body": {
+        "complete": false,
+        "open": 3,
+        "items": [
+            {
+                "id": "backups",
+                "title": "Set the object storage for backups",
+                "state": "done",
+                "effect": "Without object storage, the panel makes no backups. A scheduled backup and a manual backup fail, and you cannot restore a website.",
+                "detail": "Backups go to s3:s3.eu-central.example/cloudfactory-backups.",
+                "action": {
+                    "label": "Set the object storage",
+                    "target": "/backups"
+                }
+            },
+            {
+                "id": "totp",
+                "title": "Turn on two-step sign-in for each administrator",
+                "state": "open",
+                "effect": "Without two-step sign-in, a person who learns the password of an administrator controls the panel and all its servers.",
+                "detail": "These administrators do not use two-step sign-in: Alex Admin (admin@example.com), Priya Operations (operations@example.com).",
+                "action": {
+                    "label": "Turn on two-step sign-in",
+                    "target": "/settings"
+                }
+            },
+            {
+                "id": "disk-limits",
+                "title": "Turn on disk limits on each server",
+                "state": "open",
+                "effect": "A server applies the disk limit of a plan with a user quota, or with a disk image for each new website. Without a disk limit, one website can fill the disk, and then all websites on that server stop.",
+                "detail": "These servers do not apply the disk limit of each website: web-1. The status of the server gives the cause. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to \"Disk quotas\" in the installation guide.",
+                "action": {
+                    "label": "Open the server",
+                    "target": "/servers/01m7cqzs807rnxfq0000000001"
+                }
+            },
+            {
+                "id": "panel-certificate",
+                "title": "Use a certificate that browsers trust for the panel",
+                "state": "open",
+                "effect": "The panel CA signs the certificate of a new panel. Browsers do not trust the panel CA, so each person who opens the panel sees a security warning.",
+                "detail": "The panel CA signs the certificate of panel.cloudfactory.io. Change to Let's Encrypt, or add the root certificate of the panel CA to each browser.",
+                "action": {
+                    "label": "Change the panel certificate",
+                    "target": "/settings/panel"
+                }
+            },
+            {
+                "id": "email",
+                "title": "Set up the SMTP server for email notifications",
+                "state": "done",
+                "effect": "The panel sends no email. Nobody gets an email about a failed job or backup, a certificate that expires, or a sign-in from a new device.",
+                "detail": "The SMTP server smtp.mail.example sends the emails.",
+                "action": {
+                    "label": "Set up email",
+                    "target": "/settings/email"
+                }
+            }
+        ]
+    }
+}

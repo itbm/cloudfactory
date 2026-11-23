@@ -5,12 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { getState } from "../api/store";
 import { browser } from "../lib/sso";
-import administrator from "../test/fixtures/administrator.json";
-import { panelApi, reset, signedIn } from "../test/panelApi";
+import type { IdentityProvider } from "../api/live";
+import { fixture, panelApi, reset, signedIn } from "../test/panelApi";
 
 // Single sign-on with OpenID Connect and SAML. The browser goes to the provider and comes back
 // to the panel API, which sends it to the web panel with a value after "#".
-const [GOOGLE, ENTRA] = administrator["GET /identity-providers"].body.data;
+const [GOOGLE, ENTRA] = fixture<{ data: IdentityProvider[] }>("administrator", "GET /identity-providers").body.data;
 const METHODS = { passwordReset: true, passkeys: false, providers: [{ id: GOOGLE.id, name: "Google Workspace" }] };
 
 afterEach(() => {

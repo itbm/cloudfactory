@@ -1,0 +1,256 @@
+{
+    "request": "GET /uptime-checks?perPage=100&page=1",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80ghhxm20000000005",
+                "websiteId": "01m7cqzs80jjfnwd0000000004",
+                "websiteName": "storefront.acme.example.com",
+                "domain": "storefront.acme.example.com",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://storefront.acme.example.com/",
+                "intervalSeconds": 300,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": "Order now",
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "down",
+                "pausedReason": null,
+                "since": "2026-11-14T09:35:00+00:00",
+                "failures": 6,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": false,
+                    "status": 200,
+                    "responseMs": 95,
+                    "error": "The answer does not have the text \"Order now\"."
+                },
+                "nextCheckAt": "2026-11-14T10:05:00+00:00",
+                "uptime": {
+                    "day": 98.26,
+                    "week": 99.75,
+                    "month": 99.88
+                },
+                "incident": {
+                    "id": "01m7cqzs80n49e1s0000000005",
+                    "startedAt": "2026-11-14T09:35:00+00:00",
+                    "resolvedAt": null,
+                    "durationSeconds": 1500,
+                    "error": "The answer does not have the text \"Order now\".",
+                    "endedByPause": false
+                },
+                "createdAt": "2026-10-30T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ghhxm20000000007",
+                "websiteId": "01m7cqzs80jjfnwd000000000d",
+                "websiteName": "dashboard.acme.example.com",
+                "domain": "dashboard.acme.example.com",
+                "scheme": "https",
+                "path": "/api/health",
+                "url": "https://dashboard.acme.example.com/api/health",
+                "intervalSeconds": 60,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": false,
+                "state": "paused",
+                "pausedReason": "The check is off.",
+                "since": null,
+                "failures": 0,
+                "lastCheckedAt": null,
+                "lastResult": null,
+                "nextCheckAt": null,
+                "uptime": {
+                    "day": null,
+                    "week": null,
+                    "month": null
+                },
+                "incident": null,
+                "createdAt": "2026-11-09T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ghhxm20000000006",
+                "websiteId": "01m7cqzs80jjfnwd0000000005",
+                "websiteName": "old.acme.example.com",
+                "domain": "old.acme.example.com",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://old.acme.example.com/",
+                "intervalSeconds": 300,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "paused",
+                "pausedReason": "The website does not run.",
+                "since": null,
+                "failures": 0,
+                "lastCheckedAt": null,
+                "lastResult": null,
+                "nextCheckAt": null,
+                "uptime": {
+                    "day": null,
+                    "week": null,
+                    "month": null
+                },
+                "incident": null,
+                "createdAt": "2026-09-15T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ghhxm20000000001",
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "websiteName": "acme.example.com",
+                "domain": "acme.example.com",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://acme.example.com/",
+                "intervalSeconds": 60,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 88,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:01:00+00:00",
+                "uptime": {
+                    "day": 100,
+                    "week": 99.86,
+                    "month": 99.95
+                },
+                "incident": null,
+                "createdAt": "2026-09-15T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ghhxm20000000004",
+                "websiteId": "01m7cqzs80jjfnwd0000000003",
+                "websiteName": "api.acme.example.com",
+                "domain": "api.acme.example.com",
+                "scheme": "https",
+                "path": "/up",
+                "url": "https://api.acme.example.com/up",
+                "intervalSeconds": 60,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 203,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:01:00+00:00",
+                "uptime": {
+                    "day": 100,
+                    "week": 99.97,
+                    "month": 99.99
+                },
+                "incident": null,
+                "createdAt": "2026-10-15T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ghhxm20000000002",
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "websiteName": "shop.acme.example.com",
+                "domain": "shop.acme.example.com",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://shop.acme.example.com/",
+                "intervalSeconds": 60,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 214,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:01:00+00:00",
+                "uptime": {
+                    "day": 99.72,
+                    "week": 99.96,
+                    "month": 99.99
+                },
+                "incident": null,
+                "createdAt": "2026-09-15T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ghhxm20000000003",
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "websiteName": "shop.acme.example.com",
+                "domain": "shop.acme.example.com",
+                "scheme": "https",
+                "path": "/wp-json/",
+                "url": "https://shop.acme.example.com/wp-json/",
+                "intervalSeconds": 300,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 189,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:05:00+00:00",
+                "uptime": {
+                    "day": 100,
+                    "week": 100,
+                    "month": 100
+                },
+                "incident": null,
+                "createdAt": "2026-10-05T10:00:00+00:00"
+            }
+        ],
+        "meta": {
+            "current_page": 1,
+            "last_page": 1,
+            "per_page": 100,
+            "total": 7
+        },
+        "summary": {
+            "total": 7,
+            "up": 4,
+            "down": 1,
+            "pending": 0,
+            "paused": 2
+        }
+    }
+}

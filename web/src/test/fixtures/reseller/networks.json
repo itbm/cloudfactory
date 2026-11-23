@@ -1,0 +1,49 @@
+{
+    "request": "GET /networks",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80cvkd1b0000000002",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "name": "default",
+                "isDefault": true,
+                "websiteIds": [
+                    "01m7cqzs80jjfnwd0000000006",
+                    "01m7cqzs80jjfnwd000000000e"
+                ],
+                "databaseServerIds": [
+                    "01m7cqzs80df38970000000004"
+                ],
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80cvkd1b0000000003",
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "name": "default",
+                "isDefault": true,
+                "websiteIds": [
+                    "01m7cqzs80jjfnwd0000000007"
+                ],
+                "databaseServerIds": [
+                    "01m7cqzs80df38970000000005"
+                ],
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80cvkd1b0000000004",
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "name": "default",
+                "isDefault": true,
+                "websiteIds": [
+                    "01m7cqzs80jjfnwd0000000008",
+                    "01m7cqzs80jjfnwd0000000009"
+                ],
+                "databaseServerIds": [
+                    "01m7cqzs80df38970000000006"
+                ],
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

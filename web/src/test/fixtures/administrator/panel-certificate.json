@@ -1,0 +1,20 @@
+{
+    "request": "GET /panel-certificate",
+    "status": 200,
+    "body": {
+        "domain": "panel.cloudfactory.io",
+        "method": "internal",
+        "state": "valid",
+        "expiresAt": "2027-02-07T10:00:00+00:00",
+        "caCertificate": "-----BEGIN CERTIFICATE-----\nMIIBQjCB9aADAgECAgh/7gPIZkuhwTAFBgMrZXAwJzElMCMGA1UEAwwcQ2xvdWRm\nYWN0b3J5IHBhbmVsIENBIChkZW1vKTAeFw0yNjExMTQxMDAwMDBaFw0zNjExMTEx\nMDAwMDBaMCcxJTAjBgNVBAMMHENsb3VkZmFjdG9yeSBwYW5lbCBDQSAoZGVtbykw\nKjAFBgMrZXADIQDpVoSa0Iw+ssPwkfenU0GxwVXw/5no4FjF9bFp68BDCaM/MD0w\nCwYDVR0PBAQDAgEGMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFM0mny5QujyG\nl2woaM9sTmCLAGYEMAUGAytlcANBADj79zKhHsmlJG5F8Vke9JgAULdGPkW5/FHM\nHGyx/m+59iZ2pL7qF85G2lPe8QCSqF76Uc3A4as2wXbPOFhycgQ=\n-----END CERTIFICATE-----\n",
+        "caSha256": "5bd710312c8c340d8e4abde7f84eaebbbcfbc642e961c57a568e36e5a35aa8be",
+        "reportedAt": "2026-11-14T10:00:00+00:00",
+        "letsEncryptAvailable": true,
+        "serversWithoutCa": [
+            "mail-1",
+            "web-2",
+            "web-3"
+        ],
+        "job": null
+    }
+}

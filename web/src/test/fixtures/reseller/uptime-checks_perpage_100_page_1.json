@@ -1,0 +1,123 @@
+{
+    "request": "GET /uptime-checks?perPage=100&page=1",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80ghhxm20000000009",
+                "websiteId": "01m7cqzs80jjfnwd0000000007",
+                "websiteName": "cornerbakery.example.org",
+                "domain": "cornerbakery.example.org",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://cornerbakery.example.org/",
+                "intervalSeconds": 600,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 96,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:10:00+00:00",
+                "uptime": {
+                    "day": 100,
+                    "week": 99.59,
+                    "month": 99.9
+                },
+                "incident": null,
+                "createdAt": "2026-09-15T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ghhxm2000000000a",
+                "websiteId": "01m7cqzs80jjfnwd0000000008",
+                "websiteName": "harbourbooks.example.net",
+                "domain": "harbourbooks.example.net",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://harbourbooks.example.net/",
+                "intervalSeconds": 120,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 134,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:02:00+00:00",
+                "uptime": {
+                    "day": 100,
+                    "week": 100,
+                    "month": 100
+                },
+                "incident": null,
+                "createdAt": "2026-10-10T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ghhxm20000000008",
+                "websiteId": "01m7cqzs80jjfnwd0000000006",
+                "websiteName": "northwind.example.com",
+                "domain": "northwind.example.com",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://northwind.example.com/",
+                "intervalSeconds": 300,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 134,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:05:00+00:00",
+                "uptime": {
+                    "day": 100,
+                    "week": 100,
+                    "month": 100
+                },
+                "incident": null,
+                "createdAt": "2026-09-15T10:00:00+00:00"
+            }
+        ],
+        "meta": {
+            "current_page": 1,
+            "last_page": 1,
+            "per_page": 100,
+            "total": 3
+        },
+        "summary": {
+            "total": 3,
+            "up": 3,
+            "down": 0,
+            "pending": 0,
+            "paused": 0
+        }
+    }
+}

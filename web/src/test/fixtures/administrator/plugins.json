@@ -1,0 +1,305 @@
+{
+    "request": "GET /plugins",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80p8bxkh0000000002",
+                "slug": "chat-alerts",
+                "name": "Chat alerts",
+                "version": "0.9.2",
+                "publisher": "Example Plugins Ltd",
+                "description": "Posts a message to a chat channel when a job fails.",
+                "enabled": true,
+                "baseUrl": "https://alerts.example.net",
+                "webhookUrl": "https://alerts.example.net/cloudfactory/events",
+                "scopes": [
+                    "customers:read",
+                    "websites:read"
+                ],
+                "events": [
+                    "job.finished",
+                    "customer.created"
+                ],
+                "pages": [],
+                "actions": [
+                    {
+                        "pluginId": "01m7cqzs80p8bxkh0000000002",
+                        "pluginName": "Chat alerts",
+                        "id": "notify",
+                        "title": "Send a test alert",
+                        "target": "customer",
+                        "confirm": "Send a test alert to the chat channel of this customer?",
+                        "roles": [
+                            "administrator",
+                            "reseller"
+                        ]
+                    }
+                ],
+                "hooks": [],
+                "commands": [],
+                "dnsProviders": [],
+                "image": null,
+                "hosting": null,
+                "signedBy": {
+                    "id": "01m7cqzs80ykv31f0000000001",
+                    "name": "Example Plugins Ltd",
+                    "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
+                    "createdAt": "2026-11-14T10:00:00+00:00"
+                },
+                "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
+                "tokenLastUsedAt": "2026-11-14T09:58:00+00:00",
+                "deliveries": {
+                    "delivered": 0,
+                    "pending": 1,
+                    "failed": 1,
+                    "last": {
+                        "id": "01m7cq9t40bn1sm10000000005",
+                        "event": "job.finished",
+                        "state": "pending",
+                        "attempts": 2,
+                        "responseStatus": 502,
+                        "error": "The webhook answered with HTTP status 502.",
+                        "payload": {
+                            "id": "01m7cq9t40bn1sm10000000005",
+                            "event": "job.finished",
+                            "createdAt": "2026-11-14T09:48:00+00:00",
+                            "data": {
+                                "title": "Back up website acme.example.com",
+                                "state": "succeeded"
+                            }
+                        },
+                        "createdAt": "2026-11-14T09:48:00+00:00",
+                        "deliveredAt": null
+                    }
+                },
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80p8bxkh0000000003",
+                "slug": "dns-cloudflare",
+                "name": "Cloudflare DNS",
+                "version": "1.0.0",
+                "publisher": "Cloudfactory",
+                "description": "Sends DNS zones to Cloudflare. The panel keeps the records, and the plugin makes the zone at Cloudflare the same after each change.",
+                "enabled": true,
+                "baseUrl": "http://127.0.0.1:8000/demo-plugins/dns-cloudflare",
+                "webhookUrl": null,
+                "scopes": [],
+                "events": [],
+                "pages": [],
+                "actions": [],
+                "hooks": [],
+                "commands": [],
+                "dnsProviders": [
+                    {
+                        "id": "cloudflare",
+                        "name": "Cloudflare",
+                        "path": "/dns/cloudflare",
+                        "dnssec": true,
+                        "types": [
+                            "A",
+                            "AAAA",
+                            "CNAME",
+                            "MX",
+                            "TXT",
+                            "SRV",
+                            "CAA",
+                            "NS"
+                        ],
+                        "credentials": [
+                            {
+                                "id": "apiToken",
+                                "label": "API token",
+                                "secret": true,
+                                "optional": false,
+                                "hint": "Give the token the permissions Zone: Read and DNS: Edit. To let the panel add and remove zones, also give Zone: Edit."
+                            },
+                            {
+                                "id": "accountId",
+                                "label": "Account ID",
+                                "secret": false,
+                                "optional": true,
+                                "hint": "Necessary only to add a zone that is not at Cloudflare yet. The ID is on the overview page of a zone."
+                            }
+                        ]
+                    }
+                ],
+                "image": null,
+                "hosting": null,
+                "signedBy": {
+                    "id": "01m7cqzs80ykv31f0000000001",
+                    "name": "Example Plugins Ltd",
+                    "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
+                    "createdAt": "2026-11-14T10:00:00+00:00"
+                },
+                "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
+                "tokenLastUsedAt": "2026-11-14T09:58:00+00:00",
+                "deliveries": {
+                    "delivered": 0,
+                    "pending": 0,
+                    "failed": 0,
+                    "last": null
+                },
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80p8bxkh0000000004",
+                "slug": "status-page",
+                "name": "Status page",
+                "version": "2.0.1",
+                "publisher": "Example Plugins Ltd",
+                "description": "A public status page for each customer, with the state of its websites.",
+                "enabled": true,
+                "baseUrl": "https://status-page.plugins.panel.example",
+                "webhookUrl": "https://status-page.plugins.panel.example/events",
+                "scopes": [
+                    "websites:read"
+                ],
+                "events": [
+                    "job.finished",
+                    "website.created",
+                    "website.removed"
+                ],
+                "pages": [],
+                "actions": [],
+                "hooks": [],
+                "commands": [],
+                "dnsProviders": [],
+                "image": {
+                    "ref": "ghcr.io/example-plugins/status-page:2.0.1",
+                    "digest": "sha256:2e6246d6e135ac873a5cec8e61433afb058dee8fbfd0960f8ac586df9b35af92",
+                    "port": 8080
+                },
+                "hosting": {
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "serverName": "web-1",
+                    "host": "status-page.plugins.panel.example",
+                    "status": "running"
+                },
+                "signedBy": {
+                    "id": "01m7cqzs80ykv31f0000000001",
+                    "name": "Example Plugins Ltd",
+                    "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
+                    "createdAt": "2026-11-14T10:00:00+00:00"
+                },
+                "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
+                "tokenLastUsedAt": "2026-11-14T09:59:00+00:00",
+                "deliveries": {
+                    "delivered": 0,
+                    "pending": 0,
+                    "failed": 0,
+                    "last": null
+                },
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80p8bxkh0000000001",
+                "slug": "uptime",
+                "name": "Uptime monitor",
+                "version": "1.4.0",
+                "publisher": "Example Plugins Ltd",
+                "description": "Checks each website every minute from three regions, and shows the uptime and the response time.",
+                "enabled": true,
+                "baseUrl": "http://127.0.0.1:8000/demo-plugins/uptime",
+                "webhookUrl": "http://127.0.0.1:8000/demo-plugins/uptime/hooks/cloudfactory",
+                "scopes": [
+                    "audit:read",
+                    "websites:read"
+                ],
+                "events": [
+                    "audit.recorded",
+                    "job.finished",
+                    "website.created"
+                ],
+                "pages": [
+                    {
+                        "pluginId": "01m7cqzs80p8bxkh0000000001",
+                        "pluginName": "Uptime monitor",
+                        "id": "status",
+                        "title": "Uptime",
+                        "url": "http://127.0.0.1:8000/demo-plugins/uptime/panel/status",
+                        "origin": "http://127.0.0.1:8000",
+                        "roles": [
+                            "administrator",
+                            "reseller",
+                            "owner"
+                        ]
+                    }
+                ],
+                "actions": [
+                    {
+                        "pluginId": "01m7cqzs80p8bxkh0000000001",
+                        "pluginName": "Uptime monitor",
+                        "id": "check",
+                        "title": "Check uptime now",
+                        "target": "website",
+                        "confirm": null,
+                        "roles": [
+                            "administrator",
+                            "reseller",
+                            "owner"
+                        ]
+                    }
+                ],
+                "hooks": [
+                    {
+                        "event": "website.removing",
+                        "path": "/hooks/before",
+                        "onError": "allow"
+                    }
+                ],
+                "commands": [
+                    {
+                        "name": "uptime",
+                        "description": "Shows the uptime of each website."
+                    }
+                ],
+                "dnsProviders": [],
+                "image": null,
+                "hosting": null,
+                "signedBy": {
+                    "id": "01m7cqzs80ykv31f0000000001",
+                    "name": "Example Plugins Ltd",
+                    "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
+                    "createdAt": "2026-11-14T10:00:00+00:00"
+                },
+                "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
+                "tokenLastUsedAt": "2026-11-14T09:58:00+00:00",
+                "deliveries": {
+                    "delivered": 3,
+                    "pending": 0,
+                    "failed": 0,
+                    "last": {
+                        "id": "01m7cpkv00bn1sm10000000002",
+                        "event": "job.finished",
+                        "state": "delivered",
+                        "attempts": 1,
+                        "responseStatus": 204,
+                        "error": null,
+                        "payload": {
+                            "id": "01m7cpkv00bn1sm10000000002",
+                            "event": "job.finished",
+                            "createdAt": "2026-11-14T09:36:00+00:00",
+                            "data": {
+                                "title": "Create website events.harbourbooks.example.net",
+                                "state": "succeeded"
+                            }
+                        },
+                        "createdAt": "2026-11-14T09:36:00+00:00",
+                        "deliveredAt": "2026-11-14T09:36:00+00:00"
+                    }
+                },
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

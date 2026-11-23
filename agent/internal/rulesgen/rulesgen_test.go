@@ -18,7 +18,7 @@ func TestGenerate(t *testing.T) {
 	for _, want := range []string{
 		"func TwoWords(s string) error { return ruleTwoWords.check(s) }",
 		"pattern:   regexp.MustCompile(`^[a-z]+/[a-z]+$`)",
-		`"twoWords": &ruleTwoWords`,
+		`rules["twoWords"] = &ruleTwoWords`,
 		`var reservedNames = []string{"a", "it's"}`,
 		"const MaxWords = 2",
 	} {
