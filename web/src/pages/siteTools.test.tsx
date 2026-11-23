@@ -210,7 +210,7 @@ describe("the deploys of a website", () => {
     api.change<Deploy>(`/websites/${id}/deploy`, (d) => { deploy = structuredClone(d); });
     api.on(`PUT /websites/${id}/deploy`, () => ({ ...deploy, source: { ...deploy.source!, trigger: "schedule", checkMinutes: 15, migrationCommand: null, webhookUrl: null } }));
     await screen.findByText("git@github.com:acme-example/api.git");
-    // The card of the previews can also have a button "Change", when its answer comes first.
+    // The card of the previews also has a "Change" button, when its settings load first.
     const repository = within(screen.getByRole("heading", { name: "Git repository" }).closest("section")!);
     fireEvent.click(repository.getByRole("button", { name: "Change" }));
     fireEvent.click(screen.getByRole("radio", { name: /^Schedule/ }));
