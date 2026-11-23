@@ -1,0 +1,57 @@
+{
+    "request": "GET /me/notification-preferences",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "event": "job.failed",
+                "label": "Failed jobs",
+                "description": "A change to a website, a database or a server did not complete.",
+                "email": true,
+                "required": false
+            },
+            {
+                "event": "backup.failed",
+                "label": "Failed backups",
+                "description": "A backup of a website did not complete.",
+                "email": true,
+                "required": false
+            },
+            {
+                "event": "certificate.expiring",
+                "label": "Certificates that expire soon",
+                "description": "The TLS certificate of a domain expires in 14 days or less, or the panel could not get one.",
+                "email": true,
+                "required": false
+            },
+            {
+                "event": "signin.new_device",
+                "label": "Sign-in from a new device",
+                "description": "Someone signed in to your user from a device or browser that the panel does not know.",
+                "email": true,
+                "required": true
+            },
+            {
+                "event": "usage.alert",
+                "label": "Usage alerts",
+                "description": "A website or the account uses almost all of a limit of its plan.",
+                "email": true,
+                "required": false
+            },
+            {
+                "event": "server.offline",
+                "label": "Servers that are offline",
+                "description": "A server did not report to the panel for 5 minutes.",
+                "email": true,
+                "required": false
+            },
+            {
+                "event": "password.reset",
+                "label": "Password reset",
+                "description": "Someone asked for a link to set a new password for your user.",
+                "email": true,
+                "required": true
+            }
+        ]
+    }
+}

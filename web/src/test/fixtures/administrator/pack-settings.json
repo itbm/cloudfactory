@@ -1,0 +1,7 @@
+{
+    "request": "GET /pack-settings",
+    "status": 200,
+    "body": {
+        "developerMode": false
+    }
+}

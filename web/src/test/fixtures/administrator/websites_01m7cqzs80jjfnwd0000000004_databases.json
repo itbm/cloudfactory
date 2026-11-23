@@ -1,0 +1,183 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000004/databases",
+    "status": 200,
+    "body": {
+        "prefix": "storefro_a970_",
+        "databases": [
+            {
+                "id": "01m7cqzs803h34e2000000000a",
+                "engine": "mariadb",
+                "name": "storefro_a970_orders",
+                "databaseServerId": "01m7cqzs80df38970000000008",
+                "host": "mariadb-reports.internal",
+                "port": 3306,
+                "sizeBytes": 54525952,
+                "number": null,
+                "keys": null
+            }
+        ],
+        "users": [
+            {
+                "id": "01m7cqzs80nsqn8g000000000b",
+                "engine": "mariadb",
+                "name": "storefro_a970_orders",
+                "access": "website",
+                "databaseServerId": "01m7cqzs80df38970000000008",
+                "grants": [
+                    {
+                        "databaseId": "01m7cqzs803h34e2000000000a",
+                        "database": "storefro_a970_orders",
+                        "privileges": "readwrite"
+                    }
+                ]
+            }
+        ],
+        "servers": [
+            {
+                "id": "01m7cqzs80df38970000000001",
+                "name": "mariadb-1",
+                "engine": "mariadb",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "status": "running",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "networkHost": "mariadb-1.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 1073741824,
+                    "diskBytes": 10737418240
+                },
+                "usage": {
+                    "memoryBytes": 722993152,
+                    "diskBytes": 2388656128,
+                    "diskSizeBytes": 10737418240
+                },
+                "databases": 2,
+                "maxDatabases": 20,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "remote": true
+            },
+            {
+                "id": "01m7cqzs80df38970000000008",
+                "name": "mariadb-reports",
+                "engine": "mariadb",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000001",
+                "status": "running",
+                "host": "mariadb.internal",
+                "port": 3307,
+                "networkHost": "mariadb-reports.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 1,
+                    "memoryBytes": 536870912,
+                    "diskBytes": 2147483648
+                },
+                "usage": {
+                    "memoryBytes": 100663296,
+                    "diskBytes": 73400320,
+                    "diskSizeBytes": 2147483648
+                },
+                "databases": 1,
+                "maxDatabases": 5,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "remote": true
+            },
+            {
+                "id": "01m7cqzs80df38970000000009",
+                "name": "mysql-1",
+                "engine": "mysql",
+                "engineVersion": "8.4",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "status": "running",
+                "host": "mysql-1.internal",
+                "port": 3306,
+                "networkHost": "mysql-1.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 1073741824,
+                    "diskBytes": 10737418240
+                },
+                "usage": {
+                    "memoryBytes": 325058560,
+                    "diskBytes": 241172480,
+                    "diskSizeBytes": 10737418240
+                },
+                "databases": 1,
+                "maxDatabases": 20,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "remote": true
+            },
+            {
+                "id": "01m7cqzs80df38970000000003",
+                "name": "postgresql-1",
+                "engine": "postgresql",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "status": "running",
+                "host": "postgres.internal",
+                "port": 5432,
+                "networkHost": "postgresql-1.internal",
+                "networkPort": 5432,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 1073741824,
+                    "diskBytes": 10737418240
+                },
+                "usage": {
+                    "memoryBytes": 167772160,
+                    "diskBytes": 167772160,
+                    "diskSizeBytes": 10737418240
+                },
+                "databases": 1,
+                "maxDatabases": 20,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "remote": true
+            },
+            {
+                "id": "01m7cqzs80df38970000000002",
+                "name": "valkey-1",
+                "engine": "valkey",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "status": "running",
+                "host": "valkey.internal",
+                "port": 6379,
+                "networkHost": "valkey-1.internal",
+                "networkPort": 6379,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 1073741824,
+                    "diskBytes": 10737418240
+                },
+                "usage": {
+                    "memoryBytes": 159383552,
+                    "diskBytes": 134217728,
+                    "diskSizeBytes": 10737418240
+                },
+                "databases": 2,
+                "maxDatabases": 20,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "remote": true
+            }
+        ]
+    }
+}

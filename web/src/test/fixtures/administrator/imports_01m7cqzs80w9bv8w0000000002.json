@@ -1,0 +1,106 @@
+{
+    "request": "GET /imports/01m7cqzs80w9bv8w0000000002",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs80w9bv8w0000000002",
+        "status": "done",
+        "source": "url",
+        "fileName": "user.admin.harbour.tar.zst",
+        "sizeBytes": 4519362560,
+        "receivedBytes": 0,
+        "panel": "directadmin",
+        "panelName": "DirectAdmin",
+        "account": "harbour",
+        "customerId": "01m7cqzs80h56kh10000000003",
+        "customerName": "Harbour Books",
+        "serverId": "01m7cqzs807rnxfq0000000002",
+        "serverName": "web-2",
+        "error": null,
+        "counts": null,
+        "progress": {
+            "total": 8,
+            "done": 7,
+            "failed": 1
+        },
+        "createdAt": "2026-10-04T10:00:00+00:00",
+        "startedAt": "2026-10-04T10:09:00+00:00",
+        "finishedAt": "2026-10-04T10:31:00+00:00",
+        "customer": null,
+        "warnings": [],
+        "plan": null,
+        "items": [
+            {
+                "id": "i1",
+                "kind": "website",
+                "name": "harbourbooks.example.net",
+                "state": "done",
+                "error": null,
+                "detail": null,
+                "jobId": null
+            },
+            {
+                "id": "i2",
+                "kind": "domain",
+                "name": "www.harbourbooks.example.net",
+                "state": "done",
+                "error": null,
+                "detail": null,
+                "jobId": null
+            },
+            {
+                "id": "i3",
+                "kind": "database",
+                "name": "harbour_shop",
+                "state": "done",
+                "error": null,
+                "detail": "New name: harbourb_fe76_shop",
+                "jobId": null
+            },
+            {
+                "id": "i4",
+                "kind": "cronJob",
+                "name": "*/5 * * * * php /home/harbour/domains/harbourbooks.example.net/public_html/wp-cron.php",
+                "state": "done",
+                "error": null,
+                "detail": null,
+                "jobId": null
+            },
+            {
+                "id": "i5",
+                "kind": "dnsZone",
+                "name": "harbourbooks.example.net",
+                "state": "done",
+                "error": null,
+                "detail": "9 records added",
+                "jobId": null
+            },
+            {
+                "id": "i6",
+                "kind": "dump",
+                "name": "harbourb_fe76_shop",
+                "state": "done",
+                "error": null,
+                "detail": "Dump loaded",
+                "jobId": null
+            },
+            {
+                "id": "i7",
+                "kind": "files",
+                "name": "harbourbooks.example.net",
+                "state": "done",
+                "error": null,
+                "detail": "18204 files copied, database settings changed in wp-config.php",
+                "jobId": null
+            },
+            {
+                "id": "i8",
+                "kind": "website",
+                "name": "events.harbourbooks.example.net",
+                "state": "failed",
+                "error": "A website with this name exists.",
+                "detail": null,
+                "jobId": null
+            }
+        ]
+    }
+}

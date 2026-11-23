@@ -20,16 +20,75 @@ class Fixtures
     /** One user of each role in the sample data. */
     public const USERS = ['administrator' => 'admin@example.com', 'reseller' => 'reseller@example.com', 'owner' => 'owner@example.com'];
 
-    /** The requests that the web panel sends when it loads (web/src/api/live.ts). */
+    /**
+     * The requests that the web panel sends when it loads (web/src/api/live.ts). Keep one path on
+     * each line, in alphabetical order, so that two pull requests that add paths do not conflict.
+     */
     public const PATHS = [
-        '/me', '/me/passkeys', '/me/identities', '/websites?perPage=100&page=1', '/jobs?perPage=50', '/customers', '/plans', '/tokens', '/backup-policy', '/servers', '/images',
-        '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/database-engines', '/dns-zones', '/dns-accounts', '/mesh', '/networks', '/usage-alerts',
-        '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
-        '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
-        '/plugin-pages', '/plugin-actions', '/plugins', '/trusted-keys', '/plugin-settings', '/packs', '/pack-settings', '/imports',
+        '/account',
+        '/audit?perPage=100',
+        '/backup-policy',
         '/certificates',
-        // Single sign-on.
+        '/customers',
+        '/database-engines',
+        '/database-servers',
+        '/dns-accounts',
+        '/dns-zones',
         '/identity-providers',
+        '/images',
+        '/imports',
+        '/jobs?perPage=50',
+        '/mail-clusters',
+        '/mail-server',
+        '/mail/aliases',
+        '/mail/domains',
+        '/mail/mailboxes',
+        '/me',
+        '/me/identities',
+        '/me/notification-preferences',
+        '/me/passkeys',
+        '/mesh',
+        '/networks',
+        '/notification-templates',
+        '/notifications?perPage=50',
+        '/pack-settings',
+        '/packs',
+        '/panel-certificate',
+        '/plans',
+        '/plugin-actions',
+        '/plugin-pages',
+        '/plugin-settings',
+        '/plugins',
+        '/rollouts',
+        '/runtime-images',
+        '/servers',
+        '/setup',
+        '/tokens',
+        '/trusted-keys',
+        '/usage-alerts',
+        '/users',
+        '/websites?perPage=100&page=1',
+    ];
+
+    /**
+     * The requests for each website that the user can see, with "{id}" for the ID of the website.
+     * The web panel reads them when the user opens that part of the website. One path on each
+     * line, in alphabetical order.
+     */
+    public const WEBSITE_PATHS = [
+        '/websites/{id}/commands',
+        '/websites/{id}/cron-jobs',
+        '/websites/{id}/databases',
+        '/websites/{id}/deploy',
+        '/websites/{id}/files/content?path=%2Fpublic%2Findex.php',
+        '/websites/{id}/files?path=%2F',
+        '/websites/{id}/files?path=%2Fpublic',
+        '/websites/{id}/logs?lines=200',
+        '/websites/{id}/previews',
+        '/websites/{id}/security',
+        '/websites/{id}/security/events',
+        '/websites/{id}/snapshots',
+        '/websites/{id}/terminal-sessions',
     ];
 
     /**
@@ -40,13 +99,10 @@ class Fixtures
         $user = User::where('email', self::USERS[$role])->firstOrFail();
         $token = $user->createToken('Fixtures')->plainTextToken;
         $paths = self::PATHS;
-        // The web panel reads the databases and the snapshots of each website that the user can see.
-        // It reads the cron jobs, the command log, the terminal sessions, the deploys, the files,
-        // the logs and the protection of a website when the user opens that part of the website.
         foreach (self::websites($user) as $id) {
-            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/commands", "/websites/{$id}/terminal-sessions", "/websites/{$id}/deploy", "/websites/{$id}/previews",
-                "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200",
-                "/websites/{$id}/security", "/websites/{$id}/security/events");
+            foreach (self::WEBSITE_PATHS as $path) {
+                $paths[] = str_replace('{id}', $id, $path);
+            }
         }
         // The page of a DNS zone reads the zone with its records.
         $visible = $user->visibleCustomerIds();
@@ -86,6 +142,69 @@ class Fixtures
         }
 
         return $query->pluck('id')->all();
+    }
+
+    /**
+     * Writes one file for each answer in the directory of a role, and removes the files of
+     * requests that the panel does not send now. A file has the request, the status and the body.
+     *
+     * @param  array<string, array{status: int, body: mixed}>  $answers  "GET /path" => the answer
+     * @return int the number of files
+     */
+    public static function write(string $directory, array $answers): int
+    {
+        if (! is_dir($directory) && ! mkdir($directory, 0755, true)) {
+            throw new \RuntimeException("Cannot make the directory {$directory}.");
+        }
+        $files = [];
+        foreach ($answers as $request => $answer) {
+            $name = self::fileName($request);
+            if (isset($files[$name])) {
+                throw new \LogicException("The requests \"{$files[$name]}\" and \"{$request}\" have the same fixture file {$name}.");
+            }
+            $files[$name] = $request;
+            $json = json_encode(['request' => $request, ...$answer], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n";
+            $path = "{$directory}/{$name}";
+            if (! is_file($path) || file_get_contents($path) !== $json) {
+                file_put_contents($path, $json);
+            }
+        }
+        foreach (glob("{$directory}/*.json") ?: [] as $path) {
+            if (! isset($files[basename($path)])) {
+                unlink($path);
+            }
+        }
+
+        return count($files);
+    }
+
+    /**
+     * Reads the files of a role that write() made.
+     *
+     * @return array<string, array{status: int, body: mixed}> "GET /path" => the answer, in the order of the requests
+     */
+    public static function read(string $directory): array
+    {
+        $answers = [];
+        foreach (glob("{$directory}/*.json") ?: [] as $path) {
+            $file = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+            $answers[$file['request']] = ['status' => $file['status'], 'body' => $file['body']];
+        }
+        ksort($answers);
+
+        return $answers;
+    }
+
+    /**
+     * The name of the file of a request: the path in lower case, with "_" in the place of each
+     * other character. For example "GET /websites?perPage=100&page=1" has the file
+     * "websites_perpage_100_page_1.json".
+     */
+    public static function fileName(string $request): string
+    {
+        $path = strtolower((string) preg_replace('/^GET /', '', $request));
+
+        return trim((string) preg_replace('/[^a-z0-9-]+/', '_', $path), '_').'.json';
     }
 
     /**

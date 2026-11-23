@@ -1,0 +1,801 @@
+{
+    "request": "GET /websites?perPage=100&page=1",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80jjfnwd0000000001",
+                "name": "acme.example.com",
+                "application": "WordPress",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "acmeexam_322a",
+                "networkHost": "acmeexam-322a.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000001",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
+                    "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
+                    "signatureVerified": true,
+                    "phpVersion": "8.4",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2028-12-31"
+                },
+                "updateReady": true,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": false,
+                "usage": {
+                    "cpuPercent": 18,
+                    "memoryBytes": 432013312,
+                    "diskBytes": 6501171200,
+                    "processes": 24
+                },
+                "bandwidthBytes": 37094879522,
+                "domains": [
+                    {
+                        "name": "acme.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-18T10:00:00+00:00",
+                            "source": "acme",
+                            "certificateId": "01m7cqzs806jdytz0000000001"
+                        }
+                    },
+                    {
+                        "name": "www.acme.example.com",
+                        "kind": "redirect",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-18T10:00:00+00:00",
+                            "source": "acme",
+                            "certificateId": "01m7cqzs806jdytz0000000001"
+                        }
+                    },
+                    {
+                        "name": "acme-outlet.example.com",
+                        "kind": "alias",
+                        "verified": false,
+                        "verification": {
+                            "type": "TXT",
+                            "name": "_cloudfactory-challenge.acme-outlet.example.com",
+                            "value": "cf-569ca459088702f59451c692e6844f4be8a65912"
+                        },
+                        "dnsPointsHere": false,
+                        "certificate": {
+                            "state": "pending",
+                            "expiresAt": null,
+                            "source": "automatic",
+                            "certificateId": null
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": true,
+                    "host": "web-1.panel.example",
+                    "port": 2222,
+                    "username": "acmeexam_322a",
+                    "authorizedKeys": [
+                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGh0dHBzOi8vY2xvdWRmYWN0b3J5LmV4YW1wbGUvZGVtbw olu@laptop"
+                    ]
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2025-10-30T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd0000000003",
+                "name": "api.acme.example.com",
+                "application": "Laravel",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "apiacme_97c4",
+                "networkHost": "apiacme-97c4.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000002",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
+                    "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
+                    "signatureVerified": true,
+                    "phpVersion": "8.5",
+                    "version": null,
+                    "workerMode": true,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": "releases/01m7cqzs80w9ds6h0000000006/public",
+                    "supportEndsAt": "2029-12-31"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": false,
+                "usage": {
+                    "cpuPercent": 9,
+                    "memoryBytes": 314572800,
+                    "diskBytes": 880803840,
+                    "processes": 12
+                },
+                "bandwidthBytes": 12257847697,
+                "domains": [
+                    {
+                        "name": "api.acme.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-18T10:00:00+00:00",
+                            "source": "acme",
+                            "certificateId": "01m7cqzs806jdytz0000000001"
+                        }
+                    },
+                    {
+                        "name": "api.acme.test",
+                        "kind": "alias",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-02-02T10:00:00+00:00",
+                            "source": "automatic",
+                            "certificateId": null
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-1.panel.example",
+                    "port": 2222,
+                    "username": "apiacme_97c4",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-08-11T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd000000000d",
+                "name": "dashboard.acme.example.com",
+                "application": "Next.js",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "dashboar_bbf4",
+                "networkHost": "dashboar-bbf4.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": "npm start",
+                "installCommand": "npm ci --omit=dev",
+                "environment": [
+                    "DATABASE_URL",
+                    "NODE_ENV",
+                    "SESSION_SECRET"
+                ],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000006",
+                    "family": "node",
+                    "image": "ghcr.io/itbm/node24:0.1.9",
+                    "digest": "sha256:80bceee760b2d0b9904c41b6dc7939e5116421c2ba15c13c9cfa6a3e723bf777",
+                    "signatureVerified": true,
+                    "phpVersion": null,
+                    "version": "24",
+                    "workerMode": false,
+                    "extensions": [],
+                    "phpIni": [],
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2028-04-30"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": true,
+                "usage": {
+                    "cpuPercent": 6,
+                    "memoryBytes": 335544320,
+                    "diskBytes": 639631360,
+                    "processes": 11
+                },
+                "bandwidthBytes": 0,
+                "domains": [
+                    {
+                        "name": "dashboard.acme.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-18T10:00:00+00:00",
+                            "source": "acme",
+                            "certificateId": "01m7cqzs806jdytz0000000001"
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-2.panel.example",
+                    "port": 2222,
+                    "username": "dashboar_bbf4",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-11-06T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd0000000005",
+                "name": "old.acme.example.com",
+                "application": "Website",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "oldacme_ab58",
+                "networkHost": "oldacme-ab58.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "stopped",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000003",
+                    "family": "apache-php-fpm",
+                    "image": "ghcr.io/itbm/apache-php8.4:0.1.9",
+                    "digest": "sha256:2c769f34728835f87dbb42aa4aeb6b443fd1ec20ce7100ba72602ebea79af8d2",
+                    "signatureVerified": true,
+                    "phpVersion": "8.4",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2027-01-13"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": false,
+                "usage": {
+                    "cpuPercent": 0,
+                    "memoryBytes": 0,
+                    "diskBytes": 1992294400,
+                    "processes": 0
+                },
+                "bandwidthBytes": 0,
+                "domains": [
+                    {
+                        "name": "old.acme.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-18T10:00:00+00:00",
+                            "source": "acme",
+                            "certificateId": "01m7cqzs806jdytz0000000001"
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-1.panel.example",
+                    "port": 2222,
+                    "username": "oldacme_ab58",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2025-10-20T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd000000000b",
+                "name": "orders-1c16.internal",
+                "application": "Orders API",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "orders_1c16",
+                "networkHost": "orders-1c16.internal",
+                "networkPort": 80,
+                "kind": "private",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000002",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
+                    "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
+                    "signatureVerified": true,
+                    "phpVersion": "8.5",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2029-12-31"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": true,
+                "usage": {
+                    "cpuPercent": 4,
+                    "memoryBytes": 188743680,
+                    "diskBytes": 220200960,
+                    "processes": 8
+                },
+                "bandwidthBytes": 0,
+                "domains": [],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-2.panel.example",
+                    "port": 2222,
+                    "username": "orders_1c16",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-11-02T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd000000000f",
+                "name": "pr-42.preview.acme.example.com",
+                "application": "Preview of api.acme.example.com, pull request #42",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "pr42prev_4448",
+                "networkHost": "pr42prev-4448.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000002",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
+                    "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
+                    "signatureVerified": true,
+                    "phpVersion": "8.5",
+                    "version": null,
+                    "workerMode": true,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": "releases/01m7cqzs80w9ds6h0000000008/public",
+                    "supportEndsAt": "2029-12-31"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": false,
+                "usage": {
+                    "cpuPercent": 2,
+                    "memoryBytes": 188743680,
+                    "diskBytes": 325058560,
+                    "processes": 6
+                },
+                "bandwidthBytes": 0,
+                "domains": [
+                    {
+                        "name": "pr-42.preview.acme.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-02-11T10:00:00+00:00",
+                            "source": "automatic",
+                            "certificateId": null
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-1.panel.example",
+                    "port": 2222,
+                    "username": "pr42prev_4448",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": {
+                    "websiteId": "01m7cqzs80jjfnwd0000000003",
+                    "number": 42,
+                    "branch": "feature/invoice-csv",
+                    "title": "Add the export of invoices as CSV",
+                    "url": "https://github.com/acme-example/api/pull/42"
+                },
+                "managedByTerraform": false,
+                "createdAt": "2026-11-14T05:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd000000000c",
+                "name": "queue-00b1.internal",
+                "application": "Queue worker",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "queue_00b1",
+                "networkHost": null,
+                "networkPort": null,
+                "kind": "worker",
+                "command": "php artisan queue:work --tries=3",
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000002",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
+                    "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
+                    "signatureVerified": true,
+                    "phpVersion": "8.5",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2029-12-31"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": false,
+                "usage": {
+                    "cpuPercent": 3,
+                    "memoryBytes": 146800640,
+                    "diskBytes": 94371840,
+                    "processes": 5
+                },
+                "bandwidthBytes": 0,
+                "domains": [],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-1.panel.example",
+                    "port": 2222,
+                    "username": "queue_00b1",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-11-02T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd0000000002",
+                "name": "shop.acme.example.com",
+                "application": "WooCommerce",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "shopacme_9e69",
+                "networkHost": "shopacme-9e69.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000001",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
+                    "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
+                    "signatureVerified": true,
+                    "phpVersion": "8.4",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2028-12-31"
+                },
+                "updateReady": true,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": false,
+                "usage": {
+                    "cpuPercent": 61,
+                    "memoryBytes": 1814036480,
+                    "diskBytes": 22439526400,
+                    "processes": 58
+                },
+                "bandwidthBytes": 85675016265,
+                "domains": [
+                    {
+                        "name": "shop.acme.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-18T10:00:00+00:00",
+                            "source": "acme",
+                            "certificateId": "01m7cqzs806jdytz0000000001"
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-1.panel.example",
+                    "port": 2222,
+                    "username": "shopacme_9e69",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-04-18T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd0000000004",
+                "name": "storefront.acme.example.com",
+                "application": "Node.js app",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "storefro_a970",
+                "networkHost": "storefro-a970.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka000000000a",
+                    "family": "custom",
+                    "image": "registry.example/acme/storefront:stable",
+                    "digest": null,
+                    "signatureVerified": false,
+                    "phpVersion": null,
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [],
+                    "phpIni": [],
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": null
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": true,
+                "usage": {
+                    "cpuPercent": 5,
+                    "memoryBytes": 220200960,
+                    "diskBytes": 398458880,
+                    "processes": 9
+                },
+                "bandwidthBytes": 7163714898,
+                "domains": [
+                    {
+                        "name": "storefront.acme.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-18T10:00:00+00:00",
+                            "source": "acme",
+                            "certificateId": "01m7cqzs806jdytz0000000001"
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-2.panel.example",
+                    "port": 2222,
+                    "username": "storefro_a970",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-10-25T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            }
+        ],
+        "links": {
+            "first": "http://localhost/api/v1/websites?page=1",
+            "last": "http://localhost/api/v1/websites?page=1",
+            "prev": null,
+            "next": null
+        },
+        "meta": {
+            "current_page": 1,
+            "from": 1,
+            "last_page": 1,
+            "links": [
+                {
+                    "url": null,
+                    "label": "&laquo; Previous",
+                    "page": null,
+                    "active": false
+                },
+                {
+                    "url": "http://localhost/api/v1/websites?page=1",
+                    "label": "1",
+                    "page": 1,
+                    "active": true
+                },
+                {
+                    "url": null,
+                    "label": "Next &raquo;",
+                    "page": null,
+                    "active": false
+                }
+            ],
+            "path": "http://localhost/api/v1/websites",
+            "per_page": 100,
+            "to": 9,
+            "total": 9
+        }
+    }
+}

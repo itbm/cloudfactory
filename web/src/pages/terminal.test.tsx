@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import type { TerminalSession } from "../api/types";
 import { parseRecording, socketUrl } from "../features/WebTerminal";
-import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelApi";
+import { apiJob, fixture, reset, signedIn, website, type PanelApi } from "../test/panelApi";
 
 // jsdom has no canvas, so the tests use a fake terminal. It keeps what the panel writes.
 const terms = vi.hoisted(() => [] as { written: string[]; type: (keys: string) => void; options: Record<string, unknown> }[]);
@@ -135,9 +135,9 @@ describe("the web terminal", () => {
     const row = (await screen.findByText("tail -n 2 laravel.log")).closest("tr")!;
     expect(within(row).getByText("In the terminal")).toBeTruthy();
     // The sample session and its commands, from the answers of the API for the lists.
-    const sample = (await import("../test/fixtures/owner.json")).default as unknown as Record<string, { body: { data: Record<string, unknown>[] } }>;
-    const one = sample[`GET /websites/${id}/terminal-sessions`].body.data[0];
-    const log = sample[`GET /websites/${id}/commands`].body.data.filter((c) => c.sessionId === one.id);
+    type List = { data: Record<string, unknown>[] };
+    const one = fixture<List>("owner", `GET /websites/${id}/terminal-sessions`).body.data[0];
+    const log = fixture<List>("owner", `GET /websites/${id}/commands`).body.data.filter((c) => c.sessionId === one.id);
     api.on(`GET /websites/${id}/terminal-sessions/${String(one.id)}`, () => ({ session: one }));
     api.on(`GET /websites/${id}/commands?sessionId=${String(one.id)}&perPage=200`, () => ({ data: log, meta: { currentPage: 1, lastPage: 1, total: log.length } }));
     api.on(`GET /websites/${id}/terminal-sessions/*/recording`, () => '{"version":2,"width":100,"height":30}\n[0.4,"o","app$ "]\n[24,"o","production.ERROR: The export directory is not writable.\\r\\n"]\n');

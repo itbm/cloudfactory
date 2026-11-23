@@ -1,0 +1,40 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000e/databases",
+    "status": 200,
+    "body": {
+        "prefix": "reportsn_bc3b_",
+        "databases": [],
+        "users": [],
+        "servers": [
+            {
+                "id": "01m7cqzs80df38970000000004",
+                "name": "mariadb-1",
+                "engine": "mariadb",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000003",
+                "status": "running",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "networkHost": "mariadb-1.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 21474836480
+                },
+                "usage": {
+                    "memoryBytes": 179306496,
+                    "diskBytes": 213909504,
+                    "diskSizeBytes": 21474836480
+                },
+                "databases": 1,
+                "maxDatabases": 50,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "remote": true
+            }
+        ]
+    }
+}

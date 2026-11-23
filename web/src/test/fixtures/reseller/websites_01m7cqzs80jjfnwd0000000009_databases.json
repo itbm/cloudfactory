@@ -1,0 +1,10 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000009/databases",
+    "status": 200,
+    "body": {
+        "prefix": "eventsha_08d5_",
+        "databases": [],
+        "users": [],
+        "servers": []
+    }
+}

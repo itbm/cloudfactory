@@ -1,0 +1,66 @@
+{
+    "request": "GET /database-engines",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "engine": "mariadb",
+                "name": "MariaDB",
+                "port": 3306,
+                "pack": null,
+                "versions": [],
+                "users": true,
+                "moves": true,
+                "adminer": true,
+                "anywhere": true
+            },
+            {
+                "engine": "postgresql",
+                "name": "PostgreSQL",
+                "port": 5432,
+                "pack": null,
+                "versions": [],
+                "users": true,
+                "moves": true,
+                "adminer": true,
+                "anywhere": false
+            },
+            {
+                "engine": "valkey",
+                "name": "Valkey",
+                "port": 6379,
+                "pack": null,
+                "versions": [],
+                "users": false,
+                "moves": true,
+                "adminer": false,
+                "anywhere": false
+            },
+            {
+                "engine": "mysql",
+                "name": "MySQL",
+                "port": 3306,
+                "pack": {
+                    "id": "01m7cqzs80wzwr170000000003",
+                    "slug": "mysql",
+                    "version": "1.0.0",
+                    "publisher": "Example Packs Ltd"
+                },
+                "versions": [
+                    {
+                        "version": "8.4",
+                        "supportEndsAt": "2032-04-30"
+                    },
+                    {
+                        "version": "8.0",
+                        "supportEndsAt": "2026-04-30"
+                    }
+                ],
+                "users": true,
+                "moves": false,
+                "adminer": false,
+                "anywhere": false
+            }
+        ]
+    }
+}

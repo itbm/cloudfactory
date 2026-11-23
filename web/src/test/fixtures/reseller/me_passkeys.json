@@ -1,0 +1,16 @@
+{
+    "request": "GET /me/passkeys",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs801btxs80000000004",
+                "name": "Pixel 9",
+                "domain": "panel.northwind.example.com",
+                "synced": true,
+                "createdAt": "2026-10-15T10:00:00+00:00",
+                "lastUsedAt": "2026-11-12T10:00:00+00:00"
+            }
+        ]
+    }
+}

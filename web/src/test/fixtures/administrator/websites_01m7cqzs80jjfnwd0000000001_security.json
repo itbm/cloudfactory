@@ -1,0 +1,37 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000001/security",
+    "status": 200,
+    "body": {
+        "security": {
+            "firewall": {
+                "mode": "detect",
+                "excludedRules": [],
+                "skippedPaths": []
+            },
+            "ipRules": {
+                "allow": [],
+                "block": [
+                    "198.51.100.23",
+                    "203.0.113.0/24"
+                ]
+            },
+            "protectedPaths": [
+                {
+                    "path": "/reports/",
+                    "users": [
+                        {
+                            "name": "acme"
+                        }
+                    ]
+                }
+            ],
+            "signInLimit": {
+                "requestsPerMinute": 10,
+                "paths": [
+                    "/wp-login.php",
+                    "/xmlrpc.php"
+                ]
+            }
+        }
+    }
+}
