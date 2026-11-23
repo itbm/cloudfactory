@@ -815,14 +815,16 @@ export function signOut() {
 /**
  * Waits until the agent finishes the job. It reads only the job from the API, each 1.5 seconds
  * for the first minute and then each 5 seconds. Batch 1, finding 9: it does not load all data
- * again while it waits.
+ * again while it waits. The wait stops when active() is false, for example after a sign-out.
+ * Then the promise gives the job as the panel read it last.
  */
-export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void): Promise<Job> {
+export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void, active: () => boolean = () => true): Promise<Job> {
   let current = toJob(job as ApiJob);
   const started = Date.now();
   // A job can run for up to 3 hours (CheckJobsAndServers). Then the API marks it failed.
   while ((current.state === "queued" || current.state === "running") && Date.now() - started < 3.5 * 3600_000) {
     await new Promise((r) => setTimeout(r, Date.now() - started < 60_000 ? 1500 : 5000));
+    if (!active()) return current;
     try {
       current = toJob((await request<{ data: ApiJob }>("GET", `/jobs/${current.id}`)).data);
     } catch (e) {
