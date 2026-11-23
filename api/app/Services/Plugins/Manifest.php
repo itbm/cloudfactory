@@ -56,6 +56,7 @@ class Manifest
         'database.created' => 'databases:read', 'database.removed' => 'databases:read',
         'backup.started' => 'backups:read', 'restore.started' => 'backups:read', 'deploy.started' => 'websites:read',
         'customer.created' => 'customers:read', 'customer.changed' => 'customers:read', 'user.created' => 'users:read',
+        'uptime.down' => 'websites:read', 'uptime.up' => 'websites:read',
         'website.creating' => 'websites:read', 'website.removing' => 'websites:read', 'domain.adding' => 'websites:read',
         'database.creating' => 'databases:read', 'customer.creating' => 'customers:read',
     ];
