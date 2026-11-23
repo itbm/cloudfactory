@@ -283,8 +283,8 @@ environment, then run `cf backups policy set --target REPOSITORY --credentials-f
 
 #### One repository for each server
 
-Each server with the role `web` has its own restic repository below the address that you
-typed, and its own repository password. For example, with the address
+Each server with the role `web` or `email` has its own restic repository below the address
+that you typed, and its own repository password. For example, with the address
 `s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory`, the repository of a server is
 `s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory/servers/SERVER-ID`. restic encrypts each
 snapshot with the password of its repository. The panel sends a password only to its server.
@@ -303,7 +303,7 @@ own gets the shared key. The shared key has access to the repositories of all se
 person who has root access to one of these servers can thus delete or change the data of all
 repositories, but cannot read it.
 
-To prevent this, give each server with the role `web` its own key:
+To prevent this, give each server with the role `web` or `email` its own key:
 
 1. Open **Backups**. The card **Storage key of each server** shows each server, the path of
    its repository in the bucket, and the key that it uses.
@@ -394,17 +394,20 @@ Give no key the permission to change the settings of the bucket.
 #### What the panel keeps
 
 - **Nightly backups.** The retention policy on the **Backups** page gives the number of daily,
-  weekly and monthly backups of each website.
-- **Manual backups.** The panel keeps the 10 newest manual backups of each website. The
-  retention policy does not remove them. To change the number, set `CF_MANUAL_BACKUPS` in
-  `/var/lib/cloudfactory/panel/panel.env` and restart the panel services.
+  weekly and monthly backups of each website and of each mailbox.
+- **Manual backups.** The panel keeps the 10 newest manual backups of each website and of each
+  mailbox. The retention policy does not remove them. To change the number, set
+  `CF_MANUAL_BACKUPS` in `/var/lib/cloudfactory/panel/panel.env` and restart the panel
+  services.
 - **Deleted websites.** The backups of a deleted website stay in the repository for 30 days.
   In this time, you can restore them with restic. To change the time, set
   `CF_DELETED_WEBSITE_BACKUP_DAYS`.
+- **Deleted mailboxes.** The backups of a deleted mailbox stay in the repository for 30 days.
+  To change the time, set `CF_DELETED_MAILBOX_BACKUP_DAYS`.
 
-Each Sunday, each server removes the backups of the websites that were deleted more than
-30 days ago, and the data that no snapshot uses. A server that is offline does this in a
-later week.
+Each Sunday, each server removes the backups of the websites and the mailboxes that were
+deleted more than 30 days ago, and the data that no snapshot uses. A server that is offline
+does this in a later week.
 
 #### Restore
 
@@ -413,6 +416,24 @@ website again. It does not delete the files that are not in the backup. To delet
 **Remove files that are not in the backup**, or use `cf backups restore --remove-new-files`.
 A restore of the full website does not restore the databases. Restore each database
 separately.
+
+#### Restore a mailbox
+
+The panel makes a backup of all folders and messages of each mailbox each night. To restore
+messages that a user deleted:
+
+1. Open **Email**.
+2. In the row of the mailbox, select **Backups**.
+3. Select **Restore** in the row of the backup.
+4. Select **Restore messages**.
+
+With the CLI, run `cf mail mailboxes backups ADDRESS` to show the backups, and
+`cf mail mailboxes restore ADDRESS BACKUP` to restore one.
+
+The restore adds each message of the backup that the mailbox does not have, in its folder. It
+does not change or remove a message of the mailbox, so you can restore the same backup again.
+A message that is larger than the mail server accepts stays in the backup. The list of backups
+shows the result of the last restore of each backup.
 
 #### Backups from an earlier version
 

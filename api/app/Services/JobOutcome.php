@@ -15,6 +15,7 @@ use App\Models\DatabaseServer;
 use App\Models\Domain;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
+use App\Models\MailboxSnapshot;
 use App\Models\MailDomain;
 use App\Models\Release;
 use App\Models\Rollout;
@@ -241,7 +242,7 @@ class JobOutcome
             AgentAction::SetWebsitePower => $website?->moveTo(($p['power'] ?? '') === 'stop' ? WebsiteStatus::Stopped : WebsiteStatus::Running),
             // A website that moved keeps its record: the job removed only its old copy.
             AgentAction::DeleteWebsite => $website && ! ($p['moved'] ?? false) && $this->deleteWebsite($website),
-            // Audit finding R8: the backups of these deleted websites are gone.
+            // Audit finding R8: the backups of these deleted websites and mailboxes are gone.
             AgentAction::PruneBackups => $this->backupsPruned($job, $p),
             AgentAction::SetSftp => $website?->update([
                 'sftp_enabled' => (bool) ($p['enabled'] ?? false),
@@ -299,8 +300,14 @@ class JobOutcome
             AgentAction::SetMailbox => $this->mailboxSet($p, $result),
             AgentAction::SetMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::ACTIVE]),
             AgentAction::DeleteMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
-            AgentAction::DeleteMailbox => Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
+            AgentAction::DeleteMailbox => $this->mailboxRemoved($p),
             AgentAction::DeleteMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
+            AgentAction::BackupMailbox => $this->recordMailboxSnapshot($job, $p, $result),
+            // The panel shows the result of the last restore with the backup.
+            AgentAction::RestoreMailbox => MailboxSnapshot::whereKey($p['backupId'] ?? '')->where('mailbox_id', $p['mailboxId'] ?? '')->update(['last_restore' => json_encode([
+                'at' => now()->toIso8601String(),
+                ...array_map(fn ($n) => max(0, (int) $n), array_intersect_key($result + ['added' => 0, 'present' => 0, 'tooLarge' => 0, 'failed' => 0], array_flip(['added', 'present', 'tooLarge', 'failed']))),
+            ])]),
             default => null,
         };
     }
@@ -326,6 +333,44 @@ class JobOutcome
         $kept['skippedNames'] = array_map(fn (string $n) => Str::limit($n, 200), array_slice(array_values($names), 0, 20));
 
         return $kept;
+    }
+
+    /**
+     * The mail server removed the mailbox. Its backups stay in the repository for a set time,
+     * so that an administrator can restore them with restic. Then the weekly job removes them.
+     */
+    private function mailboxRemoved(array $p): void
+    {
+        $removed = Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::REMOVING)->delete();
+        if ($removed) {
+            MailboxSnapshot::where('mailbox_id', $p['mailboxId'])->whereNull('remove_after')
+                ->update(['remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_mailbox_backup_days', 30)))]);
+        }
+    }
+
+    private function recordMailboxSnapshot(AgentJob $job, array $p, array $result): void
+    {
+        $mailbox = Mailbox::with('domain')->find($p['mailboxId'] ?? '');
+        $id = $result['snapshotId'] ?? null;
+        if (! is_string($id) || ! preg_match('/^[0-9a-f]{8,64}$/', $id)) {
+            return;
+        }
+        MailboxSnapshot::create([
+            'mailbox_id' => $p['mailboxId'],
+            'address' => $mailbox?->address() ?? (($p['localPart'] ?? '').'@'.($p['domain'] ?? '')),
+            'server_id' => $job->server_id,
+            'kind' => $p['kind'] ?? 'manual',
+            'restic_id' => $id,
+            'size_bytes' => max(0, (int) ($result['sizeBytes'] ?? 0)),
+            'messages' => max(0, (int) ($result['messages'] ?? 0)),
+            // The mailbox was removed during the backup.
+            'remove_after' => $mailbox ? null : now()->addDays(max(0, (int) config('cloudfactory.deleted_mailbox_backup_days', 30))),
+        ]);
+        // FR-902: the agent removed the snapshots that the retention policy does not keep.
+        $forgotten = array_filter((array) ($result['forgotten'] ?? []), 'is_string');
+        if ($forgotten) {
+            MailboxSnapshot::where('mailbox_id', $p['mailboxId'])->where('server_id', $job->server_id)->whereIn('restic_id', $forgotten)->delete();
+        }
     }
 
     private function applyFailure(AgentJob $job, ?Website $website): void
@@ -459,6 +504,7 @@ class JobOutcome
             ->orWhere(fn ($q) => $q->where('files_only', true)->whereIn('website_id', $moved)))->delete();
         // A website that moved has the backups of its databases on the server still.
         Snapshot::where('server_id', $job->server_id)->whereIn('website_id', $moved)->where('part', Snapshot::WEBSITE)->delete();
+        MailboxSnapshot::where('server_id', $job->server_id)->whereNotNull('remove_after')->whereIn('mailbox_id', array_filter((array) ($p['forgetMailboxIds'] ?? []), 'is_string'))->delete();
     }
 
     /**
@@ -790,7 +836,6 @@ class JobOutcome
             // The agent restores a database by "engine:name".
             // The backup has the databases of the job, not the databases that the website has now.
             'databases' => collect($p['databases'] ?? [])->map(fn ($d) => ($d['engine'] ?? '').':'.($d['name'] ?? ''))->values()->all(),
-            'mailboxes' => [],
             // CF-06: the restore checks each dump against the hash from the backup.
             'dump_hashes' => self::dumpHashes($result['dumps'] ?? []),
         ]);

@@ -146,3 +146,31 @@ func TestHostStopsTheProgramsOfACommandAtTheTimeLimit(t *testing.T) {
 	}
 	t.Fatalf("the program %d of the command still runs", pid)
 }
+
+// failingReader gives its data, then an error.
+type failingReader struct{ data string }
+
+func (r *failingReader) Read(p []byte) (int, error) {
+	if r.data == "" {
+		return 0, errors.New("the export failed")
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
+// A backup from stdin: when the input fails, the command stops before it sees the end of
+// its input. restic thus makes no snapshot of a part of the data.
+func TestStreamEnvStopsTheCommandWhenItsInputFails(t *testing.T) {
+	ctx := context.Background()
+	script := `cat >/dev/null; echo "complete $CF_TEST_VALUE"`
+	var out bytes.Buffer
+	if err := (Host{}).StreamEnv(ctx, []string{"CF_TEST_VALUE=1"}, strings.NewReader("data"), &out, "sh", "-c", script); err != nil || out.String() != "complete 1\n" {
+		t.Fatalf("a complete input: %q, err %v", out.String(), err)
+	}
+	out.Reset()
+	err := (Host{}).StreamEnv(ctx, []string{"CF_TEST_VALUE=1"}, &failingReader{data: "data"}, &out, "sh", "-c", script)
+	if err == nil || strings.Contains(out.String(), "complete") {
+		t.Fatalf("an input that failed: %q, err %v", out.String(), err)
+	}
+}

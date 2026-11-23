@@ -43,6 +43,12 @@ func mailPanel(t *testing.T) (*httptest.Server, *[]string) {
 			w.Write([]byte(`{"autoresponder":{"enabled":false,"subject":null,"text":"Back soon.","startsAt":null,"endsAt":"2027-01-04T23:59:59Z","filterScript":"filters"}}`))
 		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/autoresponder":
 			w.Write([]byte(`{"autoresponder":` + string(body) + `}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/backups" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"data":[{"id":"BK2","kind":"manual","sizeBytes":1572864,"messages":120,"serverId":"S1","createdAt":"2026-11-22T14:00:00+00:00","lastRestore":null},` +
+				`{"id":"BK1","kind":"scheduled","sizeBytes":1048576,"messages":100,"serverId":"S1","createdAt":"2026-11-22T02:05:00+00:00","lastRestore":{"at":"2026-11-22T15:00:00+00:00","added":3,"present":96,"tooLarge":1,"failed":0}}]}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/backups/NONE/restore":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not found."}`))
 		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/private-key":
 			w.Write([]byte(`{"address":"info@acme.example.com","privateKey":"-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nxYYE\n-----END PGP PRIVATE KEY BLOCK-----\n","passwordCurrent":false}`))
 		case r.URL.Path == "/api/v1/mail/aliases" && r.Method == http.MethodGet:

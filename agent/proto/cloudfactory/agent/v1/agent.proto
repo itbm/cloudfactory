@@ -19,6 +19,9 @@ service AgentService {
   rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
   rpc AddDomain(DomainRequest) returns (JobAccepted);
   rpc Backup(BackupRequest) returns (JobAccepted);
+  // Makes a backup of all folders and messages of one mailbox in the restic repository of
+  // this server.
+  rpc BackupMailbox(BackupMailboxRequest) returns (JobAccepted);
   // Reads the versions of WordPress, of its plugins and of its themes, and the updates that
   // are available. The result has the inventory.
   rpc CheckWordPress(CheckWordPressRequest) returns (JobAccepted);
@@ -72,6 +75,8 @@ service AgentService {
   rpc ReceiveWebsite(ReceiveWebsiteRequest) returns (JobAccepted);
   rpc RemoveDomain(DomainRequest) returns (JobAccepted);
   rpc Restore(RestoreRequest) returns (JobAccepted);
+  // Adds the messages of a mailbox backup that the mailbox does not have.
+  rpc RestoreMailbox(RestoreMailboxRequest) returns (JobAccepted);
   // Puts back the restore point of the last update of a WordPress site.
   rpc RestoreWordPress(RestoreWordPressRequest) returns (JobAccepted);
   rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
@@ -666,8 +671,9 @@ message BackupRequest {
   string customer = 10;
 }
 
-// The snapshots of a website that the agent keeps. The policy applies to the snapshots of the
-// same kind as the backup, so that the scheduled backups do not remove the manual backups.
+// The snapshots of a website or a mailbox that the agent keeps. The policy applies to the
+// snapshots of the same kind as the backup, so that the scheduled backups do not remove the
+// manual backups.
 message Retention {
   int32 daily = 1;
   int32 weekly = 2;
@@ -687,6 +693,8 @@ message PruneBackupsRequest {
   // the files (the kinds "scheduled" and "manual"). It keeps the snapshots of the databases
   // that this server makes for them (the kinds "scheduled-databases" and "manual-databases").
   repeated string forget_moved_website_ids = 5;
+  // The IDs of deleted mailboxes. The agent removes all their snapshots first.
+  repeated string forget_mailbox_ids = 6;
 }
 
 message RestoreRequest {
@@ -694,9 +702,9 @@ message RestoreRequest {
   string website_id = 2;
   string unix_user = 3;
   string snapshot_id = 4;
-  // "website", "database", "mailbox" or "file".
+  // "website", "database" or "file". A mailbox has its own backups (RestoreMailboxRequest).
   string scope = 5;
-  // The database ("mariadb:name" or "postgresql:name"), the mailbox, or the file path.
+  // The database ("mariadb:name" or "postgresql:name") or the file path.
   string item = 6;
   // The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
   string target = 7;
@@ -710,6 +718,39 @@ message RestoreRequest {
   // Scope "database": the ID of the customer of the website. It is necessary for a website
   // of a different server.
   string customer = 12;
+}
+
+// Makes a backup of one mailbox. The snapshot has the tags "mailbox=<mailbox_id>" and
+// "kind=<kind>". Its one file is a tar stream of the folders and the messages of the mailbox
+// (agent/internal/stalwart/backup.go).
+message BackupMailboxRequest {
+  string job_id = 1;
+  // The ID of the mailbox in the panel.
+  string mailbox_id = 2;
+  string domain = 3;
+  // The part of the address before the @ sign.
+  string local_part = 4;
+  // "manual" or "scheduled".
+  string kind = 5;
+  // The restic repository of this server.
+  string target = 6;
+  map<string, string> credentials = 7;
+  // When set, the agent removes the snapshots of the mailbox that the policy does not keep.
+  Retention retention = 8;
+}
+
+// Restores a backup of a mailbox into the mailbox. The agent adds each message that the
+// mailbox does not have, and the folders of these messages. It does not change or remove a
+// message or a folder.
+message RestoreMailboxRequest {
+  string job_id = 1;
+  string mailbox_id = 2;
+  string domain = 3;
+  string local_part = 4;
+  // The restic ID of a snapshot of this mailbox.
+  string snapshot_id = 5;
+  string target = 6;
+  map<string, string> credentials = 7;
 }
 
 // Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees

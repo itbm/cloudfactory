@@ -4,9 +4,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { getState } from "../api/store";
 import type { Role } from "../api/types";
-import { apiJob, reset, signedIn, type PanelApi } from "../test/panelApi";
+import { apiJob, refresh, reset, signedIn, type PanelApi } from "../test/panelApi";
 import { autoresponderState, dayBoundary, localDay } from "./Autoresponder";
 import { EmailPage } from "./EmailPage";
+import { restoreSummary } from "./MailboxBackups";
 import { ServersPage } from "./ServersPage";
 
 afterEach(() => {
@@ -353,6 +354,83 @@ describe("the email page", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Save autoresponder" }));
     await waitFor(() => expect(within(dialog).getByText("Type the text of the answer.")).toBeTruthy());
     expect(api.changes.at(-1)!.body).toEqual({ enabled: true, subject: null, text: "", startsAt: null, endsAt: dayBoundary("2027-01-08", true) });
+  });
+
+  it("lists the backups of a mailbox, makes a backup, and restores the messages of a backup", async () => {
+    const api = await open("owner");
+    const info = getState().mailboxes.find((m) => m.address === "info@acme.example.com")!;
+    menu(row("info@acme.example.com"), "Backups");
+    let dialog = screen.getByRole("dialog", { name: "Backups of info@acme.example.com" });
+    // The demo has seven nightly backups and one manual backup, the newest first.
+    await waitFor(() => expect(within(dialog).getAllByRole("row")).toHaveLength(9));
+    const rows = () => within(screen.getByRole("dialog")).getAllByRole("row").slice(1);
+    expect(rows()[0].textContent).toContain("Manual");
+    expect(rows()[1].textContent).toContain("Nightly");
+    // The result of the last restore of a backup, with the message that it did not add.
+    const restored = rows().find((r) => r.textContent!.includes("Restored on"))!;
+    expect(restored.textContent).toMatch(/14 messages added, [\d,]+ already in the mailbox\./);
+    expect(within(restored).getByText("Not restored: 1 message is larger than the mail server accepts.").className).toContain("text-warning");
+
+    // A backup now. The list loads again when the job ends.
+    api.on(`POST /mail/mailboxes/${info.id}/backups`, () => [202, { job: apiJob({ id: "job-mb1", action: "BackupMailbox", title: "Back up mailbox info@acme.example.com" }) }]);
+    api.change<List>(`/mail/mailboxes/${info.id}/backups`, (b) => {
+      b.data.unshift({ ...b.data[0], id: "backup-new", createdAt: "2026-11-14T10:00:05+00:00", lastRestore: null });
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Back up now" }));
+    await waitFor(() => expect(rows()).toHaveLength(9));
+    expect(api.changes.at(-1)).toEqual({ method: "POST", path: `/mail/mailboxes/${info.id}/backups`, body: undefined });
+
+    // A restore asks first, and tells what it does.
+    const oldest = rows().at(-1)!;
+    fireEvent.click(within(oldest).getByRole("button", { name: /^Restore the backup of/ }));
+    dialog = screen.getByRole("dialog", { name: /^Restore info@acme.example.com from .+\?$/ });
+    expect(dialog.textContent).toContain("The restore does not change or remove a message that is in the mailbox now.");
+    const backups = (api.changes.length);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("dialog", { name: "Backups of info@acme.example.com" })).toBeTruthy();
+    expect(api.changes).toHaveLength(backups);
+
+    // The panel refuses a backup on a server that does not have the mailbox now.
+    fireEvent.click(within(rows().at(-1)!).getByRole("button", { name: /^Restore the backup of/ }));
+    api.on(`POST /mail/mailboxes/${info.id}/backups/*/restore`, () => [422, { message: "This backup is in the repository of a server that does not have this mailbox now. The panel cannot restore it.", errors: { snapshot: ["This backup is in the repository of a server that does not have this mailbox now. The panel cannot restore it."] } }]);
+    fireEvent.click(screen.getByRole("button", { name: "Restore messages" }));
+    await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("The panel cannot restore it."));
+
+    api.on(`POST /mail/mailboxes/${info.id}/backups/*/restore`, () => [202, { job: apiJob({ id: "job-mb2", action: "RestoreMailbox", title: "Restore mailbox info@acme.example.com" }) }]);
+    fireEvent.click(screen.getByRole("button", { name: "Restore messages" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Backups of info@acme.example.com" })).toBeTruthy());
+    const oldestId = (api.changes.at(-1)!.path.match(/backups\/([^/]+)\/restore$/) ?? [])[1];
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", body: undefined });
+    expect(oldestId).toBeTruthy();
+    expect(oldestId).not.toBe("backup-new");
+  });
+
+  it("does not start a backup or a restore of a mailbox while one is in progress", async () => {
+    const api = await open("owner");
+    api.change<List>("/jobs?perPage=50", (b) => {
+      b.data.unshift(apiJob({ id: "job-mb3", action: "BackupMailbox", title: "Nightly backup of mailbox info@acme.example.com", state: "running", steps: ["Export and upload the messages", "Apply retention"], step: 0, finishedAt: null }));
+    });
+    await refresh();
+    menu(row("info@acme.example.com"), "Backups");
+    const dialog = screen.getByRole("dialog", { name: "Backups of info@acme.example.com" });
+    await waitFor(() => expect(within(dialog).getAllByRole("row").length).toBeGreaterThan(1));
+    expect(within(dialog).getByText("Export and upload the messages")).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: "Back up now" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(within(dialog).getAllByRole("button", { name: /^Restore the backup of/ }).every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    expect(dialog.textContent).toContain("A backup or a restore of this mailbox is in progress.");
+    // The job of a different mailbox does not stop this one.
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Close" }).at(-1)!);
+    menu(row("olu@acme.example.com"), "Backups");
+    expect((screen.getByRole("button", { name: "Back up now" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("tells what the last restore of a mailbox backup did", () => {
+    const at = "2026-11-21T09:41:00Z";
+    expect(restoreSummary({ at, added: 1, present: 1200, tooLarge: 0, failed: 0 })).toEqual({ text: expect.stringMatching(/^Restored on 21 November 2026 at .+\. 1 message added, 1,200 already in the mailbox\.$/), warning: null });
+    expect(restoreSummary({ at: null, added: 0, present: 5, tooLarge: 2, failed: 1 })).toEqual({
+      text: "Restored. 0 messages added, 5 already in the mailbox.",
+      warning: "Not restored: 2 messages are larger than the mail server accepts, and the mail server refused 1 message.",
+    });
   });
 
   it("tells what the mail server does with the autoresponder", () => {

@@ -1,0 +1,86 @@
+{
+    "request": "GET /mail/mailboxes/01m7cqzs80ytymcv0000000001/backups",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80zfdxdk000000000p",
+                "kind": "manual",
+                "sizeBytes": 1321205760,
+                "messages": 16128,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-14T07:00:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk000000000f",
+                "kind": "scheduled",
+                "sizeBytes": 1315920936,
+                "messages": 16063,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-13T02:05:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk000000000g",
+                "kind": "scheduled",
+                "sizeBytes": 1310636113,
+                "messages": 15998,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-12T02:06:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk000000000h",
+                "kind": "scheduled",
+                "sizeBytes": 1305351290,
+                "messages": 15934,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-11T02:07:00+00:00",
+                "lastRestore": {
+                    "at": "2026-11-13T09:41:00+00:00",
+                    "added": 14,
+                    "present": 15919,
+                    "tooLarge": 1,
+                    "failed": 0
+                }
+            },
+            {
+                "id": "01m7cqzs80zfdxdk000000000j",
+                "kind": "scheduled",
+                "sizeBytes": 1300066467,
+                "messages": 15869,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-10T02:08:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk000000000k",
+                "kind": "scheduled",
+                "sizeBytes": 1294781644,
+                "messages": 15805,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-09T02:09:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk000000000m",
+                "kind": "scheduled",
+                "sizeBytes": 1289496821,
+                "messages": 15740,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-08T02:10:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk000000000n",
+                "kind": "scheduled",
+                "sizeBytes": 1284211998,
+                "messages": 15676,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-07T02:11:00+00:00",
+                "lastRestore": null
+            }
+        ]
+    }
+}

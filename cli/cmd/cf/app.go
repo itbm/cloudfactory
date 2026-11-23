@@ -206,6 +206,10 @@ Usage:
   cf mail mailboxes autoresponder ADDRESS [--on | --off] [--subject TEXT] [--text-file FILE] [--from DAY] [--until DAY]
                                            Show or change the autoresponder. DAY is YYYY-MM-DD in the time zone
                                            of this computer, or an RFC 3339 time. "-" removes a subject or a day.
+  cf mail mailboxes backups ADDRESS        List the backups of the mailbox, and the result of the last restore of each.
+  cf mail mailboxes backup ADDRESS         Back up all folders and messages of the mailbox now.
+  cf mail mailboxes restore ADDRESS BACKUP Add the messages of the backup that the mailbox does not have, in their
+                                           folders. The restore does not change or remove a message of the mailbox.
   cf mail mailboxes delete ADDRESS         Remove a mailbox and its messages.
   cf mail aliases list [--domain DOMAIN] [--customer ID]
   cf mail aliases create ADDRESS --to ADDRESS... [--forward]

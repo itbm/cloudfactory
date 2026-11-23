@@ -138,6 +138,7 @@ class Fixtures
         $domain = MailDomain::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->first();
         foreach (Mailbox::where('mail_domain_id', $domain?->id)->orderBy('local_part')->pluck('id') as $id) {
             $paths[] = "/mail/mailboxes/{$id}/autoresponder";
+            $paths[] = "/mail/mailboxes/{$id}/backups";
         }
         $answers = [];
         foreach ($paths as $path) {

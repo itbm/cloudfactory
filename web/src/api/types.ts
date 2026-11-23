@@ -731,6 +731,34 @@ export interface Autoresponder {
 
 export type AutoresponderInput = Omit<Autoresponder, "filterScript">;
 
+/**
+ * A backup of a mailbox: a restic snapshot of all folders and messages, in the repository of
+ * the server of the mail domain.
+ */
+export interface MailboxBackup {
+  id: string;
+  /** scheduled: the nightly backup. */
+  kind: "scheduled" | "manual";
+  sizeBytes: number;
+  messages: number;
+  /** The server whose repository has the snapshot. */
+  serverId: string;
+  createdAt: string;
+  /** The result of the last restore of this backup, or null. */
+  lastRestore: MailboxRestore | null;
+}
+
+/** What a restore did. A restore adds only the messages that the mailbox does not have. */
+export interface MailboxRestore {
+  at: string | null;
+  added: number;
+  /** The messages that the mailbox has already. */
+  present: number;
+  /** The messages that are larger than the mail server accepts. */
+  tooLarge: number;
+  failed: number;
+}
+
 /** What the mail server found in the OpenPGP public key of a mailbox. */
 export interface MailEncryption {
   fingerprints: string[];

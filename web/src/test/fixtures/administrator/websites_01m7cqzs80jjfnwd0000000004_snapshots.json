@@ -10,7 +10,6 @@
                 "databases": [],
                 "part": "website",
                 "serverId": "01m7cqzs807rnxfq0000000002",
-                "mailboxes": [],
                 "createdAt": "2026-11-14T03:02:00+00:00"
             },
             {
@@ -22,7 +21,6 @@
                 ],
                 "part": "databases",
                 "serverId": "01m7cqzs807rnxfq0000000001",
-                "mailboxes": [],
                 "createdAt": "2026-11-14T03:02:00+00:00"
             },
             {
@@ -32,7 +30,6 @@
                 "databases": [],
                 "part": "website",
                 "serverId": "01m7cqzs807rnxfq0000000002",
-                "mailboxes": [],
                 "createdAt": "2026-11-13T03:02:00+00:00"
             },
             {
@@ -44,7 +41,6 @@
                 ],
                 "part": "databases",
                 "serverId": "01m7cqzs807rnxfq0000000001",
-                "mailboxes": [],
                 "createdAt": "2026-11-13T03:02:00+00:00"
             },
             {
@@ -54,7 +50,6 @@
                 "databases": [],
                 "part": "website",
                 "serverId": "01m7cqzs807rnxfq0000000002",
-                "mailboxes": [],
                 "createdAt": "2026-11-12T03:02:00+00:00"
             },
             {
@@ -66,7 +61,6 @@
                 ],
                 "part": "databases",
                 "serverId": "01m7cqzs807rnxfq0000000001",
-                "mailboxes": [],
                 "createdAt": "2026-11-12T03:02:00+00:00"
             }
         ]

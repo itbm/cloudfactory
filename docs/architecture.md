@@ -649,6 +649,7 @@ job only for a domain of that customer.
 | Password of the administrator of the management API | `/etc/cloudfactory/mail/admin.env` | Only root and the group `cf-mail` can read the file. The root helper gives the password to the worker. |
 | TLS certificate | `/etc/cloudfactory/mail/certs` | The edge proxy gets and renews the certificate of the mail host name. The root helper copies it for the mail server, at the start of the agent and one time each day. |
 | Passwords of the mailboxes | The mail server keeps a bcrypt hash | The panel makes the hash and sends only the hash. The panel shows the password one time. The agent never has it. |
+| Backups of the mailboxes | The restic repository of the server of the mail domain | Refer to [Backups of the mailboxes](#backups-of-the-mailboxes). |
 | Autoresponders | The data store of the mail server (JMAP `VacationResponse`) | The mail server is the source. The panel reads and changes an autoresponder through the agent at once, with no job, and keeps no copy. |
 | Spam filter and outbound relay | `mail_settings` of the server in the panel, and the data store of the mail server | An administrator sets them (`PUT /v1/servers/{id}/mail/settings`, or `cf servers mail-settings SERVER`). The panel keeps the password of the relay encrypted, and adds it to the `SetMailSettings` job each time that it sends the job. |
 
@@ -2465,8 +2466,8 @@ The agent makes the backups with restic. The panel sends the address of the repo
 credentials of the object storage and the repository password with each job. The agent does
 not keep them.
 
-- Each server with the role `web` has its own repository, `<target>/servers/<server ID>`, and
-  its own password. The panel makes the password at the first use and keeps it encrypted.
+- Each server with the role `web` or `email` has its own repository,
+  `<target>/servers/<server ID>`, and its own password. The panel makes the password at the first use and keeps it encrypted.
 - Each of these servers can have its own key for the object storage, which an administrator
   sets (`PUT /v1/backup-policy/servers/{serverId}/credentials`). The panel sends that key
   with the jobs of that server only (`BackupController::credentialsFor`). A server with no
@@ -2518,6 +2519,55 @@ them.
   bytes. A download can thus continue at an offset (an HTTP range).
 - The scheduler runs `cloudfactory:expire-exports` each hour. It removes the exports that
   expired and fails an export that is not complete after a day.
+
+### Backups of the mailboxes
+
+Each night, after the backups of the websites, the panel starts a backup of each active
+mailbox (`BackupMailbox`) on the server of its mail domain. The owner can also start a backup
+at any time (`POST /v1/mail/mailboxes/{id}/backups`, or `cf mail mailboxes backup ADDRESS`).
+
+```text
+ mail server ──► JMAP (Mailbox/get, Email/query, Email/get, download) ──► worker of the agent
+             ──► tar stream (cf-mailbox/1) ──► root helper ──► restic backup --stdin ──► repository of the server
+```
+
+- The agent reads the folders and the messages of the mailbox through JMAP, as the
+  administrator of the management API. It writes a tar stream in the format `cf-mailbox/1`
+  (`agent/internal/stalwart/backup.go`):
+  1. `mailbox.json`: the address, the folders (name, parent, role, sort order and
+     subscription) and, for each message, its file, its folders, its keywords (for example
+     `$seen`), its receive time, its size and its `Message-ID`.
+  2. `messages/<email ID>.eml`: each message, as the mail server keeps it.
+  3. `mailbox.end`: the number of messages. A restore refuses a stream without this file. Thus
+     it never uses a backup that stopped before its end.
+- The names, the times and the order of the files are the same each time. Thus restic adds
+  only the new messages to the repository. A second backup of a mailbox with no changes adds
+  less than 1 KB.
+- The stream does not go to the disk, and the backup needs no jail. restic reads it from its
+  standard input (`restic backup --stdin --stdin-filename mailbox.tar`). When the export
+  fails, the agent stops restic before restic reads the end of the stream. Thus restic never
+  makes a snapshot of a part of a mailbox.
+- Each snapshot has the tags `mailbox=<mailbox ID>` and `kind=scheduled` or `kind=manual`. The
+  retention policy of the websites applies to the scheduled backups. The panel keeps the
+  newest manual backups (`CF_MANUAL_BACKUPS`). The table `mailbox_snapshots` has a record of
+  each snapshot.
+- A restore (`POST /v1/mail/mailboxes/{id}/backups/{snapshotId}/restore`) needs a token with
+  the scope `mail:write`. restic writes the stream to its standard output (`restic dump`), and
+  the agent adds each message that the mailbox does not have (JMAP `Email/import`). The key of
+  a message is its `Message-ID`, its receive time and its size. The restore does not change or
+  remove a message of the mailbox. It makes again each folder that is missing. A folder with a
+  role, for example the inbox or the trash, goes to the folder with the same role.
+- A message that is larger than the upload limit of the mail server (`maxSizeUpload`) stays in
+  the backup. The result of the restore has the number of messages that it added, that the
+  mailbox had, that were too large and that failed. The panel keeps the result with the
+  snapshot (`lastRestore`), and the web panel shows it.
+- A mailbox has one backup or restore at a time. The panel does not remove a mailbox while a
+  backup or a restore of it runs.
+- In a mail cluster, each member has all the mail. The panel sends a restore to the agent of
+  the server whose repository has the snapshot. That server must be the server of the mail
+  domain or a member of its cluster.
+- When a mailbox is removed, the panel keeps its backups for 30 days
+  (`CF_DELETED_MAILBOX_BACKUP_DAYS`). Then the weekly job of the server removes its snapshots.
 
 ## Plugins
 

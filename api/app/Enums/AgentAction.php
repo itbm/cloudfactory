@@ -13,6 +13,7 @@ enum AgentAction: string
     case ActivateRelease = 'ActivateRelease';
     case AddDomain = 'AddDomain';
     case Backup = 'Backup';
+    case BackupMailbox = 'BackupMailbox';
     case CheckWordPress = 'CheckWordPress';
     case ConfigureHost = 'ConfigureHost';
     case CreateDatabase = 'CreateDatabase';
@@ -46,6 +47,7 @@ enum AgentAction: string
     case ReceiveWebsite = 'ReceiveWebsite';
     case RemoveDomain = 'RemoveDomain';
     case Restore = 'Restore';
+    case RestoreMailbox = 'RestoreMailbox';
     case RestoreWordPress = 'RestoreWordPress';
     case RotateMeshKey = 'RotateMeshKey';
     case RunCommand = 'RunCommand';
@@ -85,6 +87,7 @@ enum AgentAction: string
             self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
             self::AddDomain => ['Add edge proxy route', 'Check DNS', 'Get TLS certificate'],
             self::Backup => ['Snapshot files', 'Dump databases', 'Upload to object storage', 'Apply retention'],
+            self::BackupMailbox => ['Export and upload the messages', 'Apply retention'],
             self::CheckWordPress => ['Check WordPress'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::CreateDatabase => ['Create database', 'Create user', 'Allow the website container only'],
@@ -117,12 +120,13 @@ enum AgentAction: string
             self::MakeArchive => ['Make the archive'],
             self::OpenTerminal => ['Open the terminal'],
             self::PrepareMailNode => ['Make keys'],
-            self::PruneBackups => ['Remove backups of deleted and moved websites', 'Remove unused data'],
+            self::PruneBackups => ['Remove backups of deleted and moved websites, and of deleted mailboxes', 'Remove unused data'],
             self::Reboot => ['Drain the edge proxy', 'Stop containers', 'Reboot', 'Start containers', 'Check all services'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
             self::ReceiveWebsite => ['Create Unix user', 'Receive files', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Set SFTP access and cron jobs', 'Get TLS certificate'],
             self::RemoveDomain => ['Remove edge proxy route'],
             self::Restore => ['Download snapshot', 'Restore', 'Health check'],
+            self::RestoreMailbox => ['Download the backup and add the messages'],
             self::RestoreWordPress => ['Put back the restore point', 'Check WordPress'],
             self::RotateMeshKey => ['Make new key'],
             self::RunCommand => ['Run the command'],
@@ -171,7 +175,7 @@ enum AgentAction: string
     public function usesBackupRepository(): bool
     {
         return match ($this) {
-            self::Backup, self::Restore, self::PruneBackups => true,
+            self::Backup, self::Restore, self::PruneBackups, self::BackupMailbox, self::RestoreMailbox => true,
             default => false,
         };
     }

@@ -58,6 +58,10 @@ func (s *Service) Backup(_ context.Context, r *connect.Request[agentv1.BackupReq
 	return s.submit(s.Deps.Backup(r.Msg))
 }
 
+func (s *Service) BackupMailbox(_ context.Context, r *connect.Request[agentv1.BackupMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.BackupMailbox(r.Msg))
+}
+
 func (s *Service) CheckWordPress(_ context.Context, r *connect.Request[agentv1.CheckWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.CheckWordPress(r.Msg))
 }
@@ -180,6 +184,10 @@ func (s *Service) RemoveDomain(_ context.Context, r *connect.Request[agentv1.Dom
 
 func (s *Service) Restore(_ context.Context, r *connect.Request[agentv1.RestoreRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.Restore(r.Msg))
+}
+
+func (s *Service) RestoreMailbox(_ context.Context, r *connect.Request[agentv1.RestoreMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RestoreMailbox(r.Msg))
 }
 
 func (s *Service) RestoreWordPress(_ context.Context, r *connect.Request[agentv1.RestoreWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {

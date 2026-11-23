@@ -30,6 +30,13 @@ type Runner interface {
 	// Stream connects stdin and stdout of the command to a reader and a writer, so that large
 	// data, for example a database dump, does not stay in memory (NFR-02). Both can be nil.
 	Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error
+	// StreamEnv is Stream with more environment variables, for example the credentials of
+	// restic for a backup from stdin.
+	//
+	// When stdin gives an error, the command stops before its input closes. The command thus
+	// does not see a normal end of a part of the input: restic does not make a snapshot of a
+	// backup that is not complete.
+	StreamEnv(ctx context.Context, env []string, stdin io.Reader, stdout io.Writer, name string, args ...string) error
 }
 
 // Host runs commands on the host. Each command starts in the root directory, not in the
@@ -193,8 +200,14 @@ func (o *output) String() string {
 }
 
 func (h Host) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
-	cmd := h.command(ctx, nil, name, args...)
-	cmd.Stdin = stdin
+	return h.StreamEnv(ctx, nil, stdin, stdout, name, args...)
+}
+
+func (h Host) StreamEnv(ctx context.Context, env []string, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
+	cmd := h.command(ctx, env, name, args...)
+	if stdin != nil {
+		cmd.Stdin = &stopOnError{r: stdin, cmd: cmd}
+	}
 	cmd.Stdout = stdout
 	stderr := newOutput(0)
 	cmd.Stderr = stderr
@@ -206,6 +219,21 @@ func (h Host) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, nam
 		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, msg)
 	}
 	return nil
+}
+
+// stopOnError is the input of a command. A read error kills the command before Go closes the
+// input of the command.
+type stopOnError struct {
+	r   io.Reader
+	cmd *exec.Cmd
+}
+
+func (s *stopOnError) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if err != nil && err != io.EOF && s.cmd.Process != nil {
+		_ = syscall.Kill(-s.cmd.Process.Pid, syscall.SIGKILL)
+	}
+	return n, err
 }
 
 func (h Host) Pipe(ctx context.Context, from, to []string) error {
@@ -315,6 +343,11 @@ func makeDirs(args []string) error {
 
 // Stream records the command and its stdin, and writes the output of the rule to stdout.
 func (f *Fake) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
+	return f.StreamEnv(ctx, nil, stdin, stdout, name, args...)
+}
+
+// StreamEnv is Stream with the extra environment of the command.
+func (f *Fake) StreamEnv(ctx context.Context, env []string, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
 	in := ""
 	if stdin != nil {
 		b, err := io.ReadAll(stdin)
@@ -323,7 +356,7 @@ func (f *Fake) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, na
 		}
 		in = string(b)
 	}
-	out, err := f.RunEnv(ctx, nil, in, name, args...)
+	out, err := f.RunEnv(ctx, env, in, name, args...)
 	if stdout != nil && out != "" {
 		if _, werr := io.WriteString(stdout, out); werr != nil {
 			return werr

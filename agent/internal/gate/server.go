@@ -230,7 +230,7 @@ func (s *Server) do(ctx context.Context, req request, input io.Reader, output io
 		}
 		return response{}
 	case kindStream:
-		if err := s.allow(req.Argv, nil); err != nil {
+		if err := s.allow(req.Argv, req.Env); err != nil {
 			return failure(err)
 		}
 		var in io.Reader
@@ -241,7 +241,7 @@ func (s *Server) do(ctx context.Context, req request, input io.Reader, output io
 		if req.WantsOutput {
 			out = output
 		}
-		if err := s.Run.Stream(ctx, in, out, req.Argv[0], req.Argv[1:]...); err != nil {
+		if err := s.Run.StreamEnv(ctx, req.Env, in, out, req.Argv[0], req.Argv[1:]...); err != nil {
 			return failure(err)
 		}
 		return response{}
@@ -358,7 +358,11 @@ func (l local) Pipe(ctx context.Context, from, to []string) error {
 }
 
 func (l local) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
-	req := request{Kind: kindStream, Argv: append([]string{name}, args...), SendsInput: stdin != nil, WantsOutput: stdout != nil}
+	return l.StreamEnv(ctx, nil, stdin, stdout, name, args...)
+}
+
+func (l local) StreamEnv(ctx context.Context, env []string, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
+	req := request{Kind: kindStream, Argv: append([]string{name}, args...), Env: env, SendsInput: stdin != nil, WantsOutput: stdout != nil}
 	return l.s.do(ctx, req, stdin, stdout).err()
 }
 

@@ -318,7 +318,7 @@ class SecondAuditTest extends TestCase
 
         // A snapshot in the repository that all servers used needs the shared key.
         Setting::put('backup_repository_password', Crypt::encryptString('the-old-password'));
-        $old = Snapshot::create(['website_id' => $first->id, 'kind' => 'scheduled', 'restic_id' => 'abc12345', 'databases' => [], 'mailboxes' => [], 'shared_repository' => true]);
+        $old = Snapshot::create(['website_id' => $first->id, 'kind' => 'scheduled', 'restic_id' => 'abc12345', 'databases' => [], 'shared_repository' => true]);
         $restore = "/api/v1/websites/{$first->id}/snapshots/{$old->id}/restore";
         // A website has one backup or restore at a time, so the jobs from before are complete.
         AgentJob::whereIn('state', ['queued', 'running'])->update(['state' => 'succeeded']);

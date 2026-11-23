@@ -45,7 +45,6 @@ class BackupController extends Controller
             // "databases": only the databases in the database servers on a different server.
             'part' => $s->part ?? Snapshot::WEBSITE,
             'serverId' => $s->server_id ?? $website->server_id,
-            'mailboxes' => $s->mailboxes,
             'createdAt' => $s->created_at?->toIso8601String(),
         ])]);
     }
@@ -199,13 +198,12 @@ class BackupController extends Controller
         }
     }
 
-    /** FR-903: restore a full website, one database, one mailbox or one file. */
+    /** FR-903: restore a full website, one database or one file. A mailbox has its own backups (MailBackupController). */
     public function restore(Request $request, string $websiteId, string $snapshotId): JsonResponse
     {
         $website = $this->findWebsite($request, $websiteId);
         $snapshot = $website->snapshots()->findOrFail($snapshotId);
         $data = $request->validate([
-            // Audit finding R5: the agent of this release has no mailbox restore.
             'scope' => ['required', Rule::in(['website', 'database', 'file'])],
             'item' => ['required_unless:scope,website', 'nullable', 'string', 'max:1024'],
             // Audit finding R8: a full restore can remove the files that are not in the backup,
@@ -317,10 +315,13 @@ class BackupController extends Controller
         ])->all();
     }
 
-    /** The servers that have a restic repository: the servers with the role "web". */
-    private static function repositoryServers(): Builder
+    /**
+     * The servers that have a restic repository: the servers with the role "web" (websites)
+     * or "email" (mailboxes).
+     */
+    public static function repositoryServers(): Builder
     {
-        return Server::whereJsonContains('roles', 'web');
+        return Server::where(fn (Builder $q) => $q->whereJsonContains('roles', 'web')->orWhereJsonContains('roles', 'email'));
     }
 
     /**
@@ -366,7 +367,8 @@ class BackupController extends Controller
     }
 
     /**
-     * The restic repository and the repository password of each server that has websites.
+     * The restic repository and the repository password of each server that has websites or
+     * mailboxes.
      * An administrator needs them to restore with restic directly, for example when the panel
      * is lost. The panel keeps the passwords encrypted and sends each one only to its server.
      *

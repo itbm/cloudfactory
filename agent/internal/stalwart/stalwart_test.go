@@ -175,6 +175,7 @@ func TestRealServer(t *testing.T) {
 		t.Fatalf("usage %v, err %v", usage, err)
 	}
 	testAutoresponder(ctx, t, c, domain)
+	testMailboxBackup(ctx, t, c, domain)
 	for _, destinations := range [][]string{{"info@" + domain}, {"info@" + domain, "ann@elsewhere.example.net"}} {
 		if err := c.SetAddress(ctx, domain, "team", destinations); err != nil {
 			t.Fatal(err)
