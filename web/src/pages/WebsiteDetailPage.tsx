@@ -13,6 +13,7 @@ import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
 import { certificateUntil, DISK_LIMIT_NOT_APPLIED, jobActive, WEBSITE_KIND, WEBSITE_STATUS } from "../lib/labels";
 import { AccessTab, SshCard } from "./website/AccessTab";
 import { BackupsTab } from "./website/BackupsTab";
+import { CommandsTab } from "./website/CommandsTab";
 import { CronTab } from "./website/CronTab";
 import { DatabasesTab } from "./website/DatabasesTab";
 import { DeploysTab } from "./website/DeploysTab";
@@ -33,6 +34,7 @@ const TABS = [
   ["databases", "Databases"],
   ["deploys", "Deploys"],
   ["cron", "Cron"],
+  ["commands", "Commands"],
   ["logs", "Logs"],
   ["security", "Security"],
   ["backups", "Backups"],
@@ -341,6 +343,7 @@ export function WebsiteDetailPage() {
         {tab === "files" && <FilesTab website={website} />}
         {tab === "deploys" && <DeploysTab key={website.id} website={website} />}
         {tab === "cron" && <CronTab key={website.id} website={website} />}
+        {tab === "commands" && <CommandsTab key={website.id} website={website} />}
         {tab === "logs" && <LogsTab key={website.id} website={website} />}
         {tab === "security" && (website.kind === "public" ? <SecurityTab key={website.id} website={website} /> : (
           <Empty title="No protection in the edge proxy">

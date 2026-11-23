@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -353,6 +355,96 @@ func TestSecurity(t *testing.T) {
 	}
 	if c := lastSite(calls); c.Query != "limit=5" || !strings.Contains(out.String(), "blocked  203.0.113.9 score 20") || !strings.Contains(out.String(), "rule 941100: XSS") {
 		t.Errorf("events: %+v\n%s", c, out)
+	}
+}
+
+// commandPanel answers like the panel API for the command log of one website. The command runs
+// for two checks, and then ends with exitCode.
+func commandPanel(t *testing.T, exitCode int) (*httptest.Server, *[]siteCall) {
+	t.Helper()
+	var calls []siteCall
+	checks := 0
+	entry := func(state string) string {
+		exit := "null"
+		if state == "done" {
+			exit = strconv.Itoa(exitCode)
+		}
+		return `{"command":{"id":"K1","command":"php artisan migrate --force","state":"` + state + `","exitCode":` + exit + `,"timedOut":false,"actor":"Ann","ip":"203.0.113.5","createdAt":"2026-11-22T10:00:00Z","output":"   INFO  Nothing to migrate."}}`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := siteCall{Method: r.Method, Path: strings.TrimPrefix(r.URL.Path, "/api/v1"), Query: r.URL.RawQuery}
+		if b, _ := io.ReadAll(r.Body); len(b) > 0 {
+			json.Unmarshal(b, &call.Body)
+		}
+		calls = append(calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + call.Path {
+		case "GET /websites":
+			w.Write([]byte(`{"data":[{"id":"W1","name":"acme.example","status":"running"}]}`))
+		case "GET /websites/W1/commands":
+			w.Write([]byte(`{"data":[{"id":"K1","command":"php artisan migrate --force","state":"done","exitCode":0,"actor":"Ann","createdAt":"2026-11-22T10:00:00Z"}],"meta":{"currentPage":1,"lastPage":1,"total":1}}`))
+		case "POST /websites/W1/commands":
+			checks = 0
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(entry("running")))
+		case "GET /websites/W1/commands/K1":
+			if checks++; checks < 2 {
+				w.Write([]byte(entry("running")))
+				return
+			}
+			w.Write([]byte(entry("done")))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not found."}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &calls
+}
+
+func TestCommandsRunWaitsForTheResult(t *testing.T) {
+	srv, calls := commandPanel(t, 0)
+	a, out := testApp(srv)
+	ctx := context.Background()
+	if err := a.dispatch(ctx, a.globalFlags([]string{"commands", "run", "acme.example", "--timeout", "120", "--", "php", "artisan", "migrate", "--force"})); err != nil {
+		t.Fatal(err)
+	}
+	var post siteCall
+	for _, c := range *calls {
+		if c.Method == "POST" {
+			post = c
+		}
+	}
+	if post.Path != "/websites/W1/commands" || post.Body["command"] != "php artisan migrate --force" || post.Body["timeoutSeconds"] != float64(120) {
+		t.Errorf("post = %+v", post)
+	}
+	if !strings.Contains(out.String(), "Nothing to migrate.") {
+		t.Errorf("out = %s", out)
+	}
+	if err := a.dispatch(ctx, []string{"commands", "run", "acme.example"}); err == nil {
+		t.Error("run with no command gave no error")
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"commands", "list", "acme.example", "--search", "migrate"}); err != nil || !strings.Contains(out.String(), "php artisan migrate --force") {
+		t.Errorf("list = %s, %v", out, err)
+	}
+	if c := lastSite(calls); c.Query != "page=1&perPage=50&q=migrate" && !strings.Contains(c.Query, "q=migrate") {
+		t.Errorf("list query = %q", c.Query)
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"commands", "get", "acme.example", "K1"}); err != nil || !strings.Contains(out.String(), "By: Ann from 203.0.113.5") {
+		t.Errorf("get = %s, %v", out, err)
+	}
+}
+
+// The exit code of cf is the exit code of the command.
+func TestCommandsRunGivesTheExitCodeOfTheCommand(t *testing.T) {
+	srv, _ := commandPanel(t, 3)
+	a, _ := testApp(srv)
+	err := a.dispatch(context.Background(), []string{"commands", "run", "acme.example", "--", "php", "artisan", "migrate", "--force"})
+	var exit *exitError
+	if !errors.As(err, &exit) || exit.code != 3 || !strings.Contains(err.Error(), "exit code 3") {
+		t.Errorf("err = %v", err)
 	}
 }
 

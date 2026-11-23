@@ -51,6 +51,11 @@ service AgentService {
   rpc DeleteDnsZones(DeleteDnsZonesRequest) returns (JobAccepted);
   rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
   rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
+  // Runs one command now in the container of a website (the panel action "Run a command"). The
+  // command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
+  // website, the same as a cron job. The job succeeds when the command ran, also when its exit
+  // code is not 0. The result has the exit code and the end of the output.
+  rpc RunCommand(RunCommandRequest) returns (JobAccepted);
   rpc Deploy(DeployRequest) returns (JobAccepted);
   rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
   rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
@@ -896,6 +901,16 @@ message RunCronJobRequest {
   string job_id = 1;
   string website_id = 2;
   CronJob cron_job = 3;
+}
+
+// RunCommand runs one command line now in the container of a website.
+message RunCommandRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // One line for the shell of the container (the input rule commandLine).
+  string command = 3;
+  // The longest time of the command, in seconds: 0 to 3600. 0 is 600.
+  uint32 timeout_seconds = 4;
 }
 
 // Deploy gets the code of a Git repository into a new release directory, runs the build

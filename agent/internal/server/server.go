@@ -235,6 +235,10 @@ func (s *Service) RunCronJob(_ context.Context, r *connect.Request[agentv1.RunCr
 	return s.submit(s.Deps.RunCronJob(r.Msg))
 }
 
+func (s *Service) RunCommand(_ context.Context, r *connect.Request[agentv1.RunCommandRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunCommand(r.Msg))
+}
+
 func (s *Service) Deploy(_ context.Context, r *connect.Request[agentv1.DeployRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.Deploy(r.Msg))
 }

@@ -13,6 +13,7 @@ import type {
   BackupPolicy,
   BrandFields,
   Confirmation,
+  CommandLogPage,
   CronJob,
   FirewallEvent,
   Customer,
@@ -55,6 +56,7 @@ import type {
   TokenScope,
   UpdatePolicy,
   Website,
+  WebsiteCommand,
   WebsiteKind,
   WebsiteSecurity,
   WebsiteSecurityChange,
@@ -596,6 +598,29 @@ export function setSecurity(websiteId: string, change: WebsiteSecurityChange): P
 /** The last requests that the firewall blocked or detected, the newest first. */
 export function listFirewallEvents(websiteId: string): Promise<FirewallEvent[]> {
   return call(() => live.request<{ events: FirewallEvent[] }>("GET", `/websites/${websiteId}/security/events`)).then((r) => r.events);
+}
+
+/** A page of the command log of a website. The search finds the commands with the text. */
+export function listCommands(websiteId: string, page = 1, search = ""): Promise<CommandLogPage> {
+  const query = [page > 1 ? `page=${page}` : "", search.trim() ? `q=${q(search.trim())}` : ""].filter(Boolean).join("&");
+  return call(() => live.request<CommandLogPage>("GET", `/websites/${websiteId}/commands${query ? `?${query}` : ""}`));
+}
+
+/** One entry of the command log, with the end of the output. */
+export function readCommand(websiteId: string, commandId: string): Promise<WebsiteCommand> {
+  return call(() => live.request<{ command: WebsiteCommand }>("GET", `/websites/${websiteId}/commands/${commandId}`)).then((r) => r.command);
+}
+
+/**
+ * Runs one command line in the container of the website. The promise resolves with the entry
+ * of the command log when the command has ended.
+ */
+export async function runCommand(websiteId: string, command: string, timeoutSeconds?: number): Promise<WebsiteCommand> {
+  const r = await call(() => live.request<{ command: WebsiteCommand; job: live.ApiJob | null }>("POST", `/websites/${websiteId}/commands`, {
+    command: command.trim(), ...(timeoutSeconds ? { timeoutSeconds } : {}),
+  }));
+  await track(r.job);
+  return readCommand(websiteId, r.command.id);
 }
 
 export function readDeploy(websiteId: string): Promise<Deploy> {
