@@ -74,7 +74,7 @@ The product specification, section 6.4, gives the requirements.
   The panel refuses to turn on SFTP for a suspended customer and for a website in the state
   `failed`.
 
-## Files, logs, cron jobs and deploys
+## Files, logs, cron jobs, commands and deploys
 
 - The agent does each file operation, each read of the logs, each cron command and each
   build as the Unix user of the website. The root helper has no new command and no new
@@ -87,6 +87,17 @@ The product specification, section 6.4, gives the requirements.
   limits of a website. The firewall rules for the website user apply to both.
 - A customer controls the commands of its cron jobs and its builds. This gives the customer
   no new rights: the customer can run the same code in its website.
+- **Run a command** runs a command in the gVisor container of the website as the website
+  user, the same as a cron command. The command has no standard input and a time limit of
+  1 hour at most. A website can have 2 commands that run at the same time.
+- The panel records each command in the command log of the website before it sends the job:
+  the command, the user or the token, the IP address and the time. The result completes the
+  entry. The panel also records each command in the audit log. A customer cannot change or
+  remove an entry of the command log.
+- The command log keeps the last 64 KiB of the output. The output can contain secrets of the
+  customer, for example when a command prints an environment variable. Only the users who
+  can see the website can read the command log. When a command does not start, the entry
+  has the short error for customers, not the error of the server.
 - The agent keeps a limited quantity of the output of each command: the first 8 MiB of the
   standard output, and the start and the end of the error output. It discards the remainder
   while the command runs. A command of a customer thus cannot use all the memory of the
@@ -125,7 +136,8 @@ The product specification, section 6.4, gives the requirements.
 - A user needs the token scope for websites to use these routes. An owner sees only its own
   websites. For a suspended customer, the panel refuses each change of a file, a cron job and
   a Git source, each deploy and each new preview.
-- The panel records each change of a file, a cron job and a Git source in the audit log.
+- The panel records each change of a file, a cron job and a Git source, and each command
+  that a user runs, in the audit log.
   It does not record the content of a file.
 
 ## Databases
@@ -395,6 +407,15 @@ not trust it:
 - For a stopped website, the route gives a fixed page with the status 503 ("This website is
   not available"). The proxy does not connect to the port of the stopped website, and the
   page shows no data of the server.
+- The edge proxy can protect a website with a firewall, IP address rules, password-protected
+  paths and a sign-in limit. Refer to
+  [architecture.md](architecture.md#protection-of-a-website).
+- The API never gives the password hashes of the protected paths. The audit log records each
+  change of the protection with the parts that changed, but not the addresses or the
+  passwords.
+- The root helper reads the firewall log of the edge proxy only as a regular file of the user
+  `cf-edge`, with no symbolic links. The worker gives only the ID of a website that the agent
+  knows, and gets only the events of that website.
 
 ## The agent
 
@@ -1226,6 +1247,16 @@ These items stay open in release 0.1:
   installer writes the rule that refuses the connections of the Unix users of the database
   servers. A server that you installed with an earlier release gets the rule when you run
   the installer again.
+- **Client addresses behind a CDN.** The IP address rules and the sign-in limit use the
+  address that connects to the edge proxy. When a website is behind a CDN or a proxy, for
+  example Cloudflare, all requests come from the addresses of the CDN. The edge proxy does
+  not read `X-Forwarded-For`, because each client can set it.
+- **IPv6 addresses for the sign-in limit.** The sign-in limit counts the requests of each
+  address. A client with an IPv6 network can use many addresses, and gets the limit for each
+  address. Add the network to the block list to stop it.
+- **The firewall is not complete protection.** The firewall uses paranoia level 1, examines
+  only the first 1 MiB of a request body and does not examine the responses. It cannot see an
+  attack in a part that it does not examine. Keep the software of each website up to date.
 - **Rights of the worker of the agent.** The worker is not root, but it can act as each
   website user, it manages each database server, and it has the full admin API of the edge
   proxy. Refer to [The root helper of the agent](#the-root-helper-of-the-agent). A possible

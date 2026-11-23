@@ -44,6 +44,7 @@ enum AgentAction: string
     case DeleteDnsZones = 'DeleteDnsZones';
     case SetCronJobs = 'SetCronJobs';
     case RunCronJob = 'RunCronJob';
+    case RunCommand = 'RunCommand';
     case Deploy = 'Deploy';
     case ActivateRelease = 'ActivateRelease';
     case InstallDependencies = 'InstallDependencies';
@@ -52,6 +53,7 @@ enum AgentAction: string
     case SendDatabaseServer = 'SendDatabaseServer';
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
     case SetPacks = 'SetPacks';
+    case SetWebsiteSecurity = 'SetWebsiteSecurity';
     case SetCertificates = 'SetCertificates';
     // The import of an account from a different panel (docs/imports.md).
     case FetchImport = 'FetchImport';
@@ -100,6 +102,7 @@ enum AgentAction: string
             self::DeleteDnsZones => ['Remove zones'],
             self::SetCronJobs => ['Save the cron jobs'],
             self::RunCronJob => ['Run the command'],
+            self::RunCommand => ['Run the command'],
             // The steps after "Build" are the steps of SetRuntime: the agent starts the website
             // from the new release with no stop.
             self::Deploy => ['Get the code', 'Build', 'Migrate the database', ...self::SetRuntime->steps(), 'Remove old releases'],
@@ -112,6 +115,7 @@ enum AgentAction: string
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
+            self::SetWebsiteSecurity => ['Set edge proxy rules'],
             self::SetCertificates => ['Load certificates', 'Check certificates'],
             // A download for a server that only copies a part has no second step.
             self::FetchImport => ['Download archive', 'Read archive'],

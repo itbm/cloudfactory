@@ -415,6 +415,76 @@ The route sends traffic to `169.254.77.1:<port>`. Caddy gets the TLS certificate
 automatically. The agent starts the edge container before it adds the first route, also
 during the panel installation.
 
+### Protection of a website
+
+The edge proxy can protect a website that has domains. The protection has four parts: a
+firewall, IP address rules, password-protected paths and a sign-in limit. The user sets them
+on the **Security** tab of the website, with `cf security` or with
+`/v1/websites/{id}/security`.
+
+The panel keeps the protection in the column `security` of the website. The job
+`SetWebsiteSecurity` sends it to the agent, and the panel also adds it to each job that makes
+the route of the website. The agent keeps it in its state file. The job changes only the
+route of the website. The container of the website does not restart.
+
+The route of a protected website has these steps, in this order:
+
+1. The block list. The edge proxy refuses a request from an address in the list with the
+   status 403.
+2. The allow list. When the list has addresses, the edge proxy refuses a request from each
+   other address with the status 403.
+3. The sign-in limit. The handler `rate_limit` (caddy-ratelimit) counts the POST requests to
+   the sign-in paths from each client address in a window of 1 minute. After the limit, the
+   edge proxy answers with the status 429. Each website has its own zone, `cf-<website ID>`.
+4. The password-protected paths. The edge proxy uses HTTP basic authentication with a bcrypt
+   hash of each password. The panel makes the hash with the cost 10. The API never gives the
+   hash.
+5. The firewall. The edge proxy examines the request with Coraza (coraza-caddy) and the OWASP
+   Core Rule Set, paranoia level 1.
+6. The edge proxy sends the request to the website.
+
+A path that ends with `/` is a directory: `/staging/` agrees with `/staging` and with each path
+in it. `/` agrees with all paths. The path matcher of Caddy ignores the case of the letters.
+
+A stopped website has no protection. Its route gives the page "This website is not
+available" to all visitors.
+
+#### The firewall
+
+- The mode `detect` records the attacks and blocks nothing (`SecRuleEngine DetectionOnly`).
+  The mode `block` refuses an attack with the status 403 (`SecRuleEngine On`). Use `detect`
+  first, and examine the events before you change to `block`.
+- The firewall adds the score of each rule that agrees with the request. It blocks a request
+  with a score of 5 or more.
+- The firewall examines the address, the headers and the first 1 MiB of the body of each
+  request (`SecRequestBodyLimitAction ProcessPartial`). It does not examine the responses.
+- A user can turn off rules (`SecRuleRemoveById`) and give paths that the firewall does not
+  examine.
+- Coraza compiles the rule set one time for each set of directives. All websites with the
+  same mode and the same rules that are off share one compiled rule set. One compiled rule
+  set uses approximately 3 MB of memory.
+
+#### Firewall events
+
+```text
+ Security tab ──► API ──► worker ──► root helper: edge.firewallEvents ──► caddy/logs/firewall.log
+```
+
+- The edge proxy writes the messages of the firewall (the logger `http.handlers.waf`) to
+  `/data/logs/firewall.log` in its container. On the server, the file is
+  `/var/lib/cloudfactory/caddy/logs/firewall.log`. Caddy starts a new file at 20 MB, and keeps
+  one old file.
+- The edge proxy gives each request the transaction ID `<website ID>-<UUID>` in the header
+  `X-Cf-Firewall-Id`. It removes the header before it sends the request to the website. Thus
+  the agent can find the events of each website in the shared log.
+- The directory is a directory of the user `cf-edge`. The root helper opens the file with no
+  symbolic links (`openat2` with `RESOLVE_BENEATH` and `RESOLVE_NO_SYMLINKS`), and reads it
+  only when it is a regular file of `cf-edge`. It reads the last 8 MiB of the file.
+- The agent puts the lines of one request together, and gives the newest events first. The
+  panel shows up to 200 events.
+- An event of the mode `detect` has no host, because Coraza writes the host only in the line
+  that it writes when it blocks a request.
+
 ## SFTP for the websites
 
 One SFTP container, `cf-sftp`, on each server serves all websites. It listens on port 2200 (the
@@ -806,7 +876,7 @@ record at the registrar, turn DNSSEC off and on, and give the new DS record to t
 For a zone at an external DNS provider, the provider makes the key and signs the zone. The
 plugin gives the DS record in the answer to `sync`.
 
-## Files, logs, cron jobs and deploys of a website
+## Files, logs, cron jobs, commands and deploys of a website
 
 The agent does all of this work as the Unix user of the website (`runuser -u <user>`). The
 root helper permits each program as a website user, so this work adds no operation to its
@@ -846,6 +916,42 @@ and gives the answer in the same request.
 - The agent sends the exit code and the end of the output of each run in its status report.
   The panel shows them for the last run.
 - **Run now** makes the job `RunCronJob`. The job fails when the exit code is not 0.
+
+### Run a command and the command log
+
+A user can run one command line in the container of a website without a terminal, for
+example `php artisan migrate --force` or `composer install`. The web panel has the tab
+**Commands**, the CLI has `cf commands run`, and the API has
+`POST /websites/{id}/commands`.
+
+```text
+ web panel or cf ──► API ──► command log entry ──► job RunCommand ──► worker
+                                    ▲                                    │
+                                    └──── exit code and output ◄─────────┘
+```
+
+1. The API checks the command with the input rule `commandLine`: one line of 1 to 2000
+   characters. The time limit is 1 to 3600 seconds. The default is 600 seconds.
+2. The API adds an entry to the command log of the website before it sends the job. The
+   entry has the command, the user or the token, the IP address of the client and the
+   time. The API also adds an entry to the audit log.
+3. The worker runs the command as the website user, the same as a cron job:
+   `podman exec --workdir /app <container> sh -c <command>`. The command has no standard
+   input, so it cannot ask a question.
+4. The worker stops the command at its time limit. The exit code is then 124.
+5. The job succeeds when the command ran, also when its exit code is not 0. The job fails
+   when the command did not start, for example when the container does not run.
+6. The panel completes the entry with the state, the exit code, the time of the start and
+   the end, and the last 64 KiB of the output.
+
+- A website can have 2 commands that run at the same time. The API and the agent have the
+  same limit.
+- The API refuses a command when the website does not run or its customer is suspended.
+- The list of the command log has no output. `GET /websites/{id}/commands/{commandId}`
+  gives one entry with its output.
+- The command log has the same rule as the audit log for the name of a person: a customer
+  sees "Administrator" or "Your provider" in place of the name of a person of the operator
+  or of the reseller, and no IP address.
 
 ### Deploys from Git
 

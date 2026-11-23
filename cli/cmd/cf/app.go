@@ -70,6 +70,12 @@ Usage:
   cf cron set WEBSITE CRON_ID [--schedule SCHEDULE] [--command COMMAND] [--on | --off]
   cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
   cf cron delete WEBSITE CRON_ID
+  cf commands run WEBSITE [--timeout SECONDS] -- COMMAND...
+                                                       Run one command line now in the container of the website, in /app, as
+                                                       the user of the website. cf waits and shows the output. The exit code
+                                                       of cf is the exit code of the command. The panel logs each command.
+  cf commands list WEBSITE [--search TEXT]             The command log: who ran each command, when, and the exit code.
+  cf commands get WEBSITE COMMAND_ID                   One command of the log, with the end of its output.
   cf deploys show WEBSITE                              The Git repository, the deploy key, the webhook and the releases.
   cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR]
                              [--trigger manual|webhook|schedule] [--check-minutes N]
@@ -87,6 +93,18 @@ Usage:
   cf deploys webhook WEBSITE                           Make a new webhook address and secret. The old ones stop at once.
   cf deploys activate WEBSITE RELEASE_ID               Go back to a release that is on the server.
   cf deploys disconnect WEBSITE
+  cf security show WEBSITE                             The protection of the website in the edge proxy.
+  cf security firewall WEBSITE [--mode off|detect|block] [--exclude RULE_ID]... [--include RULE_ID]... [--no-exclusions]
+                               [--skip PATH]... [--no-skip]
+                                                       Use detect first, and look at the events before you select block.
+  cf security events WEBSITE [--limit N]               The last requests that the firewall blocked or detected.
+  cf security ip WEBSITE [--allow RANGE]... [--block RANGE]... [--remove RANGE]... [--no-allow] [--no-block]
+                                                       With an allow list, the edge proxy refuses all other addresses.
+  cf security sign-in-limit WEBSITE --per-minute N [--path PATH]... [--wordpress]
+                                                       POST requests to the sign-in paths from one IP address. 0 is no limit.
+  cf security protect WEBSITE PATH --user NAME         Add a user to a password-protected path, or change the password. The
+                                                       password is read from CF_PATH_PASSWORD or stdin.
+  cf security unprotect WEBSITE PATH [--user NAME]     Remove a user, or the password of the path.
   cf previews list WEBSITE                             The settings and the preview websites of the pull requests.
   cf previews set WEBSITE [--on | --off] [--domain DOMAIN] [--limit N] [--copy-environment | --no-copy-environment]
                                                        Each preview is a website pr-NUMBER.DOMAIN. Use a sub-domain of a
@@ -531,8 +549,12 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.logs(ctx, sub, rest)
 	case "cron":
 		return a.cron(ctx, sub, rest)
+	case "commands", "command":
+		return a.commands(ctx, sub, rest)
 	case "deploys", "deploy":
 		return a.deploys(ctx, sub, rest)
+	case "security":
+		return a.security(ctx, sub, rest)
 	case "previews", "preview":
 		return a.previews(ctx, sub, rest)
 	case "plugins", "plugin":

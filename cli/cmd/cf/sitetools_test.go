@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -65,6 +67,13 @@ func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 			w.Write([]byte(deploy))
 		case "DELETE /websites/W1/deploy":
 			w.WriteHeader(http.StatusNoContent)
+		case "GET /websites/W1/security":
+			w.Write([]byte(`{"security":{"firewall":{"mode":"detect","excludedRules":[942100],"skippedPaths":["/wp-admin/"]},"ipRules":{"allow":[],"block":["198.51.100.7"]},"protectedPaths":[{"path":"/staging/","users":[{"name":"client"},{"name":"agency"}]}],"signInLimit":{"requestsPerMinute":0,"paths":[]}}}`))
+		case "PATCH /websites/W1/security":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"security":{},` + job + `}`))
+		case "GET /websites/W1/security/events":
+			w.Write([]byte(`{"events":[{"at":"2026-11-22T21:26:59Z","clientIp":"203.0.113.9","host":"acme.example","uri":"/?q=<script>","action":"blocked","score":20,"rules":[{"id":941100,"message":"XSS Attack Detected via libinjection","data":"Matched Data: XSS"}]}]}`))
 		case "GET /websites/W1/previews", "PUT /websites/W1/previews":
 			w.Write([]byte(previews))
 		case "POST /websites/W1/previews":
@@ -265,6 +274,177 @@ func TestDeploys(t *testing.T) {
 	}
 	if err := a.dispatch(ctx, []string{"deploys", "disconnect", "acme.example"}); err != nil || lastSite(calls).Method != "DELETE" {
 		t.Errorf("disconnect = %+v, %v", lastSite(calls), err)
+	}
+}
+
+func TestSecurity(t *testing.T) {
+	srv, calls := sitePanel(t)
+	a, out := testApp(srv)
+	ctx := context.Background()
+	if err := a.dispatch(ctx, []string{"security", "show", "acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"detect", "942100", "/wp-admin/", "198.51.100.7", "Protected path /staging/  users client agency"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("show does not have %q:\n%s", want, out)
+		}
+	}
+	body := func(part string) any {
+		t.Helper()
+		c := lastSite(calls)
+		if c.Method != "PATCH" || c.Path != "/websites/W1/security" || len(c.Body) != 1 {
+			t.Fatalf("call = %+v", c)
+		}
+		b, _ := json.Marshal(c.Body[part])
+		return string(b)
+	}
+	// A change keeps the values that the command does not give.
+	if err := a.dispatch(ctx, []string{"security", "firewall", "acme.example", "--mode", "block", "--exclude", "920450", "--include", "942100"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := body("firewall"); got != `{"excludedRules":[920450],"mode":"block","skippedPaths":["/wp-admin/"]}` {
+		t.Errorf("firewall = %s", got)
+	}
+	if err := a.dispatch(ctx, []string{"security", "firewall", "acme.example", "--exclude", "x"}); err == nil {
+		t.Error("a rule that is not a number gave no error")
+	}
+	if err := a.dispatch(ctx, []string{"security", "ip", "acme.example", "--allow", "203.0.113.0/24", "--remove", "198.51.100.7"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := body("ipRules"); got != `{"allow":["203.0.113.0/24"],"block":[]}` {
+		t.Errorf("ipRules = %s", got)
+	}
+	if err := a.dispatch(ctx, []string{"security", "sign-in-limit", "acme.example", "--per-minute", "10", "--wordpress"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := body("signInLimit"); got != `{"paths":["/wp-login.php","/xmlrpc.php"],"requestsPerMinute":10}` {
+		t.Errorf("signInLimit = %s", got)
+	}
+	// The password comes from the environment. The other users keep their passwords.
+	t.Setenv("CF_PATH_PASSWORD", "correct horse")
+	if err := a.dispatch(ctx, []string{"security", "protect", "acme.example", "/staging/", "--user", "client"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := body("protectedPaths"); got != `[{"path":"/staging/","users":[{"name":"client","password":"correct horse"},{"name":"agency"}]}]` {
+		t.Errorf("protect = %s", got)
+	}
+	if err := a.dispatch(ctx, []string{"security", "protect", "acme.example", "/admin/", "--user", "me"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := body("protectedPaths"); got != `[{"path":"/staging/","users":[{"name":"client"},{"name":"agency"}]},{"path":"/admin/","users":[{"name":"me","password":"correct horse"}]}]` {
+		t.Errorf("protect a new path = %s", got)
+	}
+	if err := a.dispatch(ctx, []string{"security", "unprotect", "acme.example", "/staging/", "--user", "agency"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := body("protectedPaths"); got != `[{"path":"/staging/","users":[{"name":"client"}]}]` {
+		t.Errorf("unprotect a user = %s", got)
+	}
+	if err := a.dispatch(ctx, []string{"security", "unprotect", "acme.example", "/staging/"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := body("protectedPaths"); got != `[]` {
+		t.Errorf("unprotect = %s", got)
+	}
+	if err := a.dispatch(ctx, []string{"security", "unprotect", "acme.example", "/other/"}); err == nil {
+		t.Error("unprotect of a path with no password gave no error")
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"security", "events", "acme.example", "--limit", "5"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Query != "limit=5" || !strings.Contains(out.String(), "blocked  203.0.113.9 score 20") || !strings.Contains(out.String(), "rule 941100: XSS") {
+		t.Errorf("events: %+v\n%s", c, out)
+	}
+}
+
+// commandPanel answers like the panel API for the command log of one website. The command runs
+// for two checks, and then ends with exitCode.
+func commandPanel(t *testing.T, exitCode int) (*httptest.Server, *[]siteCall) {
+	t.Helper()
+	var calls []siteCall
+	checks := 0
+	entry := func(state string) string {
+		exit := "null"
+		if state == "done" {
+			exit = strconv.Itoa(exitCode)
+		}
+		return `{"command":{"id":"K1","command":"php artisan migrate --force","state":"` + state + `","exitCode":` + exit + `,"timedOut":false,"actor":"Ann","ip":"203.0.113.5","createdAt":"2026-11-22T10:00:00Z","output":"   INFO  Nothing to migrate."}}`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := siteCall{Method: r.Method, Path: strings.TrimPrefix(r.URL.Path, "/api/v1"), Query: r.URL.RawQuery}
+		if b, _ := io.ReadAll(r.Body); len(b) > 0 {
+			json.Unmarshal(b, &call.Body)
+		}
+		calls = append(calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + call.Path {
+		case "GET /websites":
+			w.Write([]byte(`{"data":[{"id":"W1","name":"acme.example","status":"running"}]}`))
+		case "GET /websites/W1/commands":
+			w.Write([]byte(`{"data":[{"id":"K1","command":"php artisan migrate --force","state":"done","exitCode":0,"actor":"Ann","createdAt":"2026-11-22T10:00:00Z"}],"meta":{"currentPage":1,"lastPage":1,"total":1}}`))
+		case "POST /websites/W1/commands":
+			checks = 0
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(entry("running")))
+		case "GET /websites/W1/commands/K1":
+			if checks++; checks < 2 {
+				w.Write([]byte(entry("running")))
+				return
+			}
+			w.Write([]byte(entry("done")))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not found."}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &calls
+}
+
+func TestCommandsRunWaitsForTheResult(t *testing.T) {
+	srv, calls := commandPanel(t, 0)
+	a, out := testApp(srv)
+	ctx := context.Background()
+	if err := a.dispatch(ctx, a.globalFlags([]string{"commands", "run", "acme.example", "--timeout", "120", "--", "php", "artisan", "migrate", "--force"})); err != nil {
+		t.Fatal(err)
+	}
+	var post siteCall
+	for _, c := range *calls {
+		if c.Method == "POST" {
+			post = c
+		}
+	}
+	if post.Path != "/websites/W1/commands" || post.Body["command"] != "php artisan migrate --force" || post.Body["timeoutSeconds"] != float64(120) {
+		t.Errorf("post = %+v", post)
+	}
+	if !strings.Contains(out.String(), "Nothing to migrate.") {
+		t.Errorf("out = %s", out)
+	}
+	if err := a.dispatch(ctx, []string{"commands", "run", "acme.example"}); err == nil {
+		t.Error("run with no command gave no error")
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"commands", "list", "acme.example", "--search", "migrate"}); err != nil || !strings.Contains(out.String(), "php artisan migrate --force") {
+		t.Errorf("list = %s, %v", out, err)
+	}
+	if c := lastSite(calls); c.Query != "page=1&perPage=50&q=migrate" && !strings.Contains(c.Query, "q=migrate") {
+		t.Errorf("list query = %q", c.Query)
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"commands", "get", "acme.example", "K1"}); err != nil || !strings.Contains(out.String(), "By: Ann from 203.0.113.5") {
+		t.Errorf("get = %s, %v", out, err)
+	}
+}
+
+// The exit code of cf is the exit code of the command.
+func TestCommandsRunGivesTheExitCodeOfTheCommand(t *testing.T) {
+	srv, _ := commandPanel(t, 3)
+	a, _ := testApp(srv)
+	err := a.dispatch(context.Background(), []string{"commands", "run", "acme.example", "--", "php", "artisan", "migrate", "--force"})
+	var exit *exitError
+	if !errors.As(err, &exit) || exit.code != 3 || !strings.Contains(err.Error(), "exit code 3") {
+		t.Errorf("err = %v", err)
 	}
 }
 
