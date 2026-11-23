@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useStore } from "../api/hooks";
 import { Topbar } from "../components/Layout";
 import { Card, Empty, Meter, PageHeader, Status, TableWrap } from "../components/ui";
+import { AccountExportsPanel } from "../features/AccountExports";
 import { bytes, longDate, ratio } from "../lib/format";
 
 /**
@@ -115,6 +116,7 @@ export function AccountPage() {
             <p className="muted small">Each user sees all the websites of this account. To turn on two-step sign-in for your own user, open <Link to="/settings">Settings</Link>.</p>
           </div>
         </Card>
+        <div className="mt"><AccountExportsPanel customerId={customer.id} customerName={customer.name} /></div>
       </main>
     </>
   );

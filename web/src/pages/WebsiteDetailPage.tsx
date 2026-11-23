@@ -335,6 +335,11 @@ export function WebsiteDetailPage() {
           </div>
         </div>
         {website.status === "failed" && <FailedNotice website={website} />}
+        {website.status === "moving" && (
+          <div className="alert alert-info" role="status" style={{ marginBottom: 20 }}>
+            <p>This website moves to the server {state.servers.find((s) => s.id === website.movingToServerId)?.name ?? "that the administrator selected"} now. It does not operate while its files move, and it accepts no change until the move is complete.</p>
+          </div>
+        )}
         <Tabs label="Website sections" current={tab} items={TABS.filter(([tabId]) => (website.kind === "public" || !PUBLIC_ONLY.includes(tabId)) && (tabId !== "wordpress" || canHaveWordPress(website))).map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
         {website.managedByTerraform && tab !== "overview" && <div style={{ marginBottom: 20 }}><TerraformNotice resource="this website" /></div>}
         {tab === "overview" && <Overview website={website} />}

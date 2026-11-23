@@ -1,0 +1,37 @@
+{
+    "request": "GET /exports",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7a9a2v0jga0080000000003",
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "customerName": "Harbour Books",
+                "state": "ready",
+                "files": true,
+                "databases": true,
+                "parts": {
+                    "complete": 2,
+                    "total": 2
+                },
+                "receivedBytes": 904,
+                "sizeBytes": 16896,
+                "warnings": [
+                    {
+                        "item": "websites/events.harbourbooks.example.net",
+                        "message": "The panel could not make this website on its server, so the export has no files of it."
+                    },
+                    {
+                        "item": "mail",
+                        "message": "The export does not have the messages of the mailboxes or their passwords."
+                    }
+                ],
+                "error": null,
+                "createdBy": "Sam Reseller",
+                "createdAt": "2026-11-13T11:05:00+00:00",
+                "finishedAt": "2026-11-13T11:08:00+00:00",
+                "expiresAt": "2026-11-20T11:08:00+00:00"
+            }
+        ]
+    }
+}

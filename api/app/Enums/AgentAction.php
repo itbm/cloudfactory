@@ -21,6 +21,7 @@ enum AgentAction: string
     case DeleteDatabaseUser = 'DeleteDatabaseUser';
     case Backup = 'Backup';
     case Restore = 'Restore';
+    case ExportWebsite = 'ExportWebsite';
     case InstallHostUpdates = 'InstallHostUpdates';
     case Reboot = 'Reboot';
     case UpdateAgent = 'UpdateAgent';
@@ -53,6 +54,8 @@ enum AgentAction: string
     case RotateMeshKey = 'RotateMeshKey';
     case SendDatabaseServer = 'SendDatabaseServer';
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
+    case SendWebsite = 'SendWebsite';
+    case ReceiveWebsite = 'ReceiveWebsite';
     case SetPacks = 'SetPacks';
     case InstallWordPress = 'InstallWordPress';
     case CheckWordPress = 'CheckWordPress';
@@ -67,6 +70,8 @@ enum AgentAction: string
     case ImportDatabase = 'ImportDatabase';
     case ImportMail = 'ImportMail';
     case DeleteImport = 'DeleteImport';
+    case MakeArchive = 'MakeArchive';
+    case ExtractArchive = 'ExtractArchive';
     case ScanWebsite = 'ScanWebsite';
 
     /** The steps that the agent reports for this action. */
@@ -88,10 +93,12 @@ enum AgentAction: string
             self::DeleteDatabaseUser => ['Remove user'],
             self::Backup => ['Snapshot files', 'Dump databases', 'Upload to object storage', 'Apply retention'],
             self::Restore => ['Download snapshot', 'Restore', 'Health check'],
+            // An account export: the agent sends each part to the panel while it makes it.
+            self::ExportWebsite => ['Send database dumps', 'Send files'],
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
             self::Reboot => ['Drain the edge proxy', 'Stop containers', 'Reboot', 'Start containers', 'Check all services'],
             self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],
-            self::PruneBackups => ['Remove backups of deleted websites', 'Remove unused data'],
+            self::PruneBackups => ['Remove backups of deleted and moved websites', 'Remove unused data'],
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
@@ -122,6 +129,8 @@ enum AgentAction: string
             self::RotateMeshKey => ['Make new key'],
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
+            self::SendWebsite => ['Stop website', 'Send files'],
+            self::ReceiveWebsite => ['Create Unix user', 'Receive files', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Set SFTP access and cron jobs', 'Get TLS certificate'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
             // FR-206: WordPress sites. The agent runs WP-CLI in the container of the website.
             self::InstallWordPress => ['Check the website', 'Create database', 'Download WordPress', 'Install WordPress', 'Check WordPress'],
@@ -138,8 +147,19 @@ enum AgentAction: string
             self::ImportDatabase => ['Check archive', 'Load dump'],
             self::ImportMail => ['Check archive', 'Copy messages'],
             self::DeleteImport => ['Remove archive'],
+            self::MakeArchive => ['Make the archive'],
+            self::ExtractArchive => ['Extract the archive'],
             self::ScanWebsite => ['Update malware signatures', 'Scan files'],
         };
+    }
+
+    /**
+     * The actions whose result the panel keeps for the user: the summary of an archive
+     * (agent/internal/sitefiles.Summary). The API gives it with the job.
+     */
+    public function keepsResult(): bool
+    {
+        return in_array($this, [self::MakeArchive, self::ExtractArchive], true);
     }
 
     /** The actions that use the backup repository. The panel adds its credentials when it sends the job. */

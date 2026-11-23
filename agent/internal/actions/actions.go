@@ -101,6 +101,9 @@ type Deps struct {
 	ReadyTimeout time.Duration
 	// MaxWatch is the maximum time that the agent watches a website after a runtime change.
 	MaxWatch time.Duration
+	// Exports sends the parts of an account export to the panel (export.go). Nil means that
+	// the agent cannot send an export, for example a command of an administrator.
+	Exports ExportUploader
 	// ResticPasswordFile holds the encryption key of the backups.
 	ResticPasswordFile string
 	// DataDir holds the state of the agent. Only root can read it. The agent keeps database

@@ -20,6 +20,24 @@
                 "openedAt": "2026-11-14T05:00:00+00:00",
                 "updatedAt": "2026-11-14T10:00:00+00:00",
                 "resolvedAt": null
+            },
+            {
+                "id": "01m7cqzs80pzbm8k000000000c",
+                "subjectType": "mailbox",
+                "subjectId": "01m7cqzs80ytymcv0000000002",
+                "subjectName": "sales@acme.example.com",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "resource": "storage",
+                "level": "warning",
+                "used": 2040528896,
+                "limit": 2147483648,
+                "percent": 95,
+                "usedText": "1.9 GB",
+                "limitText": "2 GB",
+                "openedAt": "2026-11-14T02:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00",
+                "resolvedAt": null
             }
         ],
         "settings": {
