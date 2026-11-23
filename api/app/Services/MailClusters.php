@@ -189,7 +189,16 @@ class MailClusters
      */
     public static function target(Server $server, AgentAction $action): Server
     {
-        if ($server->mail_cluster_id === null || $server->state !== 'offline' || ! in_array($action, self::SHARED, true)) {
+        return in_array($action, self::SHARED, true) ? self::member($server) : $server;
+    }
+
+    /**
+     * The server that answers a request for the shared data of a cluster, for example the
+     * autoresponder of a mailbox: the server itself, or a running member when it is offline.
+     */
+    public static function member(Server $server): Server
+    {
+        if ($server->mail_cluster_id === null || $server->state !== 'offline') {
             return $server;
         }
 

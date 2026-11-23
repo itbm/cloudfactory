@@ -45,8 +45,8 @@ const (
 	mailCertificateWait = 3 * time.Minute
 )
 
-// errNoMail is the error of a mail job on a server that has no mail server.
-var errNoMail = errors.New("this server has no mail server. Turn on email for the server first")
+// ErrNoMail is the error of a mail job or a mail request on a server that has no mail server.
+var ErrNoMail = errors.New("this server has no mail server. Turn on email for the server first")
 
 // mailURL gives the address of the management API of the mail server.
 func (d *Deps) mailURL() string {
@@ -74,7 +74,7 @@ func (d *Deps) mailClient(ctx context.Context) (*stalwart.Client, error) {
 		return nil, err
 	}
 	if info.Hostname == "" {
-		return nil, errNoMail
+		return nil, ErrNoMail
 	}
 	return d.mailClientFor(info.Password), nil
 }

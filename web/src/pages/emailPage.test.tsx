@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getState } from "../api/store";
 import type { Role } from "../api/types";
 import { apiJob, reset, signedIn, type PanelApi } from "../test/panelApi";
+import { autoresponderState, dayBoundary, localDay } from "./Autoresponder";
 import { EmailPage } from "./EmailPage";
 import { ServersPage } from "./ServersPage";
 
@@ -305,6 +306,67 @@ describe("the email page", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(api.changes.at(-1)).toMatchObject({ method: "PATCH", body: { publicKey: null } });
     expect(row("info@acme.example.com").textContent).not.toContain("Encrypted");
+  });
+
+  it("reads the autoresponder of a mailbox from the mail server, and changes it", async () => {
+    const api = await open("owner");
+    const olu = getState().mailboxes.find((m) => m.address === "olu@acme.example.com")!;
+    menu(row("olu@acme.example.com"), "Autoresponder");
+    let dialog = screen.getByRole("dialog", { name: "Autoresponder of olu@acme.example.com" });
+    await waitFor(() => expect((within(dialog).getByLabelText("Subject") as HTMLInputElement).value).toBe("Out of office"));
+    expect((within(dialog).getByRole("checkbox", { name: /Answer new messages automatically/ }) as HTMLInputElement).checked).toBe(true);
+    expect((within(dialog).getByLabelText("Message") as HTMLTextAreaElement).value).toContain("I am on leave until 4 January");
+    expect((within(dialog).getByLabelText("First day") as HTMLInputElement).value).toBe(localDay("2026-12-19T00:00:00Z"));
+    expect(dialog.textContent).not.toContain("filter rules");
+
+    // A day that the user does not change keeps its time.
+    api.on(`PUT /mail/mailboxes/${olu.id}/autoresponder`, (body) => [200, { autoresponder: { ...(body as object), filterScript: null } }]);
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Answer new messages automatically/ }));
+    fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "Back on Monday." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save autoresponder" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toEqual({ method: "PUT", path: `/mail/mailboxes/${olu.id}/autoresponder`, body: {
+      enabled: false, subject: "Out of office", text: "Back on Monday.", startsAt: "2026-12-19T00:00:00Z", endsAt: "2027-01-04T23:59:59Z",
+    } });
+
+    // The autoresponder stops the filter rules of a mailbox: the dialog tells it.
+    const finance = getState().mailboxes.find((m) => m.address === "finance@acme.example.com")!;
+    menu(row("finance@acme.example.com"), "Autoresponder");
+    dialog = await screen.findByRole("dialog", { name: "Autoresponder of finance@acme.example.com" });
+    await waitFor(() => expect(within(dialog).getByLabelText("Subject")).toBeTruthy());
+    expect(dialog.textContent).not.toContain("filter rules");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Answer new messages automatically/ }));
+    expect(within(dialog).getByRole("note").textContent).toContain("This mailbox has its own filter rules (“filters”)");
+
+    // The message has a limit in bytes.
+    fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "é".repeat(1001) } });
+    expect(dialog.textContent).toContain("2002 of 2000 characters");
+    expect(dialog.textContent).toContain("The message is too long.");
+    const sent = api.changes.length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save autoresponder" }));
+    expect(api.changes).toHaveLength(sent);
+
+    // The mail server refuses the text: the dialog shows the error at the field.
+    api.on(`PUT /mail/mailboxes/${finance.id}/autoresponder`, () => [422, { message: "Type the text of the answer.", errors: { text: ["Type the text of the answer."] } }]);
+    fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "" } });
+    fireEvent.change(within(dialog).getByLabelText("Last day"), { target: { value: "2027-01-08" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save autoresponder" }));
+    await waitFor(() => expect(within(dialog).getByText("Type the text of the answer.")).toBeTruthy());
+    expect(api.changes.at(-1)!.body).toEqual({ enabled: true, subject: null, text: "", startsAt: null, endsAt: dayBoundary("2027-01-08", true) });
+  });
+
+  it("tells what the mail server does with the autoresponder", () => {
+    const now = Date.parse("2026-12-24T12:00:00Z");
+    expect(autoresponderState({ enabled: false, startsAt: null, endsAt: null }, now)).toBeNull();
+    expect(autoresponderState({ enabled: true, startsAt: null, endsAt: null }, now)).toBe("The mail server answers new messages.");
+    expect(autoresponderState({ enabled: true, startsAt: "2026-12-30T00:00:00Z", endsAt: null }, now)).toBe("The mail server starts to answer on 30 December 2026.");
+    expect(autoresponderState({ enabled: true, startsAt: null, endsAt: "2026-12-20T12:00:00Z" }, now)).toBe("The last day was 20 December 2026. The mail server does not answer.");
+    expect(autoresponderState({ enabled: true, startsAt: "2026-12-20T12:00:00Z", endsAt: "2027-01-04T12:00:00Z" }, now)).toBe("The mail server answers new messages until the end of 4 January 2027.");
+    // The days are in the time zone of the browser.
+    expect(new Date(dayBoundary("2027-01-08", false)!).getDate()).toBe(8);
+    expect(new Date(dayBoundary("2027-01-08", true)!).getHours()).toBe(23);
+    expect(localDay(dayBoundary("2027-01-08", true))).toBe("2027-01-08");
+    expect(dayBoundary("", true)).toBeNull();
   });
 
   it("tells about a mailbox that is 90% full", async () => {

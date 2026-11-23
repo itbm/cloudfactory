@@ -97,8 +97,10 @@ func set(values ...string) object {
 	return out
 }
 
-// managementUsing are the capabilities of the method calls of the management API.
-var managementUsing = []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap", "urn:ietf:params:jmap:filenode"}
+// managementUsing are the capabilities of the method calls of the management API. The
+// autoresponder needs vacationresponse and sieve.
+var managementUsing = []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap", "urn:ietf:params:jmap:filenode",
+	"urn:ietf:params:jmap:vacationresponse", "urn:ietf:params:jmap:sieve"}
 
 // call sends one method call and gives its result.
 func (c *Client) call(ctx context.Context, method string, args object) (object, error) {

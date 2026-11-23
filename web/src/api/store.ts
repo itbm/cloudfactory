@@ -12,6 +12,8 @@ import * as live from "./live";
 import type {
   AccountExport,
   ApiToken,
+  Autoresponder,
+  AutoresponderInput,
   BackupPolicy,
   BrandFields,
   Confirmation,
@@ -1248,6 +1250,16 @@ export function encryptMailbox(mailboxId: string): Promise<string> {
 /** Gets the private keys that the panel made for a mailbox. A key needs the password of the mailbox. */
 export function mailboxPrivateKey(mailboxId: string): Promise<string> {
   return call(async () => (await live.request<{ privateKey: string }>("GET", `/mail/mailboxes/${mailboxId}/private-key`)).privateKey);
+}
+
+/** Reads the autoresponder of a mailbox from the mail server. */
+export function getAutoresponder(mailboxId: string): Promise<Autoresponder> {
+  return call(async () => (await live.request<{ autoresponder: Autoresponder }>("GET", `/mail/mailboxes/${mailboxId}/autoresponder`)).autoresponder);
+}
+
+/** Sets the autoresponder of a mailbox. The mail server makes the change at once. */
+export function setAutoresponder(mailboxId: string, input: AutoresponderInput): Promise<Autoresponder> {
+  return call(async () => (await live.request<{ autoresponder: Autoresponder }>("PUT", `/mail/mailboxes/${mailboxId}/autoresponder`, input)).autoresponder);
 }
 
 /** Removes a mailbox and its messages. */

@@ -9,6 +9,12 @@ namespace App\Validation;
  */
 final class InputRules
 {
+    /** The subject of the answer of an autoresponder. It is on one line and has no control characters. An empty subject is permitted: the mail server then uses "Auto:" and the subject of the message. */
+    public const AUTORESPONDER_SUBJECT = '/^(?:\\z|(?=[\\s\\S]{0,200}\\z)(?:^[^\\x00-\\x1f\\x7f]+$))/D';
+
+    /** The text of the answer of an autoresponder. It can have line breaks and tabs, but no other control characters. The mail server accepts a text of less than 2048 bytes. */
+    public const AUTORESPONDER_TEXT = '/^(?:\\z|(?=[\\s\\S]{0,2000}\\z)(?:^[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]+$))/D';
+
     /** One argument of the start command of a custom image. It has no control characters. */
     public const COMMAND_ARGUMENT = '/^(?=[\\s\\S]{0,1024}\\z)(?:^[^\\x00-\\x1f\\x7f]+$)/D';
 
@@ -200,6 +206,8 @@ final class InputRules
 
     /** Each pattern by the name of its rule in schema/input-rules.json. */
     public const PATTERNS = [
+        'autoresponderSubject' => self::AUTORESPONDER_SUBJECT,
+        'autoresponderText' => self::AUTORESPONDER_TEXT,
         'commandArgument' => self::COMMAND_ARGUMENT,
         'commandLine' => self::COMMAND_LINE,
         'cronSchedule' => self::CRON_SCHEDULE,
@@ -267,6 +275,8 @@ final class InputRules
 
     /** The text that tells a person how to correct a value. */
     public const MESSAGES = [
+        'autoresponderSubject' => 'Enter a subject of up to 200 characters on one line.',
+        'autoresponderText' => 'Enter a text of up to 2000 characters. A letter with an accent counts as two characters.',
         'commandArgument' => 'Each argument must have 1 to 1024 characters and no control characters.',
         'commandLine' => 'Enter a command of 1 to 1000 characters on one line.',
         'cronSchedule' => 'Enter 5 fields: minute, hour, day of the month, month and day of the week. For example */5 * * * * or 0 3 * * 1.',

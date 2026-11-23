@@ -4584,6 +4584,71 @@ paths:
         '404': { description: The mailbox is not there, or the panel made no keys for it. }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/mail/mailboxes/{id}/autoresponder:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Email]
+      summary: Get the autoresponder of a mailbox
+      description: >-
+        The panel reads the autoresponder from the mail server at once, through the agent. The
+        panel keeps no copy: the user can also change the autoresponder in the webmail. The
+        mailbox must be active.
+      responses:
+        '200':
+          description: The autoresponder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [autoresponder]
+                properties:
+                  autoresponder: { $ref: '#/components/schemas/Autoresponder' }
+        '404': { description: The mailbox is not there, or the mail server does not have it. }
+        '409': { description: The server has no mail server. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the mail server, or the agent is from an earlier release. }
+    put:
+      tags: [Email]
+      summary: Set the autoresponder of a mailbox
+      description: >-
+        When the autoresponder is on, the mail server answers each new message with the text. It
+        answers each sender one time in 30 days. It does not answer a mailing list or an
+        automatic message. The mail server keeps the text when the autoresponder is off.
+
+
+        The mail server runs one Sieve script for each mailbox. When the autoresponder is on,
+        the filter rules of the mailbox (`filterScript`) stop, and they do not start again when
+        the autoresponder is off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, subject, text, startsAt, endsAt]
+              properties:
+                enabled: { type: boolean }
+                subject: { type: [string, 'null'], maxLength: 200, description: 'One line. Null: the subject is "Auto:" and the subject of the message.' }
+                text: { type: [string, 'null'], maxLength: 2000, description: 'Necessary when `enabled` is true. Up to 2000 bytes in UTF-8.' }
+                startsAt: { type: [string, 'null'], format: date-time, description: 'RFC 3339. Null: no start.', example: '2026-12-20T08:00:00Z' }
+                endsAt: { type: [string, 'null'], format: date-time, description: 'RFC 3339, after `startsAt`. Null: no end.', example: '2027-01-04T23:59:59Z' }
+      responses:
+        '200':
+          description: The autoresponder, as the mail server has it now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [autoresponder]
+                properties:
+                  autoresponder: { $ref: '#/components/schemas/Autoresponder' }
+        '403': { description: The token does not have the mail:write scope. }
+        '404': { description: The mailbox is not there, or the mail server does not have it. }
+        '409': { description: The customer is suspended, or the server has no mail server. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the mail server, or the agent is from an earlier release. }
+
   /v1/mail/aliases:
     get:
       tags: [Email]
@@ -9634,6 +9699,21 @@ components:
           properties:
             passwordCurrent: { type: boolean, description: False when the private key has an older password of the mailbox. }
         createdAt: { type: string, format: date-time }
+    Autoresponder:
+      type: object
+      required: [enabled, subject, text, startsAt, endsAt, filterScript]
+      properties:
+        enabled: { type: boolean }
+        subject: { type: [string, 'null'], description: 'Null: the subject is "Auto:" and the subject of the message.' }
+        text: { type: string }
+        startsAt: { type: [string, 'null'], format: date-time, description: In UTC. Null when the autoresponder has no start. }
+        endsAt: { type: [string, 'null'], format: date-time, description: In UTC. Null when the autoresponder has no end. }
+        filterScript:
+          type: [string, 'null']
+          description: >-
+            The name of the active filter rules (a Sieve script) of the mailbox, for example the
+            rules that the user made in the webmail. They stop when the autoresponder is on.
+            Null when no other script is active.
     MailAlias:
       type: object
       required: [id, address, localPart, domainId, customerId, kind, destinations, status]

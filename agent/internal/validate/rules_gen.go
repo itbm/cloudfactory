@@ -4,6 +4,30 @@ package validate
 
 import "regexp"
 
+var ruleAutoresponderSubject = rule{
+	what:      "subject of the autoresponder",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
+	maxLength: 200,
+	empty:     true,
+}
+
+// AutoresponderSubject checks a value with the rule "autoresponderSubject" of schema/input-rules.json.
+//
+// The subject of the answer of an autoresponder. It is on one line and has no control characters. An empty subject is permitted: the mail server then uses "Auto:" and the subject of the message.
+func AutoresponderSubject(s string) error { return ruleAutoresponderSubject.check(s) }
+
+var ruleAutoresponderText = rule{
+	what:      "text of the autoresponder",
+	pattern:   regexp.MustCompile(`^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+$`),
+	maxLength: 2000,
+	empty:     true,
+}
+
+// AutoresponderText checks a value with the rule "autoresponderText" of schema/input-rules.json.
+//
+// The text of the answer of an autoresponder. It can have line breaks and tabs, but no other control characters. The mail server accepts a text of less than 2048 bytes.
+func AutoresponderText(s string) error { return ruleAutoresponderText.check(s) }
+
 var ruleCommandArgument = rule{
 	what:      "argument of the start command",
 	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
@@ -737,6 +761,8 @@ func WpCliArgument(s string) error { return ruleWpCliArgument.check(s) }
 var rules = map[string]*rule{}
 
 func init() {
+	rules["autoresponderSubject"] = &ruleAutoresponderSubject
+	rules["autoresponderText"] = &ruleAutoresponderText
 	rules["commandArgument"] = &ruleCommandArgument
 	rules["commandLine"] = &ruleCommandLine
 	rules["cronSchedule"] = &ruleCronSchedule

@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\MailAliasController;
+use App\Http\Controllers\Api\MailAutoresponderController;
 use App\Http\Controllers\Api\MailboxController;
 use App\Http\Controllers\Api\MailClusterController;
 use App\Http\Controllers\Api\MailDomainController;
@@ -310,6 +311,8 @@ Route::prefix('v1')->group(function () {
             Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update'])->middleware('throttle:mail-changes');
             Route::get('mail/mailboxes/{id}/private-key', [MailboxController::class, 'privateKey']);
             Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy'])->middleware('throttle:mail-changes');
+            Route::get('mail/mailboxes/{id}/autoresponder', [MailAutoresponderController::class, 'show']);
+            Route::put('mail/mailboxes/{id}/autoresponder', [MailAutoresponderController::class, 'update'])->middleware('throttle:mail-changes');
             Route::get('mail/aliases', [MailAliasController::class, 'index']);
             Route::post('mail/aliases', [MailAliasController::class, 'store'])->middleware('throttle:mail-changes');
             Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy'])->middleware('throttle:mail-changes');

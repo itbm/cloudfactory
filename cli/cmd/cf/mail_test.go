@@ -39,6 +39,10 @@ func mailPanel(t *testing.T) (*httptest.Server, *[]string) {
 		case r.URL.Path == "/api/v1/mail/mailboxes" || r.URL.Path == "/api/v1/mail/mailboxes/MB1" && r.Method == http.MethodPatch:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"mailbox":{"id":"MB2"},"password":"correct horse","job":null}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/autoresponder" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"autoresponder":{"enabled":false,"subject":null,"text":"Back soon.","startsAt":null,"endsAt":"2027-01-04T23:59:59Z","filterScript":"filters"}}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/autoresponder":
+			w.Write([]byte(`{"autoresponder":` + string(body) + `}`))
 		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/private-key":
 			w.Write([]byte(`{"address":"info@acme.example.com","privateKey":"-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nxYYE\n-----END PGP PRIVATE KEY BLOCK-----\n","passwordCurrent":false}`))
 		case r.URL.Path == "/api/v1/mail/aliases" && r.Method == http.MethodGet:
