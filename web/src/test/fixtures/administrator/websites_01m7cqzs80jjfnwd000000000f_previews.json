@@ -1,0 +1,10 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000f/previews",
+    "status": 200,
+    "body": {
+        "settings": null,
+        "suggestedDomain": "preview.pr-42.preview.acme.example.com",
+        "maxLimit": 10,
+        "previews": []
+    }
+}

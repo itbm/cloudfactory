@@ -1,0 +1,30 @@
+{
+    "request": "GET /usage-alerts",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80pzbm8k0000000002",
+                "subjectType": "website",
+                "subjectId": "01m7cqzs80jjfnwd0000000002",
+                "subjectName": "shop.acme.example.com",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "resource": "memory",
+                "level": "warning",
+                "used": 1814036480,
+                "limit": 2147483648,
+                "percent": 84.5,
+                "usedText": "1.7 GB",
+                "limitText": "2 GB",
+                "openedAt": "2026-11-14T05:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00",
+                "resolvedAt": null
+            }
+        ],
+        "settings": {
+            "warningPercent": 80,
+            "criticalPercent": 95
+        }
+    }
+}

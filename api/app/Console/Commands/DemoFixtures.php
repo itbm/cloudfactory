@@ -16,8 +16,9 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Writes the fixtures for the tests of the web panel: the answers of the API with the sample
- * data, for one user of each role. The command uses a database in memory, so it does not
- * change the data of the developer.
+ * data, for one user of each role. Each answer has its own file (Fixtures::write), so two pull
+ * requests that add different requests do not conflict. The command uses a database in memory,
+ * so it does not change the data of the developer.
  *
  * Run it after a change to an answer of the API or to the demo seeder. The test
  * DemoFixturesTest fails when the files do not agree with the API.
@@ -38,8 +39,8 @@ class DemoFixtures extends Command
             return self::FAILURE;
         }
         foreach (self::all() as $role => $answers) {
-            file_put_contents("{$directory}/{$role}.json", json_encode($answers, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n");
-            $this->line("Wrote {$directory}/{$role}.json");
+            $count = Fixtures::write("{$directory}/{$role}", $answers);
+            $this->line("Wrote {$count} files in {$directory}/{$role}");
         }
 
         return self::SUCCESS;

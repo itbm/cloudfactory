@@ -1,0 +1,205 @@
+{
+    "request": "GET /runtime-images",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80g1zfka000000000e",
+                "name": "Apache + PHP-FPM · PHP 8.2",
+                "family": "apache-php-fpm",
+                "tag": "0.1.9",
+                "phpVersion": "8.2",
+                "version": "8.2",
+                "custom": false,
+                "supportEndsAt": "2026-12-31T00:00:00+00:00",
+                "defaults": null,
+                "pack": {
+                    "id": "01m7cqzs80wzwr170000000002",
+                    "slug": "php-legacy-apache",
+                    "name": "Older PHP for Apache + PHP-FPM",
+                    "version": "0.1.9"
+                }
+            },
+            {
+                "id": "01m7cqzs80g1zfka000000000d",
+                "name": "Apache + PHP-FPM · PHP 8.3",
+                "family": "apache-php-fpm",
+                "tag": "0.1.9",
+                "phpVersion": "8.3",
+                "version": "8.3",
+                "custom": false,
+                "supportEndsAt": "2027-12-31T00:00:00+00:00",
+                "defaults": null,
+                "pack": {
+                    "id": "01m7cqzs80wzwr170000000002",
+                    "slug": "php-legacy-apache",
+                    "name": "Older PHP for Apache + PHP-FPM",
+                    "version": "0.1.9"
+                }
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000003",
+                "name": "Apache + PHP-FPM · PHP 8.4",
+                "family": "apache-php-fpm",
+                "tag": "0.1.9",
+                "phpVersion": "8.4",
+                "version": null,
+                "custom": false,
+                "supportEndsAt": "2027-01-13T00:00:00+00:00",
+                "defaults": null,
+                "pack": null
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000004",
+                "name": "Apache + PHP-FPM · PHP 8.5",
+                "family": "apache-php-fpm",
+                "tag": "0.1.9",
+                "phpVersion": "8.5",
+                "version": null,
+                "custom": false,
+                "supportEndsAt": "2029-12-31T00:00:00+00:00",
+                "defaults": null,
+                "pack": null
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000001",
+                "name": "FrankenPHP · PHP 8.4",
+                "family": "frankenphp",
+                "tag": "0.1.9",
+                "phpVersion": "8.4",
+                "version": null,
+                "custom": false,
+                "supportEndsAt": "2028-12-31T00:00:00+00:00",
+                "defaults": null,
+                "pack": null
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000002",
+                "name": "FrankenPHP · PHP 8.5",
+                "family": "frankenphp",
+                "tag": "0.1.9",
+                "phpVersion": "8.5",
+                "version": null,
+                "custom": false,
+                "supportEndsAt": "2029-12-31T00:00:00+00:00",
+                "defaults": null,
+                "pack": null
+            },
+            {
+                "id": "01m7cqzs80g1zfka000000000c",
+                "name": "Go 1.26",
+                "family": "golang",
+                "tag": "1.26",
+                "phpVersion": null,
+                "version": "1.26",
+                "custom": false,
+                "supportEndsAt": "2027-02-28T00:00:00+00:00",
+                "defaults": {
+                    "command": "./server",
+                    "install": "go build -o server ."
+                },
+                "pack": {
+                    "id": "01m7cqzs80wzwr170000000001",
+                    "slug": "golang",
+                    "name": "Go",
+                    "version": "1.2.0"
+                }
+            },
+            {
+                "id": "01m7cqzs80g1zfka000000000b",
+                "name": "Go 1.27",
+                "family": "golang",
+                "tag": "1.27",
+                "phpVersion": null,
+                "version": "1.27",
+                "custom": false,
+                "supportEndsAt": "2027-08-31T00:00:00+00:00",
+                "defaults": {
+                    "command": "./server",
+                    "install": "go build -o server ."
+                },
+                "pack": {
+                    "id": "01m7cqzs80wzwr170000000001",
+                    "slug": "golang",
+                    "name": "Go",
+                    "version": "1.2.0"
+                }
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000005",
+                "name": "Node.js 22",
+                "family": "node",
+                "tag": "0.1.9",
+                "phpVersion": null,
+                "version": "22",
+                "custom": false,
+                "supportEndsAt": "2027-04-30T00:00:00+00:00",
+                "defaults": {
+                    "command": "npm start",
+                    "install": "npm install --omit=dev"
+                },
+                "pack": null
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000006",
+                "name": "Node.js 24",
+                "family": "node",
+                "tag": "0.1.9",
+                "phpVersion": null,
+                "version": "24",
+                "custom": false,
+                "supportEndsAt": "2028-04-30T00:00:00+00:00",
+                "defaults": {
+                    "command": "npm start",
+                    "install": "npm install --omit=dev"
+                },
+                "pack": null
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000007",
+                "name": "Node.js 26",
+                "family": "node",
+                "tag": "0.1.9",
+                "phpVersion": null,
+                "version": "26",
+                "custom": false,
+                "supportEndsAt": "2029-04-30T00:00:00+00:00",
+                "defaults": {
+                    "command": "npm start",
+                    "install": "npm install --omit=dev"
+                },
+                "pack": null
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000008",
+                "name": "Python 3.13",
+                "family": "python",
+                "tag": "0.1.9",
+                "phpVersion": null,
+                "version": "3.13",
+                "custom": false,
+                "supportEndsAt": "2029-10-31T00:00:00+00:00",
+                "defaults": {
+                    "command": "python app.py",
+                    "install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
+                },
+                "pack": null
+            },
+            {
+                "id": "01m7cqzs80g1zfka0000000009",
+                "name": "Python 3.14",
+                "family": "python",
+                "tag": "0.1.9",
+                "phpVersion": null,
+                "version": "3.14",
+                "custom": false,
+                "supportEndsAt": "2030-10-31T00:00:00+00:00",
+                "defaults": {
+                    "command": "python app.py",
+                    "install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
+                },
+                "pack": null
+            }
+        ]
+    }
+}

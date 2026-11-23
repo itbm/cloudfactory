@@ -1,0 +1,36 @@
+{
+    "request": "GET /mail/aliases",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs802tyejp0000000001",
+                "address": "hello@acme.example.com",
+                "localPart": "hello",
+                "domainId": "01m7cqzs80bccfqj0000000001",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "kind": "alias",
+                "destinations": [
+                    "info@acme.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000002",
+                "address": "team@acme.example.com",
+                "localPart": "team",
+                "domainId": "01m7cqzs80bccfqj0000000001",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "kind": "forwarder",
+                "destinations": [
+                    "olu@acme.example.com",
+                    "finance@acme.example.com",
+                    "morgan@partner.example.net"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

@@ -1,0 +1,67 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000a/databases",
+    "status": 200,
+    "body": {
+        "prefix": "lawsonex_cf75_",
+        "databases": [
+            {
+                "id": "01m7cqzs803h34e20000000009",
+                "engine": "mariadb",
+                "name": "lawsonex_cf75_wp",
+                "databaseServerId": "01m7cqzs80df38970000000007",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "sizeBytes": 92274688,
+                "number": null,
+                "keys": null
+            }
+        ],
+        "users": [
+            {
+                "id": "01m7cqzs80nsqn8g0000000009",
+                "engine": "mariadb",
+                "name": "lawsonex_cf75_wp",
+                "access": "website",
+                "databaseServerId": "01m7cqzs80df38970000000007",
+                "grants": [
+                    {
+                        "databaseId": "01m7cqzs803h34e20000000009",
+                        "database": "lawsonex_cf75_wp",
+                        "privileges": "readwrite"
+                    }
+                ]
+            }
+        ],
+        "servers": [
+            {
+                "id": "01m7cqzs80df38970000000007",
+                "name": "mariadb-1",
+                "engine": "mariadb",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000005",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000001",
+                "status": "running",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "networkHost": "mariadb-1.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 1,
+                    "memoryBytes": 536870912,
+                    "diskBytes": 2147483648
+                },
+                "usage": {
+                    "memoryBytes": 165675008,
+                    "diskBytes": 159383552,
+                    "diskSizeBytes": 2147483648
+                },
+                "databases": 1,
+                "maxDatabases": 5,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "remote": false
+            }
+        ]
+    }
+}

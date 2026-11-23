@@ -1,0 +1,29 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000003/terminal-sessions",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs8049qmn40000000001",
+                "websiteId": "01m7cqzs80jjfnwd0000000003",
+                "state": "ended",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "jobId": null,
+                "endReason": "The shell ended.",
+                "exitCode": 0,
+                "commandCount": 4,
+                "hasRecording": true,
+                "recordingCut": false,
+                "createdAt": "2026-11-14T09:00:00+00:00",
+                "startedAt": "2026-11-14T09:00:00+00:00",
+                "endedAt": "2026-11-14T09:00:48+00:00"
+            }
+        ],
+        "meta": {
+            "currentPage": 1,
+            "lastPage": 1,
+            "total": 1
+        }
+    }
+}

@@ -1,0 +1,17 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000f/files/content?path=%2Fpublic%2Findex.php",
+    "status": 200,
+    "body": {
+        "file": {
+            "name": "index.php",
+            "path": "/public/index.php",
+            "type": "file",
+            "sizeBytes": 117,
+            "modifiedAt": "2026-11-14T10:00:00Z",
+            "mode": "0640",
+            "target": null
+        },
+        "encoding": "utf8",
+        "content": "<?php\n\nrequire __DIR__.'/../src/bootstrap.php';\n\necho render('home', ['title' => 'pr-42.preview.acme.example.com']);\n"
+    }
+}

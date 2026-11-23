@@ -1,0 +1,14 @@
+{
+    "request": "GET /mail/mailboxes/01m7cqzs80ytymcv0000000003/autoresponder",
+    "status": 200,
+    "body": {
+        "autoresponder": {
+            "enabled": true,
+            "subject": "Out of office",
+            "text": "Hello,\n\nI am on leave until 4 January, with no access to my email. For an order, write to sales@acme.example.com.\n\nOlu",
+            "startsAt": "2026-12-19T00:00:00Z",
+            "endsAt": "2027-01-04T23:59:59Z",
+            "filterScript": null
+        }
+    }
+}

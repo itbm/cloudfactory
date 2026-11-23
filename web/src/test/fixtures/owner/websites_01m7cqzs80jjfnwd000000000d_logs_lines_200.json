@@ -1,0 +1,243 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000d/logs?lines=200",
+    "status": 200,
+    "body": {
+        "lines": [
+            {
+                "at": "2026-11-14T09:47:15Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649635,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.36,\"size\":8396,\"remote_ip\":\"203.0.113.14\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:34Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649654,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.214,\"size\":29153,\"remote_ip\":\"203.0.113.236\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:59Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649679,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.279,\"size\":37606,\"remote_ip\":\"203.0.113.48\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:13Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649693,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.06,\"size\":15372,\"remote_ip\":\"203.0.113.244\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:13Z",
+                "stream": "error",
+                "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
+            },
+            {
+                "at": "2026-11-14T09:48:43Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649723,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.115,\"size\":23863,\"remote_ip\":\"203.0.113.149\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:58Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649738,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.337,\"size\":16295,\"remote_ip\":\"203.0.113.109\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:07Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649747,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.153,\"size\":41583,\"remote_ip\":\"203.0.113.65\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:25Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649765,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.194,\"size\":16949,\"remote_ip\":\"203.0.113.241\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:59Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649799,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.018,\"size\":15421,\"remote_ip\":\"203.0.113.132\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:13Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649813,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.064,\"size\":24189,\"remote_ip\":\"203.0.113.15\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:35Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649835,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.298,\"size\":24792,\"remote_ip\":\"203.0.113.174\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:45Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649845,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.29,\"size\":31137,\"remote_ip\":\"203.0.113.177\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:54Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649854,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.006,\"size\":10369,\"remote_ip\":\"203.0.113.240\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:29Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649889,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.026,\"size\":23184,\"remote_ip\":\"203.0.113.171\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:41Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649901,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.334,\"size\":4240,\"remote_ip\":\"203.0.113.16\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:09Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649929,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.23,\"size\":17019,\"remote_ip\":\"203.0.113.241\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:13Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649933,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.156,\"size\":28366,\"remote_ip\":\"203.0.113.148\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:18Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649938,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.005,\"size\":27991,\"remote_ip\":\"203.0.113.65\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:48Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649968,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.288,\"size\":3649,\"remote_ip\":\"203.0.113.41\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:12Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649992,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.38,\"size\":36027,\"remote_ip\":\"203.0.113.240\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:12Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:53:14Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649994,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.33,\"size\":22846,\"remote_ip\":\"203.0.113.95\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:14Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:53:53Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650033,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.104,\"size\":39823,\"remote_ip\":\"203.0.113.226\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:21Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650061,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.043,\"size\":11048,\"remote_ip\":\"203.0.113.52\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:24Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650064,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.253,\"size\":24593,\"remote_ip\":\"203.0.113.50\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:24Z",
+                "stream": "error",
+                "text": "PHP Fatal error:  Uncaught RuntimeException: The stock service did not answer in /app/src/stock.php:31"
+            },
+            {
+                "at": "2026-11-14T09:54:31Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650071,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.361,\"size\":17116,\"remote_ip\":\"203.0.113.186\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:53Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650093,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.043,\"size\":24800,\"remote_ip\":\"203.0.113.216\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:20Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650120,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.203,\"size\":31467,\"remote_ip\":\"203.0.113.30\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:24Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650124,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.07,\"size\":25026,\"remote_ip\":\"203.0.113.242\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:24Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:55:32Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650132,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.352,\"size\":47811,\"remote_ip\":\"203.0.113.144\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:43Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650143,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.283,\"size\":12246,\"remote_ip\":\"203.0.113.238\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:57Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650157,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.381,\"size\":27071,\"remote_ip\":\"203.0.113.81\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:57Z",
+                "stream": "error",
+                "text": "PHP Fatal error:  Uncaught RuntimeException: The stock service did not answer in /app/src/stock.php:31"
+            },
+            {
+                "at": "2026-11-14T09:56:19Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650179,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.221,\"size\":13209,\"remote_ip\":\"203.0.113.129\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:59Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650219,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.308,\"size\":2389,\"remote_ip\":\"203.0.113.35\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:08Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650228,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.261,\"size\":23577,\"remote_ip\":\"203.0.113.123\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:44Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650264,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.046,\"size\":38565,\"remote_ip\":\"203.0.113.110\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:21Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650301,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.107,\"size\":47096,\"remote_ip\":\"203.0.113.72\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:21Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:58:33Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650313,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.214,\"size\":42293,\"remote_ip\":\"203.0.113.108\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:50Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650330,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.186,\"size\":39428,\"remote_ip\":\"203.0.113.112\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:19Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650359,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.185,\"size\":29073,\"remote_ip\":\"203.0.113.148\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:37Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650377,\"method\":\"GET\",\"host\":\"dashboard.acme.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.382,\"size\":504,\"remote_ip\":\"203.0.113.21\"}"
+            }
+        ]
+    }
+}

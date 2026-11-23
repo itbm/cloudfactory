@@ -1,0 +1,71 @@
+{
+    "request": "GET /mail/mailboxes/01m7cqzs80ytymcv0000000006/backups",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80zfdxdk000000000y",
+                "kind": "scheduled",
+                "sizeBytes": 66840428,
+                "messages": 815,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-13T02:05:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk000000000z",
+                "kind": "scheduled",
+                "sizeBytes": 66571993,
+                "messages": 812,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-12T02:06:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk0000000010",
+                "kind": "scheduled",
+                "sizeBytes": 66303557,
+                "messages": 809,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-11T02:07:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk0000000011",
+                "kind": "scheduled",
+                "sizeBytes": 66035122,
+                "messages": 806,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-10T02:08:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk0000000012",
+                "kind": "scheduled",
+                "sizeBytes": 65766686,
+                "messages": 802,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-09T02:09:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk0000000013",
+                "kind": "scheduled",
+                "sizeBytes": 65498251,
+                "messages": 799,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-08T02:10:00+00:00",
+                "lastRestore": null
+            },
+            {
+                "id": "01m7cqzs80zfdxdk0000000014",
+                "kind": "scheduled",
+                "sizeBytes": 65229815,
+                "messages": 796,
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "createdAt": "2026-11-07T02:11:00+00:00",
+                "lastRestore": null
+            }
+        ]
+    }
+}

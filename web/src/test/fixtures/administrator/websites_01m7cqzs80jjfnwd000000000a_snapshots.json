@@ -1,0 +1,41 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000a/snapshots",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806s2hhx000000000z",
+                "kind": "scheduled",
+                "sizeBytes": 1506803712,
+                "databases": [
+                    "mariadb:lawsonex_cf75_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T03:02:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000010",
+                "kind": "scheduled",
+                "sizeBytes": 1503657984,
+                "databases": [
+                    "mariadb:lawsonex_cf75_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-13T03:02:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000011",
+                "kind": "scheduled",
+                "sizeBytes": 1500512256,
+                "databases": [
+                    "mariadb:lawsonex_cf75_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-12T03:02:00+00:00"
+            }
+        ]
+    }
+}

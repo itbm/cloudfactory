@@ -1,0 +1,57 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000f/deploy",
+    "status": 200,
+    "body": {
+        "source": {
+            "repository": "git@github.com:acme-example/api.git",
+            "branch": "feature/invoice-csv",
+            "webDirectory": "public",
+            "trigger": "manual",
+            "checkMinutes": 5,
+            "checkedAt": null,
+            "checkError": null,
+            "buildCommands": [
+                "composer install --no-dev --optimize-autoloader",
+                "ln -s /app/shared/.env .env"
+            ],
+            "migrationCommand": "php artisan migrate --force",
+            "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBGFsicoOPB94GHXd46pGtXfJNWuJHkgvh2yjrCBcolx cloudfactory-apiacme_97c4",
+            "webhookUrl": "http://localhost/api/v1/hooks/deploy/G6mt5KmRycsDBSMMYLLgnRniZtanaanOr6V5GyXkL5c3djlK",
+            "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
+            "deployQueued": false,
+            "secrets": []
+        },
+        "releases": [
+            {
+                "id": "01m7cqzs80w9ds6h0000000008",
+                "branch": "feature/invoice-csv",
+                "commit": "f7e9eb8ffe21af8d5213ad97d50b5e1c945c2246",
+                "message": "Export the invoices as CSV",
+                "state": "ready",
+                "live": true,
+                "trigger": "webhook",
+                "migration": false,
+                "healthError": null,
+                "durationSeconds": 58,
+                "error": null,
+                "jobId": null,
+                "createdAt": "2026-11-14T08:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80w9ds6h0000000007",
+                "branch": "feature/invoice-csv",
+                "commit": "144e6b4e14cf205696c593fb36b54b5cf821b4d1",
+                "message": "Add the export of invoices",
+                "state": "ready",
+                "live": false,
+                "trigger": "webhook",
+                "migration": false,
+                "healthError": null,
+                "durationSeconds": 62,
+                "error": null,
+                "jobId": null,
+                "createdAt": "2026-11-14T05:00:00+00:00"
+            }
+        ]
+    }
+}

@@ -1,0 +1,233 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000b/logs?lines=200",
+    "status": 200,
+    "body": {
+        "lines": [
+            {
+                "at": "2026-11-14T09:46:04Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649564,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.178,\"size\":43060,\"remote_ip\":\"203.0.113.35\"}"
+            },
+            {
+                "at": "2026-11-14T09:46:25Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649585,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.232,\"size\":10550,\"remote_ip\":\"203.0.113.187\"}"
+            },
+            {
+                "at": "2026-11-14T09:46:30Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649590,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.358,\"size\":44985,\"remote_ip\":\"203.0.113.34\"}"
+            },
+            {
+                "at": "2026-11-14T09:46:30Z",
+                "stream": "error",
+                "text": "PHP Fatal error:  Uncaught RuntimeException: The stock service did not answer in /app/src/stock.php:31"
+            },
+            {
+                "at": "2026-11-14T09:46:38Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649598,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.304,\"size\":22234,\"remote_ip\":\"203.0.113.13\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:14Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649634,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.337,\"size\":19573,\"remote_ip\":\"203.0.113.2\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:32Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649652,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.369,\"size\":37195,\"remote_ip\":\"203.0.113.192\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:32Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:47:50Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649670,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.278,\"size\":14129,\"remote_ip\":\"203.0.113.89\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:50Z",
+                "stream": "error",
+                "text": "PHP Fatal error:  Uncaught RuntimeException: The stock service did not answer in /app/src/stock.php:31"
+            },
+            {
+                "at": "2026-11-14T09:48:21Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649701,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/products\",\"status\":200,\"duration\":0.097,\"size\":35597,\"remote_ip\":\"203.0.113.165\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:50Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649730,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.385,\"size\":44409,\"remote_ip\":\"203.0.113.80\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:50Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:49:30Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649770,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.371,\"size\":14766,\"remote_ip\":\"203.0.113.208\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:39Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649779,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.346,\"size\":11951,\"remote_ip\":\"203.0.113.100\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:08Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649808,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.246,\"size\":22410,\"remote_ip\":\"203.0.113.179\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:45Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649845,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.09,\"size\":26781,\"remote_ip\":\"203.0.113.48\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:03Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649863,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.254,\"size\":41236,\"remote_ip\":\"203.0.113.230\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:14Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649874,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.078,\"size\":5546,\"remote_ip\":\"203.0.113.67\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:25Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649885,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.119,\"size\":30997,\"remote_ip\":\"203.0.113.223\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:02Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649922,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.314,\"size\":26535,\"remote_ip\":\"203.0.113.123\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:07Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649927,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/products\",\"status\":200,\"duration\":0.068,\"size\":20833,\"remote_ip\":\"203.0.113.64\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:22Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649942,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/\",\"status\":200,\"duration\":0.064,\"size\":29384,\"remote_ip\":\"203.0.113.33\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:58Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649978,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.092,\"size\":42974,\"remote_ip\":\"203.0.113.199\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:23Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650003,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.118,\"size\":34638,\"remote_ip\":\"203.0.113.208\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:38Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650018,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/products\",\"status\":200,\"duration\":0.239,\"size\":39683,\"remote_ip\":\"203.0.113.51\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:11Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650051,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/\",\"status\":200,\"duration\":0.023,\"size\":35729,\"remote_ip\":\"203.0.113.103\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:32Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650072,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/\",\"status\":200,\"duration\":0.162,\"size\":13218,\"remote_ip\":\"203.0.113.104\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:32Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:54:51Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650091,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.396,\"size\":17651,\"remote_ip\":\"203.0.113.203\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:16Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650116,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.3,\"size\":20455,\"remote_ip\":\"203.0.113.142\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:38Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650138,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/products\",\"status\":200,\"duration\":0.249,\"size\":18725,\"remote_ip\":\"203.0.113.26\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:40Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650140,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.327,\"size\":20860,\"remote_ip\":\"203.0.113.113\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:16Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650176,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.251,\"size\":12076,\"remote_ip\":\"203.0.113.131\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:22Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650182,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.131,\"size\":20108,\"remote_ip\":\"203.0.113.12\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:56Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650216,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.346,\"size\":40991,\"remote_ip\":\"203.0.113.171\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:00Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650220,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.064,\"size\":415,\"remote_ip\":\"203.0.113.6\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:18Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650238,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.137,\"size\":41049,\"remote_ip\":\"203.0.113.24\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:31Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650251,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.174,\"size\":12118,\"remote_ip\":\"203.0.113.223\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:50Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650270,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/\",\"status\":200,\"duration\":0.216,\"size\":47091,\"remote_ip\":\"203.0.113.232\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:15Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650295,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.043,\"size\":21678,\"remote_ip\":\"203.0.113.37\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:44Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650324,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/\",\"status\":200,\"duration\":0.139,\"size\":34110,\"remote_ip\":\"203.0.113.121\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:09Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650349,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.136,\"size\":17980,\"remote_ip\":\"203.0.113.117\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:22Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650362,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.05,\"size\":33969,\"remote_ip\":\"203.0.113.136\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:30Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650370,\"method\":\"GET\",\"host\":\"orders-1c16.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.182,\"size\":46837,\"remote_ip\":\"203.0.113.131\"}"
+            }
+        ]
+    }
+}

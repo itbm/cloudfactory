@@ -1,0 +1,79 @@
+{
+    "request": "GET /account",
+    "status": 200,
+    "body": {
+        "customer": {
+            "id": "01m7cqzs80h56kh10000000001",
+            "name": "Northwind Agency",
+            "email": "ops@northwind.example.com",
+            "role": "reseller",
+            "suspended": false,
+            "createdAt": "2026-01-18T10:00:00+00:00"
+        },
+        "provider": null,
+        "plan": {
+            "id": "01m7cqzs80tpf66h0000000003",
+            "name": "Agency",
+            "limits": {
+                "vcpus": 4,
+                "memoryBytes": 4294967296,
+                "diskBytes": 107374182400,
+                "diskIoBytesPerSecond": 52428800,
+                "processes": 400,
+                "bandwidthBytes": 2147483648000
+            },
+            "websites": 50,
+            "mailboxes": 500,
+            "mailStorageBytes": 107374182400,
+            "databases": 50,
+            "phpExtensions": [
+                "opcache",
+                "intl",
+                "gd",
+                "zip",
+                "exif",
+                "bcmath",
+                "mysqli",
+                "pdo_mysql",
+                "pdo_pgsql",
+                "redis",
+                "imagick",
+                "soap"
+            ],
+            "databaseServers": 20,
+            "databaseLimits": {
+                "vcpus": 2,
+                "memoryBytes": 2147483648,
+                "diskBytes": 21474836480
+            },
+            "dnsZones": 50,
+            "networks": 10
+        },
+        "usage": {
+            "websites": 2,
+            "databases": 1,
+            "dnsZones": 4,
+            "networks": 0,
+            "diskBytes": 3753902080,
+            "mailboxes": 180,
+            "mailStorageBytes": 94371840000,
+            "bandwidthBytes": 18419801769,
+            "customers": 2
+        },
+        "backups": {
+            "available": true
+        },
+        "users": [
+            {
+                "id": 3,
+                "name": "Sam Reseller",
+                "email": "reseller@example.com",
+                "role": "reseller",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

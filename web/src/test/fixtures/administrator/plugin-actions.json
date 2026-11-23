@@ -1,0 +1,33 @@
+{
+    "request": "GET /plugin-actions",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "pluginId": "01m7cqzs80p8bxkh0000000002",
+                "pluginName": "Chat alerts",
+                "id": "notify",
+                "title": "Send a test alert",
+                "target": "customer",
+                "confirm": "Send a test alert to the chat channel of this customer?",
+                "roles": [
+                    "administrator",
+                    "reseller"
+                ]
+            },
+            {
+                "pluginId": "01m7cqzs80p8bxkh0000000001",
+                "pluginName": "Uptime monitor",
+                "id": "check",
+                "title": "Check uptime now",
+                "target": "website",
+                "confirm": null,
+                "roles": [
+                    "administrator",
+                    "reseller",
+                    "owner"
+                ]
+            }
+        ]
+    }
+}

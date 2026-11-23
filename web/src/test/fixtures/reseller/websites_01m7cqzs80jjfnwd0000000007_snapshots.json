@@ -1,0 +1,41 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000007/snapshots",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806s2hhx000000000r",
+                "kind": "scheduled",
+                "sizeBytes": 5722079232,
+                "databases": [
+                    "mariadb:cornerba_f8cd_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-14T03:08:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000s",
+                "kind": "scheduled",
+                "sizeBytes": 5718933504,
+                "databases": [
+                    "mariadb:cornerba_f8cd_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-13T03:08:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000t",
+                "kind": "scheduled",
+                "sizeBytes": 5715787776,
+                "databases": [
+                    "mariadb:cornerba_f8cd_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-12T03:08:00+00:00"
+            }
+        ]
+    }
+}

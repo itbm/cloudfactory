@@ -1,0 +1,41 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000003/snapshots",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806s2hhx0000000009",
+                "kind": "scheduled",
+                "sizeBytes": 525336576,
+                "databases": [
+                    "postgresql:apiacme_97c4_app"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T03:04:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000a",
+                "kind": "scheduled",
+                "sizeBytes": 522190848,
+                "databases": [
+                    "postgresql:apiacme_97c4_app"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-13T03:04:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000b",
+                "kind": "scheduled",
+                "sizeBytes": 519045120,
+                "databases": [
+                    "postgresql:apiacme_97c4_app"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-12T03:04:00+00:00"
+            }
+        ]
+    }
+}

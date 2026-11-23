@@ -1,0 +1,93 @@
+{
+    "request": "GET /audit?perPage=100",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 10,
+                "at": "2026-11-14T08:00:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Created DNS zone",
+                "target": "acme-outlet.example.com"
+            },
+            {
+                "id": 9,
+                "at": "2026-11-14T07:40:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Added DNS record",
+                "target": "acme.example.com TXT @"
+            },
+            {
+                "id": 8,
+                "at": "2026-11-14T07:50:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Added domain",
+                "target": "acme-outlet.example.com"
+            },
+            {
+                "id": 7,
+                "at": "2026-11-14T05:00:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Backed up website",
+                "target": "acme.example.com"
+            },
+            {
+                "id": 6,
+                "at": "2026-11-14T09:15:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Created database",
+                "target": "shopacme_9e69_cache"
+            },
+            {
+                "id": 5,
+                "at": "2026-11-14T09:35:00+00:00",
+                "actor": "Sam Reseller",
+                "ip": "203.0.113.13",
+                "action": "Created website",
+                "target": "events.harbourbooks.example.net"
+            },
+            {
+                "id": 4,
+                "at": "2026-09-30T10:00:00+00:00",
+                "actor": "Sam Reseller",
+                "ip": "203.0.113.13",
+                "action": "Created customer",
+                "target": "Harbour Books"
+            },
+            {
+                "id": 3,
+                "at": "2026-11-12T09:40:00+00:00",
+                "actor": "Alex Admin",
+                "ip": "203.0.113.11",
+                "action": "Suspended customer",
+                "target": "Lawson & Co"
+            },
+            {
+                "id": 2,
+                "at": "2026-11-13T04:00:00+00:00",
+                "actor": "Alex Admin",
+                "ip": "203.0.113.11",
+                "action": "Started rollout",
+                "target": "Apache + PHP-FPM · PHP 8.4 0.1.9"
+            },
+            {
+                "id": 1,
+                "at": "2026-11-14T09:54:00+00:00",
+                "actor": "Alex Admin",
+                "ip": "203.0.113.11",
+                "action": "Signed in",
+                "target": ""
+            }
+        ],
+        "meta": {
+            "currentPage": 1,
+            "lastPage": 1,
+            "total": 10
+        }
+    }
+}

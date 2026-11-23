@@ -1,0 +1,7 @@
+{
+    "request": "GET /panel-certificate",
+    "status": 403,
+    "body": {
+        "message": "Only administrators can do this."
+    }
+}
