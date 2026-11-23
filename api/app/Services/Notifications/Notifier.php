@@ -13,6 +13,7 @@ use App\Models\DatabaseServer;
 use App\Models\DnsZone;
 use App\Models\Domain;
 use App\Models\NotificationDelivery;
+use App\Models\Release;
 use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
@@ -198,6 +199,25 @@ class Notifier
     public function usageAlert(Customer $customer, array $values, string $key): int
     {
         return $this->send(NotificationEvent::UsageAlert, self::usersOf($customer), ['account' => $customer->name] + $values, $key);
+    }
+
+    /**
+     * FR-1009: a deploy ran a database migration, and then the website failed its health check.
+     * The website kept the new release. The users of the customer and of its reseller get the
+     * email, one time for each release.
+     */
+    public function deployNeedsAttention(Website $website, Release $release): void
+    {
+        $this->send(NotificationEvent::DeployNeedsAttention, self::usersOf($website->customer), [
+            'website' => $website->name,
+            'websiteId' => $website->id,
+            'branch' => $release->ref,
+            'commit' => $release->commit ? substr($release->commit, 0, 7) : '',
+            'message' => (string) $release->message,
+            // The text that the owner sees (DeployController::visibleError).
+            'error' => preg_match('/^the health check failed after the switch: \d+ of \d+ checks failed/', (string) $release->health_error, $m) ? $m[0].'.' : 'The health check failed.',
+            'time' => ($release->updated_at ?? now())->format('j M Y H:i T'),
+        ], "deploy:{$release->id}");
     }
 
     /**

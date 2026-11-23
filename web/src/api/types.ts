@@ -213,6 +213,8 @@ export interface Website {
   lastChange: LastChange;
   /** A staging copy points to its source website (FR-205). */
   stagingOf?: string;
+  /** A preview website points to its pull request and to the website of the Git source. */
+  previewOf?: PreviewOf;
   managedByTerraform: boolean;
   /** The image tag that the website uses. When it is not set, the website uses the running tag of its image. */
   imageTag?: string;
@@ -1215,16 +1217,59 @@ export interface CronJob {
   lastOutput: string | null;
 }
 
+/** One entry of the command log of a website: a command that a user ran with "Run a command". */
+export interface WebsiteCommand {
+  id: string;
+  websiteId: string;
+  source: "run";
+  command: string;
+  /** "done": the command ran and has an exit code. "failed": the command did not start. */
+  state: "running" | "done" | "failed";
+  exitCode: number | null;
+  /** True when the server stopped the command at its time limit. */
+  timedOut: boolean;
+  timeoutSeconds: number | null;
+  /** Who ran the command. A user who must not see the person gets a role name in its place. */
+  actor: string;
+  ip: string | null;
+  jobId: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** The end of the output. Only the answer for one entry has it. */
+  output?: string | null;
+}
+
+/** A page of the command log, the newest command first. */
+export interface CommandLogPage {
+  data: WebsiteCommand[];
+  meta: { currentPage: number; lastPage: number; total: number };
+}
+
+/** How a deploy starts: by hand, with a signed webhook, or with a check of the branch on a schedule. */
+export type DeployTrigger = "manual" | "webhook" | "schedule";
+
 export interface GitSource {
   repository: string;
   branch: string;
   /** The directory in the repository that the web server serves. */
   webDirectory: string;
-  trigger: "manual" | "webhook";
+  trigger: DeployTrigger;
+  /** The interval of the branch check, for the trigger "schedule". */
+  checkMinutes: number;
+  /** The last branch check, and its error. */
+  checkedAt: string | null;
+  checkError: string | null;
   buildCommands: string[];
+  /** A command that changes the database. It runs before the switch. */
+  migrationCommand: string | null;
   /** The public key that gives read access to the repository. */
   deployKey: string;
-  webhookUrl: string;
+  /** Only a token that can change websites gets the address and the secret. */
+  webhookUrl: string | null;
+  webhookSecret: string | null;
+  /** True when a push came during a deploy. The panel deploys it next. */
+  deployQueued: boolean;
   /** The names of the secrets. The API does not give the values. */
   secrets: string[];
 }
@@ -1236,7 +1281,11 @@ export interface Release {
   message: string | null;
   state: "building" | "ready" | "failed" | "removed";
   live: boolean;
-  trigger: "manual" | "webhook";
+  trigger: DeployTrigger;
+  /** True when the deploy ran the migration command. */
+  migration: boolean;
+  /** The failed health check after a migration. The website kept this release. */
+  healthError: string | null;
   durationSeconds: number | null;
   error: string | null;
   jobId: string | null;
@@ -1246,6 +1295,55 @@ export interface Release {
 export interface Deploy {
   source: GitSource | null;
   releases: Release[];
+}
+
+/** The pull request of a preview website. The panel removes the preview when the pull request closes. */
+export interface PreviewOf {
+  /** The website of the Git source. */
+  websiteId: string;
+  number: number;
+  branch: string;
+  title: string;
+  /** The page of the pull request on the Git host. */
+  url: string | null;
+}
+
+export interface PreviewSettings {
+  enabled: boolean;
+  /** Each preview gets the name pr-<number>.<domain>. */
+  domain: string | null;
+  /** The largest number of previews at the same time. */
+  limit: number;
+  /** True: the previews get the environment variables and the build secrets of the website. */
+  copyEnvironment: boolean;
+}
+
+export type PreviewState = "creating" | "deploying" | "live" | "failed" | "removing";
+
+/** The preview website of one pull request. */
+export interface Preview {
+  number: number;
+  title: string;
+  /** The head branch of the pull request. */
+  branch: string;
+  url: string | null;
+  /** The preview website. Null when the panel could not make it: "error" has the cause. */
+  websiteId: string | null;
+  name: string | null;
+  state: PreviewState;
+  /** The last deploy of the preview. */
+  release: Release | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Previews {
+  /** Null when the website has no Git source, or is a preview itself. */
+  settings: PreviewSettings | null;
+  suggestedDomain: string | null;
+  maxLimit: number;
+  previews: Preview[];
 }
 
 // Plugins: programs outside the panel with their own token (docs/plugins.md). The panel

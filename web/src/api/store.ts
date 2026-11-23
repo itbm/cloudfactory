@@ -15,6 +15,7 @@ import type {
   BackupPolicy,
   BrandFields,
   Confirmation,
+  CommandLogPage,
   CronJob,
   Customer,
   CustomerCertificate,
@@ -25,6 +26,9 @@ import type {
   DnsProvider,
   DnsRecordType,
   Deploy,
+  DeployTrigger,
+  Preview,
+  Previews,
   MailAlias,
   MailboxBackup,
   DomainKind,
@@ -54,6 +58,7 @@ import type {
   TokenScope,
   UpdatePolicy,
   Website,
+  WebsiteCommand,
   WebsiteKind,
   UsageAlert,
   UsageAlertSettings,
@@ -248,6 +253,37 @@ export function requestPasswordReset(email: string) {
 export function resetPassword(email: string, token: string, password: string, confirmation: string) {
   return call(() => live.resetPassword(email, token, password, confirmation));
 }
+
+/** FR-103: signs in with a passkey, in place of the password and the TOTP code. */
+export function signInWithPasskey() {
+  return call(async () => {
+    await live.signInWithPasskey();
+    session++;
+    loading = null;
+    replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
+    await refresh();
+  });
+}
+
+export const listPasskeys = () => call(() => live.listPasskeys());
+export const addPasskey = (name: string, password: string, totp: string) => call(() => live.addPasskey(name, password, totp));
+export const renamePasskey = (id: string, name: string) => call(() => live.renamePasskey(id, name));
+export const removePasskey = (id: string, password: string, totp: string) => call(() => live.removePasskey(id, password, totp));
+
+/** Single sign-on: changes the ticket from the provider into a session, with a TOTP code when TOTP is on. */
+export function completeSignOn(ticket: string, totp = "") {
+  return call(async () => {
+    await live.completeSignOn(ticket, totp);
+    session++;
+    loading = null;
+    replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
+    await refresh();
+  });
+}
+
+export const listIdentities = () => call(() => live.listIdentities());
+export const connectIdentity = (providerId: string, password: string, totp: string) => call(() => live.connectIdentity(providerId, password, totp));
+export const disconnectIdentity = (providerId: string, password: string, totp: string) => call(() => live.disconnectIdentity(providerId, password, totp));
 
 export function signOut() {
   live.signOut();
@@ -543,6 +579,29 @@ export function runCronJob(websiteId: string, cronJobId: string): Promise<Job> {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/cron-jobs/${cronJobId}/run`)).then((r) => track(r.job));
 }
 
+/** A page of the command log of a website. The search finds the commands with the text. */
+export function listCommands(websiteId: string, page = 1, search = ""): Promise<CommandLogPage> {
+  const query = [page > 1 ? `page=${page}` : "", search.trim() ? `q=${q(search.trim())}` : ""].filter(Boolean).join("&");
+  return call(() => live.request<CommandLogPage>("GET", `/websites/${websiteId}/commands${query ? `?${query}` : ""}`));
+}
+
+/** One entry of the command log, with the end of the output. */
+export function readCommand(websiteId: string, commandId: string): Promise<WebsiteCommand> {
+  return call(() => live.request<{ command: WebsiteCommand }>("GET", `/websites/${websiteId}/commands/${commandId}`)).then((r) => r.command);
+}
+
+/**
+ * Runs one command line in the container of the website. The promise resolves with the entry
+ * of the command log when the command has ended.
+ */
+export async function runCommand(websiteId: string, command: string, timeoutSeconds?: number): Promise<WebsiteCommand> {
+  const r = await call(() => live.request<{ command: WebsiteCommand; job: live.ApiJob | null }>("POST", `/websites/${websiteId}/commands`, {
+    command: command.trim(), ...(timeoutSeconds ? { timeoutSeconds } : {}),
+  }));
+  await track(r.job);
+  return readCommand(websiteId, r.command.id);
+}
+
 export function readDeploy(websiteId: string): Promise<Deploy> {
   return call(() => live.request<Deploy>("GET", `/websites/${websiteId}/deploy`));
 }
@@ -551,14 +610,28 @@ export interface GitSourceInput {
   repository: string;
   branch: string;
   webDirectory: string;
-  trigger: "manual" | "webhook";
+  trigger: DeployTrigger;
+  checkMinutes: number;
   buildCommands: string[];
+  migrationCommand: string;
 }
 
 /** Connects a Git repository to the website, or changes the connection. */
 export function setGitSource(websiteId: string, input: GitSourceInput): Promise<Deploy> {
-  const body = { ...input, repository: input.repository.trim(), branch: input.branch.trim(), webDirectory: input.webDirectory.trim() || ".", buildCommands: input.buildCommands.map((c) => c.trim()).filter(Boolean) };
+  const body = {
+    ...input,
+    repository: input.repository.trim(),
+    branch: input.branch.trim(),
+    webDirectory: input.webDirectory.trim() || ".",
+    buildCommands: input.buildCommands.map((c) => c.trim()).filter(Boolean),
+    migrationCommand: input.migrationCommand.trim() || null,
+  };
   return call(() => live.request<Deploy>("PUT", `/websites/${websiteId}/deploy`, body));
+}
+
+/** Makes a new webhook address and secret. The old address stops at once. */
+export function newWebhook(websiteId: string): Promise<Deploy> {
+  return call(() => live.request<Deploy>("POST", `/websites/${websiteId}/deploy/webhook`));
 }
 
 export function removeGitSource(websiteId: string): Promise<void> {
@@ -581,6 +654,46 @@ export function startDeploy(websiteId: string): Promise<{ job: Promise<Job> }> {
 /** Makes a release that the server keeps the live release again. */
 export function activateRelease(websiteId: string, releaseId: string): Promise<{ job: Promise<Job> }> {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/deploy/releases/${releaseId}/activate`)).then((r) => ({ job: track(r.job) }));
+}
+
+// The preview websites of pull requests
+
+export function readPreviews(websiteId: string): Promise<Previews> {
+  return call(() => live.request<Previews>("GET", `/websites/${websiteId}/previews`));
+}
+
+export interface PreviewSettingsInput {
+  enabled: boolean;
+  domain: string;
+  limit: number;
+  copyEnvironment: boolean;
+}
+
+/** Turns the previews on or off, or changes their settings. The panel removes the previews when they go off. */
+export async function setPreviewSettings(websiteId: string, input: PreviewSettingsInput): Promise<Previews> {
+  const body = { ...input, domain: input.domain.trim() || null };
+  const answer = await call(() => live.request<Previews>("PUT", `/websites/${websiteId}/previews`, body));
+  if (!input.enabled) void reload();
+  return answer;
+}
+
+export interface PreviewAnswer {
+  status: "started" | "queued" | "waiting" | "removing";
+  message: string;
+  preview: Preview;
+}
+
+/** Makes the preview of a pull request, or deploys it again. */
+export async function makePreview(websiteId: string, input: { number: number; branch: string; title?: string }): Promise<PreviewAnswer> {
+  const answer = await call(() => live.request<PreviewAnswer>("POST", `/websites/${websiteId}/previews`, { ...input, branch: input.branch.trim() }));
+  // A new preview is a new website.
+  void reload();
+  return answer;
+}
+
+/** Removes the preview of a pull request. The job promise resolves when the preview website is gone. */
+export function removePreview(websiteId: string, number: number): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<{ job: live.ApiJob | null }>("DELETE", `/websites/${websiteId}/previews/${number}`)).then((r) => ({ job: track(r.job) }));
 }
 
 // SFTP
@@ -1815,6 +1928,22 @@ export function testPlugin(pluginId: string): Promise<PluginDelivery> {
 
 export function retryPluginDelivery(pluginId: string, deliveryId: string): Promise<PluginDelivery> {
   return call(() => live.request<PluginDelivery>("POST", `/plugins/${pluginId}/deliveries/${deliveryId}/retry`));
+}
+
+// Single sign-on providers (administrator)
+
+export const listIdentityProviders = () => call(() => live.listIdentityProviders());
+
+export function addIdentityProvider(input: live.IdentityProviderInput, confirm: Confirmation): Promise<live.IdentityProvider> {
+  return call(() => live.request<live.IdentityProvider>("POST", "/identity-providers", { ...input, ...confirmation(confirm) }));
+}
+
+export function changeIdentityProvider(id: string, input: live.IdentityProviderInput, confirm: Confirmation): Promise<live.IdentityProvider> {
+  return call(() => live.request<live.IdentityProvider>("PUT", `/identity-providers/${encodeURIComponent(id)}`, { ...input, ...confirmation(confirm) }));
+}
+
+export function removeIdentityProvider(id: string, confirm: Confirmation): Promise<void> {
+  return call(() => live.request("DELETE", `/identity-providers/${encodeURIComponent(id)}`, confirmation(confirm)).then(() => undefined));
 }
 
 /** Trusts the public key of a publisher, for plugins and packs. */

@@ -458,7 +458,9 @@ temporary password.
   `--administrator` in place of `--customer ID`.
 - To give a user a new temporary password, select **Reset password** in the row of the user,
   or run `cf users reset-password USER`. For a user who lost the TOTP device, also select
-  **Also remove TOTP** (`--remove-totp`).
+  **Also remove TOTP** (`--remove-totp`). A reset signs the user out, deletes the API
+  tokens and the passkeys of the user, and disconnects the single sign-on accounts of the
+  user.
 
 An administrator can change all users. A reseller can change only the users of its own
 customers. Only an administrator who is signed in with a password can make, reset or delete
@@ -486,6 +488,51 @@ cf-agent panel reset-password you@example.com
 # Remove the sign-in lock of an account after too many failed attempts.
 cf-agent panel unlock you@example.com
 ```
+
+### Single sign-on
+
+Users can sign in with the account of an organisation, for example Microsoft Entra ID, Google
+Workspace, Okta, Keycloak or Authentik. The panel supports OpenID Connect and SAML 2.0.
+Single sign-on works only on the panel domain, with HTTPS. The panel does not make users:
+make each user in the panel first.
+
+To add an OpenID Connect provider:
+
+1. In the panel, go to **Settings > Single sign-on** and select **Add provider**.
+2. Select **OpenID Connect**. Copy the **Redirect URI**, for example
+   `https://panel.example.com/api/v1/auth/sso/oidc/callback`.
+3. At the provider, make an application of the type "web". Add the redirect URI to the
+   application.
+4. Copy the client ID and the client secret of the application to the panel.
+5. Type the issuer of the provider, for example `https://accounts.google.com` or
+   `https://login.microsoftonline.com/TENANT-ID/v2.0`. The panel reads the discovery
+   document at `ISSUER/.well-known/openid-configuration`.
+6. Type your password and, when TOTP is on, a code. Select **Add provider**.
+
+To add a SAML provider:
+
+1. In the panel, go to **Settings > Single sign-on** and select **Add provider**.
+2. Select **SAML 2.0**. Copy the **Entity ID** and the **ACS URL**.
+3. At the provider, make a SAML application with these values. The entity ID is also the
+   address of the metadata of the panel, if the provider can read metadata.
+4. Set the NameID format of the application to "persistent" or "emailAddress". The panel
+   refuses a transient NameID.
+5. Copy the entity ID, the sign-in URL and the signing certificate of the provider to the
+   panel. The sign-in URL is for the HTTP-Redirect binding.
+6. Type your password and, when TOTP is on, a code. Select **Add provider**.
+
+Then each user connects the account in **Settings > Sign-in and security > Single sign-on**.
+The panel can also connect the user with the same email at the first sign-in. To use this,
+select **Connect users by email**, and type the email domains of the organisation. Use this
+only when the provider controls all the email addresses of these domains. Refer to
+[security.md](security.md#users-and-api-tokens).
+
+A user who has TOTP must still give a code after the sign-in at the provider. Clear **Show
+the provider on the sign-in page** to stop the sign-ins with a provider for a time. Remove
+the provider to disconnect all its accounts.
+
+The values for the providers use the panel domain. If you change the panel domain, change
+the redirect URI, the entity ID and the ACS URL at each provider.
 
 ### Update to a new release
 

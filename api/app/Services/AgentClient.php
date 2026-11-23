@@ -105,27 +105,32 @@ class AgentClient
         }
 
         return [
-            // An "https://" repository is public, so the agent gets no key for it.
-            'deployKey' => str_starts_with($source->repository, 'https://') ? '' : (string) $source->private_key,
+            'deployKey' => self::deployKeyFor($source),
             'secrets' => (object) ($source->secrets ?? []),
         ];
     }
 
+    /** The private SSH key of a Git source. An "https://" repository is public, so it has no key. */
+    public static function deployKeyFor(GitSource $source): string
+    {
+        return str_starts_with($source->repository, 'https://') ? '' : (string) $source->private_key;
+    }
+
     /**
      * Calls a method of the agent that gives its answer at once and makes no job: the file
-     * manager and the logs. Gives the answer as an array. The JSON of the agent has no field
-     * with an empty value, and it has each 64-bit number as text.
+     * manager, the logs and the branch checks. Gives the answer as an array. The JSON of the
+     * agent has no field with an empty value, and it has each 64-bit number as text.
      *
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      *
      * @throws AgentCallException
      */
-    public function call(Server $server, string $method, array $payload): array
+    public function call(Server $server, string $method, array $payload, int $timeout = 75): array
     {
         try {
             $response = self::connection($server)
-                ->timeout(75)
+                ->timeout($timeout)
                 ->acceptJson()
                 ->withHeaders(['Connect-Protocol-Version' => '1'])
                 ->post('/'.self::SERVICE.'/'.$method, $payload);
