@@ -30,7 +30,7 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 	t.Helper()
 	d, f, _ := deps(t)
 	ids := map[string]int{
-		"acme_x7k2": 20001, "bolt_k3m9": 20002, "cf-edge": 991, "cf-mail": 985, "cf-webmail": 984,
+		"acme_x7k2": 20001, "bolt_k3m9": 20002, "cf-edge": 991, "cf-mail": 985, "cf-webmail": 984, "cf-scan": 983,
 		// The user of the shared database containers of an earlier release. A server from
 		// that release has it. The worker cannot use it.
 		oldDBUser: 990,
@@ -53,6 +53,7 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 		d.MailImage = "ghcr.io/itbm/mail:0.2.0"
 		d.MailDBImage, d.MailKeepImage = mailDBImage, mailKeepImage
 		d.WebmailImage = webmailImage
+		d.ScanImage = scanImage
 		d.ResticPasswordFile = "/etc/cloudfactory/restic.key"
 	})
 	return d, f
@@ -64,6 +65,7 @@ const (
 	edgePodman = "runuser -u cf-edge -- env XDG_RUNTIME_DIR=/run/user/991 podman "
 	mailPodman = "runuser -u cf-mail -- env XDG_RUNTIME_DIR=/run/user/985 podman "
 	webPodman  = "runuser -u cf-webmail -- env XDG_RUNTIME_DIR=/run/user/984 podman "
+	scanPodman = "runuser -u cf-scan -- env XDG_RUNTIME_DIR=/run/user/983 podman "
 	mariaName  = "cf-mariadb-" + mariaServerKey
 	// adminKey is the last part of the name of adminDBUser.
 	adminKey    = "01jbq3z5k8n6t4w2x9y7r5p3zz"
@@ -106,6 +108,12 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		webPodman + "image exists " + webmailImage,
 		webPodman + "pull --quiet " + webmailImage,
 		"systemctl --user --machine=cf-webmail@ restart cf-webmail.service",
+		// The service user of the malware scanner: the image of this agent version, and the
+		// update of the signatures.
+		scanPodman + "image exists " + scanImage,
+		scanPodman + "pull --quiet " + scanImage,
+		"systemctl --user --machine=cf-scan@ daemon-reload",
+		"systemctl --user --machine=cf-scan@ start cf-scan-update.service",
 		// The user managers.
 		"systemctl --user --machine=acme_x7k2@ daemon-reload",
 		"systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service",
@@ -260,6 +268,13 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		webPodman + "pull --quiet docker.io/library/alpine",
 		webPodman + "pull --quiet ghcr.io/itbm/mail:0.2.0",
 		webPodman + "run --rm " + webmailImage,
+		// cf-scan writes the signatures that each scan reads. The worker cannot run a program
+		// as cf-scan, or start a different image.
+		"runuser -u cf-scan -- sh -c id",
+		scanPodman + "run --rm -v /:/host " + scanImage + " sh",
+		scanPodman + "pull --quiet docker.io/library/alpine",
+		scanPodman + "pull --quiet ghcr.io/itbm/mail:0.2.0",
+		"systemctl --user --machine=cf-scan@ set-property --runtime cf-scan-update.service MemoryMax=1",
 		// Only the root helper asks the database node of a mail cluster for its state.
 		mailPodman + "exec cf-mail-db mariadb",
 		mailPodman + "exec cf-mail-db sh -c id",
