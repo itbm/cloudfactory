@@ -1,0 +1,83 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000007/wordpress",
+    "status": 200,
+    "body": {
+        "wordpress": {
+            "status": "ready",
+            "version": "6.8.3",
+            "coreMinor": null,
+            "coreLatest": "6.9",
+            "siteUrl": "https://cornerbakery.example.org",
+            "adminUrl": "https://cornerbakery.example.org/wp-admin/",
+            "adminUser": "bakery",
+            "databaseId": "01m7cqzs803h34e20000000007",
+            "plugins": [
+                {
+                    "name": "elementor",
+                    "title": "Elementor",
+                    "status": "active",
+                    "version": "3.32.1",
+                    "update": "3.33.0"
+                },
+                {
+                    "name": "wp-super-cache",
+                    "title": "WP Super Cache",
+                    "status": "active",
+                    "version": "3.0.1",
+                    "update": null
+                },
+                {
+                    "name": "hello",
+                    "title": "Hello Dolly",
+                    "status": "inactive",
+                    "version": "1.7.2",
+                    "update": null
+                }
+            ],
+            "themes": [
+                {
+                    "name": "hello-elementor",
+                    "title": "Hello Elementor",
+                    "status": "active",
+                    "version": "3.4.4",
+                    "update": null
+                },
+                {
+                    "name": "twentytwentyfive",
+                    "title": "Twenty Twenty-Five",
+                    "status": "active",
+                    "version": "1.3",
+                    "update": null
+                }
+            ],
+            "checkedAt": "2026-11-14T07:00:00+00:00",
+            "autoUpdates": {
+                "core": "minor",
+                "plugins": true,
+                "themes": false
+            },
+            "lastUpdate": {
+                "jobId": null,
+                "at": "2026-11-09T10:00:00+00:00",
+                "automatic": false,
+                "core": "",
+                "plugins": [
+                    "elementor"
+                ],
+                "themes": [],
+                "state": "rolledBack",
+                "from": "6.8.3",
+                "to": null,
+                "error": "WordPress does not load after the update: the website gave status 500; the agent put back the restore point"
+            },
+            "restorePoint": {
+                "at": "2026-11-09T10:00:00+00:00",
+                "version": "6.8.3",
+                "database": true
+            },
+            "error": null
+        },
+        "commands": [],
+        "busy": null
+    }
+}

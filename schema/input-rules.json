@@ -411,6 +411,43 @@
       "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$",
       "message": "Use up to 16 letters, digits and the characters . + _ -, for example 1.25."
     },
+    "wordpressUser": {
+      "what": "WordPress user name",
+      "doc": "The user name of the first WordPress administrator. It has 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. It is not \"admin\" or \"administrator\", because attackers try these names first.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._@-]{2,59}$",
+      "not": ["^(?i:admin|administrator)$"],
+      "message": "Use 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. Do not use admin or administrator."
+    },
+    "wordpressTitle": {
+      "what": "site title",
+      "doc": "The title of a WordPress site. It is on one line and has no control characters.",
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "maxLength": 100,
+      "message": "Enter a title of 1 to 100 characters on one line."
+    },
+    "wordpressLocale": {
+      "what": "language",
+      "doc": "The language of a WordPress site, as a WordPress locale, for example en_GB or de_DE_formal.",
+      "pattern": "^[a-z]{2,3}(_[A-Z]{2})?(_[a-z0-9]+)?$",
+      "maxLength": 20,
+      "message": "Enter a WordPress locale, for example en_GB."
+    },
+    "wordpressSlug": {
+      "what": "plugin or theme",
+      "doc": "The name of a WordPress plugin or theme: the name of its directory in wp-content. It cannot start with \"-\", so that WP-CLI does not read it as an option.",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$",
+      "not": ["\\.\\."],
+      "message": "Enter the name of a plugin or a theme, for example akismet."
+    },
+    "wpCliArgument": {
+      "what": "WP-CLI argument",
+      "doc": "One argument of a WP-CLI command. The agent gives each argument to WP-CLI as it is, with no shell. It has no control characters. It can be empty.",
+      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+      "maxLength": 1000,
+      "empty": true,
+      "echo": false,
+      "message": "Each argument must have at most 1000 characters and no control characters."
+    },
     "logSearch": {
       "what": "search text of the logs",
       "doc": "The words of a search in the logs of a website. It is on one line and has no control characters. A word that starts with \"-\" must not be in an entry, and words in double quotation marks are one word.",
@@ -599,6 +636,14 @@
     "packManifestBytes": {
       "doc": "The largest size of a pack manifest, in bytes.",
       "value": 32768
+    },
+    "wpCliArguments": {
+      "doc": "The largest number of arguments of one WP-CLI command.",
+      "value": 40
+    },
+    "wordpressUpdates": {
+      "doc": "The largest number of plugins or themes in one update of a WordPress site.",
+      "value": 200
     },
     "logEntries": {
       "doc": "The largest number of entries in one page of a search in the logs.",

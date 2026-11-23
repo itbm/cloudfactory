@@ -1449,6 +1449,115 @@ How the panel makes a preview:
   `cf previews create`. This is for a Git host that the panel does not read.
 - The plugin events `website.created` and `website.removed` also occur for a preview.
 
+## WordPress sites
+
+The panel installs WordPress, updates it with a restore point, and runs WP-CLI commands
+(FR-206). The PHP images (FrankenPHP and Apache with PHP-FPM) have WP-CLI at
+`/usr/local/bin/wp`. The build checks the SHA-512 hash of the WP-CLI release. The agent runs
+each WP-CLI command with `podman exec` in the gVisor container of the website, as the
+website user, with `--path=<document root>`. No shell is between the panel and WP-CLI: each
+argument goes to WP-CLI as it is.
+
+```text
+ web panel or cf ──► API ──► job ──► worker ──► runuser -u <user> -- podman exec <container> wp ...
+```
+
+The table `wordpress_sites` has one row for each website with WordPress: the versions, the
+plugins, the themes, the available updates, the settings of the automatic updates, the last
+update and the restore point. A server shows the agent feature `wordpress` when its agent
+has the WordPress jobs. On a server with no feature, the panel refuses to install WordPress,
+to look for it and to run WP-CLI.
+
+### Install
+
+A user installs WordPress in one of two ways:
+
+- On the **New website** page, for a public website with a PHP runtime and the application
+  WordPress or WooCommerce. The panel installs WordPress after the job `CreateWebsite`.
+- With **Install WordPress** on the **WordPress** tab of a website that runs.
+
+The panel makes a MariaDB database and a database user with the name `<Unix user>_wp`, in a
+MariaDB server of the customer on the same server. When the customer has no such server, the
+panel makes one. The panel makes the password of the database user and of the first
+administrator. The API gives the password of the administrator one time. The panel keeps
+the install request with the passwords encrypted until it sends the job. The payload of a job
+is also encrypted, and the panel removes the passwords from it when the job ends.
+
+The job `InstallWordPress` has these steps:
+
+1. **Check the website.** The document root must be empty, or have only the default page of
+   the panel.
+2. **Create database.** The agent makes the database and the user, as for the job
+   `CreateDatabase`.
+3. **Download WordPress.** `wp core download` with the language of the site.
+4. **Install WordPress.** `wp config create`, `wp core install`, the permalinks
+   `/%postname%/`, and `AUTOMATIC_UPDATER_DISABLED` in `wp-config.php`: the panel does the
+   updates, not WordPress. For Apache, the agent writes the rewrite rules to `.htaccess`.
+   FrankenPHP sends each request with no file to `index.php`. The passwords go to WP-CLI on
+   standard input, not in the arguments.
+5. **Check WordPress.** The agent reads the versions and the updates.
+
+The site address is `https://<website name>`. A domain that is not verified is not in the
+records of the agent (CF-03), so the panel gives the address in the job.
+
+**Find WordPress** (the job `CheckWordPress`) reads the versions of a site that a user
+uploaded with SFTP. When the agent finds no WordPress there, the panel removes the new row.
+
+### Updates and the restore point
+
+The job `UpdateWordPress` has these steps:
+
+1. **Check WordPress.** The agent reads the versions before the update.
+2. **Save a restore point.** The agent writes the files of the document root to
+   `~/.cf-wordpress/files.tar.gz` in the home directory of the website user, with no
+   uploads and no caches (`wp-content/uploads`, `cache` and the directories of the usual
+   backup plugins). It writes a dump of the database to `~/.cf-wordpress/database.sql`. The
+   website and SFTP see only the directory of the website, so they cannot change the restore
+   point. A new restore point replaces the previous one only when it is complete.
+3. **Update WordPress.** `wp core update` (with `--minor` for a security and maintenance
+   release), then `wp core update-db`.
+4. **Update plugins.** `wp plugin update` with the selected plugins.
+5. **Update themes.** `wp theme update` with the selected themes.
+6. **Health check.** WP-CLI must load WordPress with the plugins and the theme
+   (`wp eval`), and the website must answer as in a runtime change.
+
+Steps 3 to 5 use `--skip-plugins --skip-themes`, so a plugin with an error does not stop the
+update that repairs it. When step 3, 4, 5 or 6 fails, the agent puts back the restore point:
+it removes the files of the site apart from the uploads and the caches, extracts the files,
+and loads the dump into the database. The job fails with the cause and the words "the agent
+put back the restore point". The restore point stays, so that a user can also roll back a
+successful update with **Roll back** (the job `RestoreWordPress`).
+
+The restore point has the database only when the database is in a MariaDB server of the
+customer on the same server. Otherwise the restore point has the files only.
+
+### Automatic updates
+
+Each site has three settings: WordPress (off, security and maintenance releases, or all
+releases), plugins (on or off) and themes (on or off). The default is security and maintenance
+releases of WordPress only.
+
+Every 10 minutes, the command `cloudfactory:wordpress-updates` looks for sites with an
+automatic update and no check in the last 20 hours, on a server in its maintenance window.
+It starts a check of each site. When the check finds updates that the settings permit, the
+panel starts the job `UpdateWordPress` with a restore point and a health check. It does not
+start a check for a website that does not run, for a suspended customer, or for a website
+with an open WordPress job.
+
+### WP-CLI from the panel
+
+A user runs one WP-CLI command on the **WordPress** tab or with `cf wordpress cli`. The job
+`RunWpCli` runs the command, keeps the last 16 000 bytes of the output and the exit code,
+and then reads the versions again. The job succeeds also when the exit code is not 0: the
+panel shows the exit code. The agent stops a command after 20 minutes.
+
+The panel refuses the commands that need a terminal: `wp shell` and `wp db cli`. The API and
+the agent check each argument with the rule `wpCliArgument` (no control characters) and the
+number of arguments. The table `wordpress_commands` keeps each command, with the user, the
+exit code and the output. The panel replaces the values of the password options, for
+example `--user_pass`, with `***` in the table and in the audit log. The job has the full
+arguments until it ends.
+
 ## Uptime checks
 
 An uptime check is an address of a website that the panel requests on a schedule. When the

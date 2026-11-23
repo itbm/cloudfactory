@@ -1,0 +1,9 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000005/wordpress",
+    "status": 200,
+    "body": {
+        "wordpress": null,
+        "commands": [],
+        "busy": null
+    }
+}

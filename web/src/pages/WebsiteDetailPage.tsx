@@ -24,6 +24,7 @@ import { RuntimeTab } from "./website/RuntimeTab";
 import { MalwareScanCard } from "./website/MalwareScanCard";
 import { SecurityTab } from "./website/SecurityTab";
 import { SettingsTab } from "./website/SettingsTab";
+import { canHaveWordPress, WordPressTab } from "./website/WordPressTab";
 import { UptimeCard, UptimeTab } from "./website/UptimeTab";
 import { PluginActionsCard } from "../components/PluginActions";
 
@@ -35,6 +36,7 @@ const TABS = [
   ["runtime", "Runtime"],
   ["files", "Files"],
   ["databases", "Databases"],
+  ["wordpress", "WordPress"],
   ["deploys", "Deploys"],
   ["cron", "Cron"],
   ["commands", "Commands"],
@@ -338,7 +340,7 @@ export function WebsiteDetailPage() {
             <p>This website moves to the server {state.servers.find((s) => s.id === website.movingToServerId)?.name ?? "that the administrator selected"} now. It does not operate while its files move, and it accepts no change until the move is complete.</p>
           </div>
         )}
-        <Tabs label="Website sections" current={tab} items={TABS.filter(([tabId]) => website.kind === "public" || !PUBLIC_ONLY.includes(tabId)).map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
+        <Tabs label="Website sections" current={tab} items={TABS.filter(([tabId]) => (website.kind === "public" || !PUBLIC_ONLY.includes(tabId)) && (tabId !== "wordpress" || canHaveWordPress(website))).map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
         {website.managedByTerraform && tab !== "overview" && <div style={{ marginBottom: 20 }}><TerraformNotice resource="this website" /></div>}
         {tab === "overview" && <Overview website={website} />}
         {tab === "domains" && (website.kind === "public" ? <DomainsTab website={website} /> : (
@@ -354,6 +356,7 @@ export function WebsiteDetailPage() {
         ))}
         {tab === "runtime" && <RuntimeTab website={website} />}
         {tab === "databases" && <DatabasesTab website={website} />}
+        {tab === "wordpress" && <WordPressTab key={website.id} website={website} />}
         {tab === "files" && <FilesTab website={website} />}
         {tab === "deploys" && <DeploysTab key={website.id} website={website} />}
         {tab === "cron" && <CronTab key={website.id} website={website} />}

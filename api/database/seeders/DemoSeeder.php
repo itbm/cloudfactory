@@ -56,6 +56,8 @@ use App\Models\UsageAlert;
 use App\Models\User;
 use App\Models\Website;
 use App\Models\WebsiteCommand;
+use App\Models\WordPressCommand;
+use App\Models\WordPressSite;
 use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
 use App\Services\Certificates\Certificates;
@@ -162,6 +164,7 @@ class DemoSeeder extends Seeder
         // After the mail: the description of an export has the email addresses.
         $this->exports();
         $this->jobsAndRollout();
+        $this->wordpress();
         $this->imports();
         $this->settingsAndAudit();
         $this->notifications();
@@ -551,7 +554,7 @@ class DemoSeeder extends Seeder
         $common = [
             'agent_version' => self::AGENT, 'os' => 'Debian 13', 'kernel' => '6.12.48', 'arch' => 'x86-64', 'podman_version' => '5.4.2',
             'gvisor_version' => 'release-20261019.0', 'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222,
-            'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true, 'agent_features' => ['imports'],
+            'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true, 'agent_features' => ['wordpress', 'imports'],
         ];
         // Two servers answer DNS queries. The customers give their host names to the registrar of a domain.
         $dns = fn (int $n) => ['dns' => true, 'dns_name' => "ns{$n}.panel.example", 'addresses' => ["203.0.113.{$n}0", "2001:db8:{$n}0::1"]];
@@ -577,7 +580,7 @@ class DemoSeeder extends Seeder
         ]);
         // A necessary service does not run, and the agent is from an earlier release.
         $this->servers['web-3'] = Server::create([
-            ...$common, 'name' => 'web-3', 'location' => 'Frankfurt', 'roles' => ['web'], 'state' => 'degraded', 'agent_version' => '0.1.8', 'agent_url' => 'https://web-3.panel.example:7443', 'addresses' => ['203.0.113.30'],
+            ...$common, 'name' => 'web-3', 'location' => 'Frankfurt', 'roles' => ['web'], 'state' => 'degraded', 'agent_version' => '0.1.8', 'agent_features' => [], 'agent_url' => 'https://web-3.panel.example:7443', 'addresses' => ['203.0.113.30'],
             'services' => [
                 ...$running(['edge', 'firewall', 'podman']),
                 ['name' => 'cf-sftp', 'state' => 'failed', 'detail' => 'The container stopped with exit code 125: the port 2222 is in use.'],
@@ -1543,6 +1546,78 @@ class DemoSeeder extends Seeder
         $rollout->created_at = now()->subHours(30);
         $rollout->updated_at = now()->subHours(29);
         $rollout->save();
+    }
+
+    /**
+     * FR-206: the WordPress sites. The panel updated Acme two days ago in the maintenance window,
+     * and the update of Corner Bakery failed the health check, so the agent put back the
+     * restore point. The site of Lawson is from before the suspension and has old versions.
+     */
+    private function wordpress(): void
+    {
+        $plugin = fn (string $name, string $title, string $version, ?string $update = null, string $status = 'active') => compact('name', 'title', 'status', 'version', 'update');
+        $theme = fn (string $name, string $title, string $version, ?string $update = null, string $status = 'inactive') => compact('name', 'title', 'status', 'version', 'update');
+        $twentyFive = $theme('twentytwentyfive', 'Twenty Twenty-Five', '1.3', null, 'active');
+        $woo = [$plugin('woocommerce', 'WooCommerce', '10.3.4', '10.3.5'), $plugin('woocommerce-payments', 'WooPayments', '9.9.1'), $plugin('mailpoet', 'MailPoet', '5.16.2', '5.17.0', 'inactive')];
+        $update = fn (int $hoursAgo, string $from, string $to, array $plugins, array $more = []) => [
+            'jobId' => null, 'at' => now()->subHours($hoursAgo)->toIso8601String(), 'automatic' => true, 'core' => $from === $to ? '' : 'minor',
+            'plugins' => $plugins, 'themes' => [], 'state' => 'succeeded', 'from' => $from, 'to' => $to, ...$more,
+        ];
+        $restorePoint = fn (int $hoursAgo, string $version) => ['at' => now()->subHours($hoursAgo)->toIso8601String(), 'version' => $version, 'database' => true];
+        // website, admin user, version, minor update, latest version, plugins, themes, automatic updates (core, plugins, themes), more
+        $rows = [
+            ['acme.example.com', 'acme-admin', '6.8.3', null, '6.9', [
+                $plugin('akismet', 'Akismet Anti-spam: Spam Protection', '5.5'), $plugin('wordpress-seo', 'Yoast SEO', '26.3', '26.4'),
+                $plugin('contact-form-7', 'Contact Form 7', '6.1.2'), $plugin('wordfence', 'Wordfence Security', '8.1.0', '8.1.2'),
+            ], [$twentyFive, $theme('astra', 'Astra', '4.11.13', '4.11.15')], ['minor', true, false], [
+                'last_update' => $update(50, '6.8.2', '6.8.3', ['akismet']), 'restore_point' => $restorePoint(50, '6.8.2'),
+            ]],
+            ['shop.acme.example.com', 'acme-admin', '6.9', null, null, $woo, [$theme('storefront', 'Storefront', '4.6.1', null, 'active'), $twentyFive], ['minor', false, false], []],
+            ['northwind.example.com', 'northwind', '6.9', null, null, [$plugin('akismet', 'Akismet Anti-spam: Spam Protection', '5.5'), $plugin('wp-mail-smtp', 'WP Mail SMTP', '4.6.0')], [$twentyFive], ['all', true, true], [
+                'last_update' => $update(26, '6.9', '6.9', ['wp-mail-smtp']), 'restore_point' => $restorePoint(26, '6.9'),
+            ]],
+            ['cornerbakery.example.org', 'bakery', '6.8.3', null, '6.9', [
+                $plugin('elementor', 'Elementor', '3.32.1', '3.33.0'), $plugin('wp-super-cache', 'WP Super Cache', '3.0.1'), $plugin('hello', 'Hello Dolly', '1.7.2', null, 'inactive'),
+            ], [$theme('hello-elementor', 'Hello Elementor', '3.4.4', null, 'active'), $twentyFive], ['minor', true, false], [
+                'last_update' => $update(120, '6.8.3', '6.8.3', ['elementor'], ['automatic' => false, 'state' => 'rolledBack', 'to' => null,
+                    'error' => 'WordPress does not load after the update: the website gave status 500; the agent put back the restore point']),
+                'restore_point' => $restorePoint(120, '6.8.3'),
+            ]],
+            ['harbourbooks.example.net', 'harbourbooks', '6.9', null, null, $woo, [$theme('storefront', 'Storefront', '4.6.1', null, 'active')], ['minor', false, false], []],
+            ['lawson.example.org', 'lawson', '6.7.2', '6.7.4', '6.9', [$plugin('akismet', 'Akismet Anti-spam: Spam Protection', '5.3.3', '5.5')], [$theme('twentytwentyfour', 'Twenty Twenty-Four', '1.2', '1.3', 'active')], ['off', false, false], [
+                'checked_at' => now()->subDays(41),
+            ]],
+        ];
+        foreach ($rows as [$name, $admin, $version, $minor, $latest, $plugins, $themes, [$core, $autoPlugins, $autoThemes], $more]) {
+            $website = $this->websites[$name];
+            WordPressSite::create([
+                'website_id' => $website->id, 'database_id' => $website->databases()->where('engine', 'mariadb')->value('id'), 'status' => WordPressSite::READY,
+                'version' => $version, 'core_minor' => $minor, 'core_latest' => $latest, 'plugins' => $plugins, 'themes' => $themes, 'site_url' => "https://{$name}",
+                'admin_user' => $admin, 'checked_at' => now()->subHours(3), 'auto_checked_at' => now()->subHours(20), 'auto_update_core' => $core,
+                'auto_update_plugins' => $autoPlugins, 'auto_update_themes' => $autoThemes, ...$more,
+            ]);
+        }
+
+        // The WP-CLI commands that the owner of Acme ran.
+        $acme = $this->websites['acme.example.com'];
+        $owner = User::where('email', 'owner@example.com')->value('id');
+        $commands = [
+            [180, 'wp plugin list', 0, "name\tstatus\tupdate\tversion\nakismet\tactive\tnone\t5.5\nwordpress-seo\tactive\tavailable\t26.3\ncontact-form-7\tactive\tnone\t6.1.2\nwordfence\tactive\tavailable\t8.1.0"],
+            [95, 'wp cache flush', 0, 'Success: The cache was flushed.'],
+            [40, 'wp user update 2 --user_pass=***', 0, 'Success: Updated user 2.'],
+        ];
+        foreach ($commands as [$minutesAgo, $command, $exit, $output]) {
+            $job = new AgentJob([
+                'server_id' => $acme->server_id, 'website_id' => $acme->id, 'action' => AgentAction::RunWpCli, 'title' => 'WP-CLI: '.$command, 'ref' => $acme->name,
+                'payload' => ['websiteId' => $acme->id], 'steps' => AgentAction::RunWpCli->steps(), 'step' => count(AgentAction::RunWpCli->steps()), 'state' => JobState::Succeeded,
+                'started_at' => now()->subMinutes($minutesAgo), 'finished_at' => now()->subMinutes($minutesAgo),
+            ]);
+            $job->created_at = now()->subMinutes($minutesAgo);
+            $job->save();
+            $row = new WordPressCommand(['website_id' => $acme->id, 'agent_job_id' => $job->id, 'user_id' => $owner, 'command' => $command, 'status' => 'done', 'exit_code' => $exit, 'output' => $output, 'ran_at' => now()->subMinutes($minutesAgo)]);
+            $row->created_at = now()->subMinutes($minutesAgo);
+            $row->save();
+        }
     }
 
     /**

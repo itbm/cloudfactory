@@ -70,6 +70,26 @@
                 "finishedAt": "2026-11-14T09:28:00+00:00"
             },
             {
+                "id": "01m7cqzs802ghns6000000000m",
+                "title": "WP-CLI: wp user update 2 --user_pass=***",
+                "ref": "acme.example.com",
+                "action": "RunWpCli",
+                "state": "succeeded",
+                "steps": [
+                    "Run the command",
+                    "Check WordPress"
+                ],
+                "step": 2,
+                "error": null,
+                "result": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T09:20:00+00:00",
+                "finishedAt": "2026-11-14T09:20:00+00:00"
+            },
+            {
                 "id": "01m7cqzs802ghns6000000000a",
                 "title": "Create database",
                 "ref": "shop.acme.example.com",
@@ -154,6 +174,26 @@
                 "finishedAt": "2026-11-14T08:26:00+00:00"
             },
             {
+                "id": "01m7cqzs802ghns6000000000k",
+                "title": "WP-CLI: wp cache flush",
+                "ref": "acme.example.com",
+                "action": "RunWpCli",
+                "state": "succeeded",
+                "steps": [
+                    "Run the command",
+                    "Check WordPress"
+                ],
+                "step": 2,
+                "error": null,
+                "result": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T08:25:00+00:00",
+                "finishedAt": "2026-11-14T08:25:00+00:00"
+            },
+            {
                 "id": "01m7cqzs802ghns6000000000c",
                 "title": "Add TXT record to acme.example.com",
                 "ref": "acme.example.com",
@@ -194,6 +234,26 @@
                 "serverId": "01m7cqzs807rnxfq0000000002",
                 "createdAt": "2026-11-14T07:40:00+00:00",
                 "finishedAt": "2026-11-14T07:41:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000j",
+                "title": "WP-CLI: wp plugin list",
+                "ref": "acme.example.com",
+                "action": "RunWpCli",
+                "state": "succeeded",
+                "steps": [
+                    "Run the command",
+                    "Check WordPress"
+                ],
+                "step": 2,
+                "error": null,
+                "result": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T07:00:00+00:00",
+                "finishedAt": "2026-11-14T07:00:00+00:00"
             },
             {
                 "id": "01m7cqzs802ghns60000000005",
@@ -311,8 +371,8 @@
             ],
             "path": "http://localhost/api/v1/jobs",
             "per_page": 50,
-            "to": 13,
-            "total": 13
+            "to": 16,
+            "total": 16
         }
     }
 }

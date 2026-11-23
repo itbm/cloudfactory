@@ -256,6 +256,17 @@ class Website extends Model
         return $this->hasOne(GitSource::class);
     }
 
+    /** FR-206: WordPress in the document root of the website. */
+    public function wordpress(): HasOne
+    {
+        return $this->hasOne(WordPressSite::class);
+    }
+
+    public function wordpressCommands(): HasMany
+    {
+        return $this->hasMany(WordPressCommand::class)->latest('created_at')->orderByDesc('id');
+    }
+
     /** The previews of the pull requests of the Git source of this website. */
     public function previews(): HasMany
     {

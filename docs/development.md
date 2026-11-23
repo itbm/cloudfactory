@@ -93,6 +93,8 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
   switch fails, and the website goes back to the previous release). With a migration
   command, the website keeps the new release, and the owner gets an alert;
 - a cron job with `fail` in its command, when you select **Run now**;
+- a WordPress update of a plugin with `fail` in its name (the health check fails, and the
+  agent puts back the restore point);
 - a command with `fail` in it, in **Commands** (the command ends with exit code 1);
 - a change of a DNS zone with a name that starts with `fail.`;
 - the download of an account import with `fail` in the name of its file or in its address.
