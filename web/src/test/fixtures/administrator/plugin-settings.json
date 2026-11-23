@@ -1,0 +1,7 @@
+{
+    "request": "GET /plugin-settings",
+    "status": 200,
+    "body": {
+        "developerMode": false
+    }
+}

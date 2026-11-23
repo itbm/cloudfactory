@@ -1,0 +1,18 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000006/cron-jobs",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs808gd1y70000000006",
+                "schedule": "30 1 * * *",
+                "command": "wp db optimize",
+                "enabled": true,
+                "lastRunAt": "2026-11-13T12:20:00+00:00",
+                "lastResult": "ok",
+                "lastExitCode": 0,
+                "lastOutput": "Success: Database optimized."
+            }
+        ]
+    }
+}

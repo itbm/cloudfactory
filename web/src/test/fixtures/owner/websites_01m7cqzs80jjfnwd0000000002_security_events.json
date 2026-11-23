@@ -1,0 +1,183 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000002/security/events",
+    "status": 200,
+    "body": {
+        "events": [
+            {
+                "at": "2026-11-14T09:32:00Z",
+                "clientIp": "192.0.2.88",
+                "host": "shop.acme.example.com",
+                "uri": "/?cmd=%3C%3Fphp%20system(%27id%27);%20%3F%3E",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 933100,
+                        "message": "PHP Injection Attack: PHP Open Tag Found",
+                        "data": "Matched Data: <?php found within ARGS:cmd: <?php system('id'); ?>"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T08:47:00Z",
+                "clientIp": "192.0.2.14",
+                "host": "shop.acme.example.com",
+                "uri": "/",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 913100,
+                        "message": "Found User-Agent associated with security scanner",
+                        "data": "Matched Data: sqlmap found within REQUEST_HEADERS:User-Agent: sqlmap/1.8.2"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T08:23:00Z",
+                "clientIp": "203.0.113.201",
+                "host": "shop.acme.example.com",
+                "uri": "/.env",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 930130,
+                        "message": "Restricted File Access Attempt",
+                        "data": "Matched Data: /.env found within REQUEST_FILENAME: /.env"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T08:03:00Z",
+                "clientIp": "203.0.113.201",
+                "host": "shop.acme.example.com",
+                "uri": "/.env",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 930130,
+                        "message": "Restricted File Access Attempt",
+                        "data": "Matched Data: /.env found within REQUEST_FILENAME: /.env"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T07:01:00Z",
+                "clientIp": "198.51.100.9",
+                "host": "shop.acme.example.com",
+                "uri": "/index.php?file=../../../../etc/passwd",
+                "action": "blocked",
+                "score": 10,
+                "rules": [
+                    {
+                        "id": 930100,
+                        "message": "Path Traversal Attack (/../ or /..;/)",
+                        "data": "Matched Data: /../ found within ARGS:file: ../../../../etc/passwd"
+                    },
+                    {
+                        "id": 930120,
+                        "message": "OS File Access Attempt",
+                        "data": "Matched Data: etc/passwd found within ARGS:file: ../../../../etc/passwd"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T06:26:00Z",
+                "clientIp": "192.0.2.14",
+                "host": "shop.acme.example.com",
+                "uri": "/",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 913100,
+                        "message": "Found User-Agent associated with security scanner",
+                        "data": "Matched Data: sqlmap found within REQUEST_HEADERS:User-Agent: sqlmap/1.8.2"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T05:34:00Z",
+                "clientIp": "192.0.2.88",
+                "host": "shop.acme.example.com",
+                "uri": "/?cmd=%3C%3Fphp%20system(%27id%27);%20%3F%3E",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 933100,
+                        "message": "PHP Injection Attack: PHP Open Tag Found",
+                        "data": "Matched Data: <?php found within ARGS:cmd: <?php system('id'); ?>"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T05:10:00Z",
+                "clientIp": "192.0.2.14",
+                "host": "shop.acme.example.com",
+                "uri": "/",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 913100,
+                        "message": "Found User-Agent associated with security scanner",
+                        "data": "Matched Data: sqlmap found within REQUEST_HEADERS:User-Agent: sqlmap/1.8.2"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T04:57:00Z",
+                "clientIp": "203.0.113.77",
+                "host": "shop.acme.example.com",
+                "uri": "/search?q=%3Cscript%3Ealert(1)%3C/script%3E",
+                "action": "blocked",
+                "score": 10,
+                "rules": [
+                    {
+                        "id": 941100,
+                        "message": "XSS Attack Detected via libinjection",
+                        "data": "Matched Data: XSS data found within ARGS:q: <script>alert(1)</script>"
+                    },
+                    {
+                        "id": 941110,
+                        "message": "XSS Filter - Category 1: Script Tag Vector",
+                        "data": "Matched Data: <script> found within ARGS:q: <script>alert(1)</script>"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T04:49:00Z",
+                "clientIp": "203.0.113.201",
+                "host": "shop.acme.example.com",
+                "uri": "/.env",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 930130,
+                        "message": "Restricted File Access Attempt",
+                        "data": "Matched Data: /.env found within REQUEST_FILENAME: /.env"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T03:25:00Z",
+                "clientIp": "192.0.2.14",
+                "host": "shop.acme.example.com",
+                "uri": "/",
+                "action": "blocked",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 913100,
+                        "message": "Found User-Agent associated with security scanner",
+                        "data": "Matched Data: sqlmap found within REQUEST_HEADERS:User-Agent: sqlmap/1.8.2"
+                    }
+                ]
+            }
+        ]
+    }
+}

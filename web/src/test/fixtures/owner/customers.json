@@ -1,0 +1,24 @@
+{
+    "request": "GET /customers",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80h56kh10000000004",
+                "name": "Acme Ltd",
+                "email": "it@acme.example.com",
+                "role": "owner",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "resellerId": null,
+                "branding": null,
+                "brandStatus": null,
+                "allowedPlanIds": null,
+                "suspended": false,
+                "suspendedBy": null,
+                "websites": 9,
+                "databaseServers": 5,
+                "createdAt": "2025-10-10T10:00:00+00:00"
+            }
+        ]
+    }
+}

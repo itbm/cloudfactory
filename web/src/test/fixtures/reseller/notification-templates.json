@@ -1,0 +1,222 @@
+{
+    "request": "GET /notification-templates",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "event": "job.failed",
+                "label": "Failed jobs",
+                "description": "A change to a website, a database or a server did not complete.",
+                "subject": "[{{brand}}] A change to {{website}} failed",
+                "body": "Hello {{name}},\n\nA change to your website {{website}} did not complete: {{job}}.\n\nThe error: {{error}}\n\nWe have the details too. Reply to this email if you need help.\n\nThe Northwind Agency team\n{{panelUrl}}",
+                "changed": true,
+                "originalSubject": "Failed: {{job}}",
+                "originalBody": "Hello {{name}},\n\nThis job did not complete:\n\n{{job}}\nWebsite: {{website}}\nServer: {{server}}\nTime: {{time}}\n\nThe error: {{error}}\n\nOpen the panel to see the steps of the job, and to try again:\n{{panelUrl}}/jobs",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "job",
+                    "website",
+                    "server",
+                    "error",
+                    "time"
+                ]
+            },
+            {
+                "event": "backup.failed",
+                "label": "Failed backups",
+                "description": "A backup of a website did not complete.",
+                "subject": "The backup of {{website}} failed",
+                "body": "Hello {{name}},\n\nThe backup of {{website}} did not complete at {{time}}.\n\nThe error: {{error}}\n\nThe earlier backups are not changed. Open the panel to make a backup now:\n{{panelUrl}}/backups",
+                "changed": false,
+                "originalSubject": "The backup of {{website}} failed",
+                "originalBody": "Hello {{name}},\n\nThe backup of {{website}} did not complete at {{time}}.\n\nThe error: {{error}}\n\nThe earlier backups are not changed. Open the panel to make a backup now:\n{{panelUrl}}/backups",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "website",
+                    "server",
+                    "error",
+                    "time"
+                ]
+            },
+            {
+                "event": "certificate.expiring",
+                "label": "Certificates that expire soon",
+                "description": "The TLS certificate of a domain expires in 14 days or less, or the panel could not get one.",
+                "subject": "Check the certificate of {{domain}}",
+                "body": "Hello {{name}},\n\nThe TLS certificate of {{domain}} (website {{website}}) needs your attention.\n\nExpiry: {{expiresAt}} ({{days}} days)\n\nWhen the certificate expires, browsers show a warning for the website.\n\n{{advice}}\n{{panelUrl}}",
+                "changed": false,
+                "originalSubject": "Check the certificate of {{domain}}",
+                "originalBody": "Hello {{name}},\n\nThe TLS certificate of {{domain}} (website {{website}}) needs your attention.\n\nExpiry: {{expiresAt}} ({{days}} days)\n\nWhen the certificate expires, browsers show a warning for the website.\n\n{{advice}}\n{{panelUrl}}",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "domain",
+                    "website",
+                    "expiresAt",
+                    "days",
+                    "state",
+                    "advice"
+                ]
+            },
+            {
+                "event": "account.suspended",
+                "label": "Account suspended",
+                "description": "The account is suspended, and its websites are stopped.",
+                "subject": "Your account {{account}} is suspended",
+                "body": "Hello {{name}},\n\nYour account {{account}} is suspended. Your websites are stopped, and SFTP access is off. Your files, databases and backups are not deleted.\n\nTo lift the suspension, speak to {{provider}}: {{supportEmail}}",
+                "changed": false,
+                "originalSubject": "Your account {{account}} is suspended",
+                "originalBody": "Hello {{name}},\n\nYour account {{account}} is suspended. Your websites are stopped, and SFTP access is off. Your files, databases and backups are not deleted.\n\nTo lift the suspension, speak to {{provider}}: {{supportEmail}}",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "account",
+                    "provider",
+                    "supportEmail"
+                ]
+            },
+            {
+                "event": "account.restored",
+                "label": "Suspension lifted",
+                "description": "The suspension of the account is lifted.",
+                "subject": "Your account {{account}} is active again",
+                "body": "Hello {{name}},\n\nThe suspension of your account {{account}} is lifted. The panel starts your websites again, and turns SFTP access on again.\n\n{{panelUrl}}",
+                "changed": false,
+                "originalSubject": "Your account {{account}} is active again",
+                "originalBody": "Hello {{name}},\n\nThe suspension of your account {{account}} is lifted. The panel starts your websites again, and turns SFTP access on again.\n\n{{panelUrl}}",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "account",
+                    "provider"
+                ]
+            },
+            {
+                "event": "signin.new_device",
+                "label": "Sign-in from a new device",
+                "description": "Someone signed in to your user from a device or browser that the panel does not know.",
+                "subject": "New sign-in to {{brand}}",
+                "body": "Hello {{name}},\n\nSomeone signed in to your user on {{brand}} from a new device.\n\nDevice: {{device}}\nIP address: {{ip}}\nTime: {{time}}\n\nIf this was you, you need not do anything. If not, change your password now, and turn on the authenticator app:\n{{panelUrl}}/settings",
+                "changed": false,
+                "originalSubject": "New sign-in to {{brand}}",
+                "originalBody": "Hello {{name}},\n\nSomeone signed in to your user on {{brand}} from a new device.\n\nDevice: {{device}}\nIP address: {{ip}}\nTime: {{time}}\n\nIf this was you, you need not do anything. If not, change your password now, and turn on the authenticator app:\n{{panelUrl}}/settings",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "device",
+                    "ip",
+                    "time"
+                ]
+            },
+            {
+                "event": "usage.alert",
+                "label": "Usage alerts",
+                "description": "A website or the account uses almost all of a limit of its plan.",
+                "subject": "{{account}} uses {{percent}}% of its {{resource}} limit",
+                "body": "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit. Website: {{website}}\n\nWhen it uses all of the limit, changes can fail. Remove data that you do not need, or ask for a larger plan:\n{{panelUrl}}/account",
+                "changed": false,
+                "originalSubject": "{{account}} uses {{percent}}% of its {{resource}} limit",
+                "originalBody": "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit. Website: {{website}}\n\nWhen it uses all of the limit, changes can fail. Remove data that you do not need, or ask for a larger plan:\n{{panelUrl}}/account",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "account",
+                    "resource",
+                    "website",
+                    "used",
+                    "limit",
+                    "percent",
+                    "level"
+                ]
+            },
+            {
+                "event": "deploy.attention",
+                "label": "Deploys that need attention",
+                "description": "A deploy ran a database migration, and then the website failed its health check. The panel did not go back to the previous release.",
+                "subject": "Examine {{website}}: the health check failed after a migration",
+                "body": "Hello {{name}},\n\nA deploy of {{website}} ran the migration command. After the switch, the website failed its health check:\n\n{{error}}\n\nBranch: {{branch}}\nCommit: {{commit}} {{message}}\nTime: {{time}}\n\nThe website serves the new release. The panel did not go back to the previous release, because the previous release possibly does not operate with the changed database.\n\nExamine the logs of the website, and push a correction. To go back, first restore the database from a backup, and then go back to an earlier release:\n{{panelUrl}}/websites/{{websiteId}}/deploys",
+                "changed": false,
+                "originalSubject": "Examine {{website}}: the health check failed after a migration",
+                "originalBody": "Hello {{name}},\n\nA deploy of {{website}} ran the migration command. After the switch, the website failed its health check:\n\n{{error}}\n\nBranch: {{branch}}\nCommit: {{commit}} {{message}}\nTime: {{time}}\n\nThe website serves the new release. The panel did not go back to the previous release, because the previous release possibly does not operate with the changed database.\n\nExamine the logs of the website, and push a correction. To go back, first restore the database from a backup, and then go back to an earlier release:\n{{panelUrl}}/websites/{{websiteId}}/deploys",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "website",
+                    "branch",
+                    "commit",
+                    "message",
+                    "error",
+                    "time",
+                    "websiteId"
+                ]
+            },
+            {
+                "event": "uptime.down",
+                "label": "Websites that are down",
+                "description": "An uptime check of a website failed a number of times in a row.",
+                "subject": "{{website}} is down",
+                "body": "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
+                "changed": false,
+                "originalSubject": "{{website}} is down",
+                "originalBody": "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "website",
+                    "url",
+                    "error",
+                    "since"
+                ]
+            },
+            {
+                "event": "uptime.up",
+                "label": "Websites that are up again",
+                "description": "A website that was down answers its uptime check again.",
+                "subject": "{{website}} is up again",
+                "body": "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
+                "changed": false,
+                "originalSubject": "{{website}} is up again",
+                "originalBody": "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "website",
+                    "url",
+                    "downtime",
+                    "since",
+                    "until"
+                ]
+            },
+            {
+                "event": "password.reset",
+                "label": "Password reset",
+                "description": "Someone asked for a link to set a new password for your user.",
+                "subject": "Set a new password for {{brand}}",
+                "body": "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app or remove your passkeys.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
+                "changed": false,
+                "originalSubject": "Set a new password for {{brand}}",
+                "originalBody": "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app or remove your passkeys.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "resetUrl",
+                    "minutes",
+                    "ip"
+                ]
+            }
+        ]
+    }
+}

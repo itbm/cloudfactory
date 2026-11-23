@@ -1,0 +1,10 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000b/previews",
+    "status": 200,
+    "body": {
+        "settings": null,
+        "suggestedDomain": null,
+        "maxLimit": 10,
+        "previews": []
+    }
+}

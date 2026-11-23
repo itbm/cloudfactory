@@ -1,0 +1,56 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000002/snapshots",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806s2hhx0000000008",
+                "kind": "manual",
+                "sizeBytes": 13463715840,
+                "databases": [
+                    "mariadb:shopacme_9e69_shop"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-14T05:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000005",
+                "kind": "scheduled",
+                "sizeBytes": 13460570112,
+                "databases": [
+                    "mariadb:shopacme_9e69_shop"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-14T03:05:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000006",
+                "kind": "scheduled",
+                "sizeBytes": 13457424384,
+                "databases": [
+                    "mariadb:shopacme_9e69_shop"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-13T03:05:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx0000000007",
+                "kind": "scheduled",
+                "sizeBytes": 13454278656,
+                "databases": [
+                    "mariadb:shopacme_9e69_shop"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-12T03:05:00+00:00"
+            }
+        ]
+    }
+}

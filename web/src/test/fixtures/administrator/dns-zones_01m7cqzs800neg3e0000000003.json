@@ -1,0 +1,99 @@
+{
+    "request": "GET /dns-zones/01m7cqzs800neg3e0000000003",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs800neg3e0000000003",
+        "name": "northwind.example.com",
+        "customerId": "01m7cqzs80h56kh10000000001",
+        "status": "active",
+        "serial": 1794574800,
+        "recordCount": 6,
+        "nameServers": [
+            "ns1.northwind.example.com",
+            "ns2.northwind.example.com"
+        ],
+        "provider": null,
+        "delegation": {
+            "state": "here",
+            "nameServers": [
+                "ns1.northwind.example.com",
+                "ns2.northwind.example.com"
+            ],
+            "checkedAt": "2026-11-14T09:51:00+00:00"
+        },
+        "dnssec": {
+            "enabled": false,
+            "state": "off",
+            "ds": null,
+            "dnskey": null
+        },
+        "servers": [
+            {
+                "nameServer": "ns1.northwind.example.com",
+                "state": "ok"
+            },
+            {
+                "nameServer": "ns2.northwind.example.com",
+                "state": "ok"
+            }
+        ],
+        "websites": 2,
+        "createdAt": "2026-02-07T10:00:00+00:00",
+        "records": [
+            {
+                "id": "01m7cqzs8007vyeq000000000q",
+                "name": "@",
+                "type": "A",
+                "value": "203.0.113.20",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000r",
+                "name": "@",
+                "type": "AAAA",
+                "value": "2001:db8:20::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000n",
+                "name": "@",
+                "type": "NS",
+                "value": "ns1.northwind.example.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000p",
+                "name": "@",
+                "type": "NS",
+                "value": "ns2.northwind.example.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000s",
+                "name": "reports",
+                "type": "A",
+                "value": "203.0.113.10",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000t",
+                "name": "reports",
+                "type": "AAAA",
+                "value": "2001:db8:10::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            }
+        ]
+    }
+}

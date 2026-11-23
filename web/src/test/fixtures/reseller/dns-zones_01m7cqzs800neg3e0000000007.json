@@ -1,0 +1,98 @@
+{
+    "request": "GET /dns-zones/01m7cqzs800neg3e0000000007",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs800neg3e0000000007",
+        "name": "northwind.example.org",
+        "customerId": "01m7cqzs80h56kh10000000001",
+        "status": "active",
+        "serial": 1794643200,
+        "recordCount": 4,
+        "nameServers": [
+            "ada.ns.cloudflare.com",
+            "bob.ns.cloudflare.com"
+        ],
+        "provider": {
+            "accountId": "01m7cqzs806nsqez0000000001",
+            "accountName": "Panel Cloudflare",
+            "name": "Cloudflare",
+            "state": "ok",
+            "error": null,
+            "active": false,
+            "syncedAt": "2026-11-14T08:00:00+00:00",
+            "changes": {
+                "added": 0,
+                "changed": 1,
+                "removed": 0
+            },
+            "imported": null,
+            "handover": {
+                "endsAt": null
+            }
+        },
+        "delegation": {
+            "state": "elsewhere",
+            "nameServers": [
+                "ns1.northwind.example.com",
+                "ns2.northwind.example.com"
+            ],
+            "checkedAt": "2026-11-14T09:51:00+00:00"
+        },
+        "dnssec": {
+            "enabled": false,
+            "state": "off",
+            "ds": null,
+            "dnskey": null
+        },
+        "servers": [
+            {
+                "nameServer": "ns1.northwind.example.com",
+                "state": "ok"
+            },
+            {
+                "nameServer": "ns2.northwind.example.com",
+                "state": "ok"
+            }
+        ],
+        "websites": 0,
+        "createdAt": "2026-11-12T10:00:00+00:00",
+        "records": [
+            {
+                "id": "01m7cqzs8007vyeq000000001q",
+                "name": "@",
+                "type": "A",
+                "value": "198.51.100.90",
+                "ttl": 300,
+                "priority": null,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001h",
+                "name": "@",
+                "type": "NS",
+                "value": "ada.ns.cloudflare.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001j",
+                "name": "@",
+                "type": "NS",
+                "value": "bob.ns.cloudflare.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001r",
+                "name": "@",
+                "type": "TXT",
+                "value": "v=spf1 -all",
+                "ttl": 3600,
+                "priority": null,
+                "managed": null
+            }
+        ]
+    }
+}

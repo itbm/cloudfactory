@@ -1,0 +1,88 @@
+{
+    "request": "GET /mesh",
+    "status": 200,
+    "body": {
+        "range": "10.207.0.0/16",
+        "port": 51820,
+        "servers": [
+            {
+                "id": "01m7cqzs807rnxfq0000000004",
+                "name": "mail-1",
+                "location": "London",
+                "state": "healthy",
+                "supported": false,
+                "networks": false,
+                "publicKey": null,
+                "address": null,
+                "tunnelAddress": null,
+                "tunnels": 0,
+                "current": true
+            },
+            {
+                "id": "01m7cqzs807rnxfq0000000001",
+                "name": "web-1",
+                "location": "London",
+                "state": "healthy",
+                "supported": true,
+                "networks": true,
+                "publicKey": "iXv0CjS/cgPRvUY7/t88nL29gfj6d2R4pRQdOhDkRbQ=",
+                "address": "10.207.0.1",
+                "tunnelAddress": "203.0.113.10",
+                "tunnels": 1,
+                "current": true
+            },
+            {
+                "id": "01m7cqzs807rnxfq0000000002",
+                "name": "web-2",
+                "location": "Amsterdam",
+                "state": "healthy",
+                "supported": true,
+                "networks": true,
+                "publicKey": "BlnXjpxY25Kf7teFPwZ1AiGnj8PFjd8uat5LSYmCQqY=",
+                "address": "10.207.0.2",
+                "tunnelAddress": "203.0.113.20",
+                "tunnels": 1,
+                "current": true
+            },
+            {
+                "id": "01m7cqzs807rnxfq0000000003",
+                "name": "web-3",
+                "location": "Frankfurt",
+                "state": "degraded",
+                "supported": false,
+                "networks": false,
+                "publicKey": null,
+                "address": null,
+                "tunnelAddress": null,
+                "tunnels": 0,
+                "current": true
+            }
+        ],
+        "tunnels": [
+            {
+                "id": "01m7cqzs80n06g8e0000000001",
+                "state": "up",
+                "roundTripMs": 7.55,
+                "pinned": true,
+                "inUse": true,
+                "sides": [
+                    {
+                        "serverId": "01m7cqzs807rnxfq0000000001",
+                        "server": "web-1",
+                        "reachable": true,
+                        "handshakeAt": "2026-11-14T09:59:20+00:00",
+                        "roundTripMs": 7.4
+                    },
+                    {
+                        "serverId": "01m7cqzs807rnxfq0000000002",
+                        "server": "web-2",
+                        "reachable": true,
+                        "handshakeAt": "2026-11-14T09:59:20+00:00",
+                        "roundTripMs": 7.55
+                    }
+                ],
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}
