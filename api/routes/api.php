@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Agent\AgentController;
 use App\Http\Controllers\Agent\JoinController;
+use App\Http\Controllers\Agent\TerminalController;
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
@@ -48,7 +49,9 @@ use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
 use App\Http\Controllers\Api\SsoController;
+use App\Http\Controllers\Api\TerminalSessionController;
 use App\Http\Controllers\Api\TrustedKeyController;
+use App\Http\Controllers\Api\UptimeController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteCommandController;
@@ -176,10 +179,26 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/wordpress/restore', [WordPressController::class, 'restore'])->middleware('throttle:10,1,post-websites-x-wordpress-restore');
             Route::post('websites/{websiteId}/wordpress/cli', [WordPressController::class, 'cli'])->middleware('throttle:30,1,post-websites-x-wordpress-cli');
             Route::get('websites/{websiteId}/wordpress/commands', [WordPressController::class, 'commands']);
+            // Uptime checks: the panel requests an address of a website on a schedule, and sends
+            // an email when the website is down and when it is up again.
+            Route::get('uptime-checks', [UptimeController::class, 'all']);
+            Route::get('uptime-incidents', [UptimeController::class, 'incidents']);
+            Route::get('websites/{websiteId}/uptime-checks', [UptimeController::class, 'index']);
+            Route::post('websites/{websiteId}/uptime-checks', [UptimeController::class, 'store']);
+            Route::get('websites/{websiteId}/uptime-checks/{checkId}', [UptimeController::class, 'show']);
+            Route::patch('websites/{websiteId}/uptime-checks/{checkId}', [UptimeController::class, 'update']);
+            Route::delete('websites/{websiteId}/uptime-checks/{checkId}', [UptimeController::class, 'destroy']);
+            // Each request starts a request from the panel to the website.
+            Route::post('websites/{websiteId}/uptime-checks/{checkId}/run', [UptimeController::class, 'run'])->middleware('throttle:10,1,post-websites-x-uptime-checks-x-run');
             // Run a command in the container of the website, and the command log (FR-802).
             Route::get('websites/{websiteId}/commands', [WebsiteCommandController::class, 'index']);
             Route::post('websites/{websiteId}/commands', [WebsiteCommandController::class, 'store'])->middleware('throttle:30,1,post-websites-x-commands');
             Route::get('websites/{websiteId}/commands/{commandId}', [WebsiteCommandController::class, 'show']);
+            // The web terminal. The browser then connects to the terminal relay with the ticket.
+            Route::get('websites/{websiteId}/terminal-sessions', [TerminalSessionController::class, 'index']);
+            Route::post('websites/{websiteId}/terminal-sessions', [TerminalSessionController::class, 'store'])->middleware('throttle:30,1,post-websites-x-terminal-sessions');
+            Route::get('websites/{websiteId}/terminal-sessions/{sessionId}', [TerminalSessionController::class, 'show']);
+            Route::get('websites/{websiteId}/terminal-sessions/{sessionId}/recording', [TerminalSessionController::class, 'recording']);
 
             // Deploys from a Git repository.
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);
@@ -438,6 +457,8 @@ Route::prefix('agent/v1')->group(function () {
     Route::middleware('agent')->group(function () {
         Route::post('jobs/{id}/events', [AgentController::class, 'jobEvent']);
         Route::post('report', [AgentController::class, 'report']);
+        Route::post('terminal-sessions/{id}/commands', [TerminalController::class, 'commands']);
+        Route::post('terminal-sessions/{id}/end', [TerminalController::class, 'end']);
         // The uploaded archive of an import, for a server with a download job of the import.
         Route::get('imports/{id}/archive', [ImportController::class, 'archive']);
     });

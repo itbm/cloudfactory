@@ -255,6 +255,17 @@ class DemoTest extends TestCase
         $this->runJob($ran['job']['id']);
         $this->getJson("{$base}/commands/{$ran['command']['id']}")->assertJsonPath('command.exitCode', 1);
 
+        // The demonstration has no terminal relay: the terminal does not open, with a clear reason.
+        // The sample session has its commands in the command log and a recording.
+        $opened = $this->postJson("{$base}/terminal-sessions", ['cols' => 80, 'rows' => 24])->assertAccepted()->json();
+        $this->assertSame(JobState::Failed, $this->runJob($opened['job']['id'])->state);
+        $this->getJson("{$base}/terminal-sessions/{$opened['session']['id']}")->assertJsonPath('session.state', 'failed')
+            ->assertJsonPath('session.endReason', 'The demonstration has no terminal relay, so the terminal cannot open.');
+        $sample = $this->getJson("{$base}/terminal-sessions")->assertJsonCount(2, 'data')->json('data.1');
+        $this->assertSame(['ended', 4, true], [$sample['state'], $sample['commandCount'], $sample['hasRecording']]);
+        $this->getJson("{$base}/commands?sessionId={$sample['id']}")->assertJsonCount(4, 'data')->assertJsonPath('data.3.command', 'cd storage/logs');
+        $this->assertStringContainsString('laravel.log', $this->get("{$base}/terminal-sessions/{$sample['id']}/recording")->assertOk()->getContent());
+
         // A deploy goes live. A repository with "fail" in its address fails in the build.
         $this->getJson("{$base}/deploy")->assertOk()->assertJsonPath('source.trigger', 'webhook')->assertJsonPath('source.secrets', ['COMPOSER_AUTH', 'SENTRY_AUTH_TOKEN'])->assertJsonCount(6, 'releases');
         $answer = $this->postJson("{$base}/deploy/releases")->assertAccepted()->json();

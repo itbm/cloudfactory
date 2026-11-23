@@ -30,6 +30,7 @@ use Illuminate\Foundation\Queue\Queueable;
  * - a deploy from a repository with "unhealthy" in its address: the health check after the
  *   switch fails. With a migration command, the job succeeds, and the website keeps the release;
  * - a cron job with "fail" in its command;
+ * - each web terminal, because the demonstration has no terminal relay (config demo.terminal);
  * - an install of dependencies with "fail" in its install command;
  * - a DNS zone with a name that starts with "fail.";
  * - an import with "fail" in the name of its file or in its address.
@@ -124,6 +125,10 @@ class RunDemoJob implements ShouldQueue
             $job->action === AgentAction::UpdateWordPress && collect($p['plugins'] ?? [])->contains(fn ($n) => str_contains((string) $n, 'fail')) => [
                 'step' => 5,
                 'error' => 'WordPress does not load: wp eval: PHP Fatal error:  Uncaught Error: Call to undefined function wc_get_order(); the agent put back the restore point',
+            ],
+            $job->action === AgentAction::OpenTerminal && ! config('demo.terminal') => [
+                'step' => 0,
+                'error' => 'The demonstration has no terminal relay, so the terminal cannot open.',
             ],
             $job->action === AgentAction::RunCronJob && str_contains((string) ($p['cronJob']['command'] ?? ''), 'fail') => [
                 'step' => 0,

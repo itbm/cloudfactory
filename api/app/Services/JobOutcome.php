@@ -18,6 +18,7 @@ use App\Models\MailDomain;
 use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Snapshot;
+use App\Models\TerminalSession;
 use App\Models\Website;
 use App\Models\WebsiteCommand;
 use App\Services\Certificates\Certificates;
@@ -262,6 +263,9 @@ class JobOutcome
             ]),
             AgentAction::RunCronJob => self::cronRan($job, (int) ($result['exitCode'] ?? 0), (string) ($result['output'] ?? '')),
             AgentAction::RunCommand => self::commandRan($job, $result),
+            // The shell started. The agent reports the commands and the end of the session.
+            AgentAction::OpenTerminal => TerminalSession::whereKey($p['sessionId'] ?? '')->where('website_id', $job->website_id)->where('state', TerminalSession::OPENING)
+                ->update(['state' => TerminalSession::OPEN, 'started_at' => now()]),
             AgentAction::Deploy => $website && self::deployed($job, $website, $result),
             AgentAction::ActivateRelease => $website && self::releaseLive($website, (string) ($p['releaseId'] ?? '')),
             AgentAction::Reboot => $job->server->update(['state' => 'healthy', 'reboot_required' => false]),
@@ -312,6 +316,9 @@ class JobOutcome
             AgentAction::RunCronJob => self::cronRan($job, preg_match('/exit code (-?\d+)/', (string) $job->error, $m) ? (int) $m[1] : -1, (string) preg_replace('/^the command ended with exit code -?\d+: /', '', (string) $job->error)),
             // The command did not start. The error of the job tells why.
             AgentAction::RunCommand => self::commandRan($job, null),
+            // The terminal did not open. The error with no details of the server.
+            AgentAction::OpenTerminal => TerminalSession::whereKey($p['sessionId'] ?? '')->where('website_id', $job->website_id)->where('state', TerminalSession::OPENING)
+                ->update(['state' => TerminalSession::FAILED, 'end_reason' => mb_strimwidth((string) JobResource::publicError($job), 0, 500), 'ended_at' => now()]),
             // The website continues from the release that it had (FR-1008). The release records
             // a migration command that ran: the database can have changes.
             AgentAction::Deploy => Release::whereKey($p['releaseId'] ?? '')->where('website_id', $job->website_id)->where('state', Release::BUILDING)

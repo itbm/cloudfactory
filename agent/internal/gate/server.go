@@ -132,6 +132,9 @@ func (s *Server) handle(conn net.Conn) {
 	input, inputWriter := io.Pipe()
 	// A command that does not read all its input must not stop the reader of the connection.
 	defer input.Close()
+	// The newest size of a terminal. An older size that the command did not read yet is not
+	// necessary.
+	resize := make(chan execx.TerminalSize, 1)
 	go func() {
 		defer cancel()
 		for {
@@ -147,11 +150,22 @@ func (s *Server) handle(conn net.Conn) {
 			case kind == msgInputEnd:
 				inputWriter.Close()
 				// Continue to read: the end of the connection stops the command.
+			case kind == msgResize:
+				var size execx.TerminalSize
+				if json.Unmarshal(content, &size) != nil || !size.Valid() {
+					continue
+				}
+				select {
+				case <-resize:
+				default:
+				}
+				resize <- size
 			}
 		}
 	}()
 
 	var out sync.Mutex
+	req.resize = resize
 	resp := s.do(ctx, req, input, writerFunc(func(p []byte) (int, error) {
 		out.Lock()
 		defer out.Unlock()
@@ -233,6 +247,22 @@ func (s *Server) do(ctx context.Context, req request, input io.Reader, output io
 		return response{}
 	case kindCall:
 		return s.call(ctx, req.Op, req.In)
+	case kindTerminal:
+		if err := s.allow(req.Argv, nil); err != nil {
+			return failure(err)
+		}
+		tr, ok := s.Run.(execx.TerminalRunner)
+		if !ok {
+			return failure(errors.New("root helper: this helper has no terminals"))
+		}
+		if !req.Size.Valid() {
+			return failure(fmt.Errorf("root helper: the terminal size %dx%d is not valid", req.Size.Cols, req.Size.Rows))
+		}
+		code, err := tr.Terminal(ctx, req.Size, input, output, req.resize, req.Argv[0], req.Argv[1:]...)
+		if err != nil {
+			return failure(err)
+		}
+		return response{Exit: code}
 	}
 	return failure(fmt.Errorf("root helper: the request kind %q is not valid", req.Kind))
 }
@@ -349,4 +379,50 @@ func (l local) Call(ctx context.Context, op string, in, out any) error {
 
 func (l local) Dial(ctx context.Context, name string) (net.Conn, error) {
 	return l.s.dial(ctx, name)
+}
+
+func (l local) Terminal(ctx context.Context, size execx.TerminalSize, output io.Writer, name string, args ...string) (Terminal, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	in, keys := io.Pipe()
+	t := &localTerminal{keys: keys, cancel: cancel, resize: make(chan execx.TerminalSize, 1), done: make(chan struct{})}
+	req := request{Kind: kindTerminal, Argv: append([]string{name}, args...), Size: size, resize: t.resize}
+	go func() {
+		defer close(t.done)
+		defer in.Close()
+		resp := l.s.do(ctx, req, in, output)
+		t.code, t.err = resp.Exit, resp.err()
+	}()
+	return t, nil
+}
+
+// localTerminal is a terminal of a helper in the same process.
+type localTerminal struct {
+	keys   *io.PipeWriter
+	cancel context.CancelFunc
+	resize chan execx.TerminalSize
+	done   chan struct{}
+	code   int
+	err    error
+}
+
+func (t *localTerminal) Write(p []byte) (int, error) { return t.keys.Write(p) }
+
+func (t *localTerminal) Resize(size execx.TerminalSize) error {
+	select {
+	case <-t.resize:
+	default:
+	}
+	t.resize <- size
+	return nil
+}
+
+func (t *localTerminal) Wait() (int, error) {
+	<-t.done
+	return t.code, t.err
+}
+
+func (t *localTerminal) Close() error {
+	t.cancel()
+	t.keys.Close()
+	return nil
 }

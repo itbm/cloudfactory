@@ -106,6 +106,10 @@ starts with `backup_`, gives a Plesk backup. A file name with `hestia`, or a fil
 form `USER.2026-11-22_05-00-00.tar`, gives a HestiaCP backup. Each other name gives a cPanel
 backup.
 
+The demonstration mode sends no request for an uptime check. Each sample website answers with
+HTTP status 200 and a page with its name. A check with `fail` in its path gets no answer, and a
+check that expects a different status or a text that is not on the page fails.
+
 In the demonstration mode, the file manager shows a small set of sample files for each
 website, and keeps your changes in the cache. The logs are sample lines. **Run a command** gives a sample output for some usual commands,
 for example `php -v`, `php artisan migrate` and `composer install`.
@@ -131,6 +135,32 @@ Adminer opens only server names that end in `.internal`. To connect to a local d
 add the name of the database server to `/etc/hosts`, for example
 `127.0.0.1 shop-db.internal`.
 
+
+### The web terminal in development
+
+The demo agent cannot run a shell. In the demonstration mode, the job `OpenTerminal` fails
+with the message "The demonstration has no terminal relay". The sample data has one closed
+terminal session with its commands and its recording, on the website `api.acme.example.com`.
+
+To see the browser side of the terminal, do these steps:
+
+1. Set `CF_DEMO_TERMINAL=true` in `api/.env`. The demo agent then completes the job
+   `OpenTerminal`, and the session stays open.
+2. Start the terminal relay with the `APP_KEY` of the API. The development server of the web
+   panel sends `/api/terminal/` to port 8091 (`web/vite.config.ts`):
+
+   ```sh
+   cd agent
+   APP_KEY=$(grep '^APP_KEY=' ../api/.env | cut -d= -f2-) go run ./cmd/cf-terminal-relay --listen 127.0.0.1:8091
+   ```
+
+3. Open the terminal in the web panel. The browser connects to the relay and waits for the
+   agent for 1 minute.
+
+The relay waits for an agent. No agent connects in the demonstration mode, so the terminal
+closes after 1 minute. To test the agent side, use the tests of `agent/internal/actions`
+(`terminal_test.go`) and `agent/internal/relay`. They connect a test relay, a fake shell and a
+fake panel.
 
 ### Consoles for each role
 

@@ -74,7 +74,7 @@ func TestANewPanelGetsTheInternalCertificate(t *testing.T) {
 	c := New(srv.URL)
 	ctx := context.Background()
 
-	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	if len(fake.tls) != 1 {
@@ -111,7 +111,7 @@ func TestAWebsiteOnALocalNameGetsACertificateFromThePanelCA(t *testing.T) {
 	c := New(srv.URL)
 	ctx := context.Background()
 
-	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	fake.calls = nil
@@ -318,7 +318,7 @@ func TestWebsitesWithOneHostAndAPathEachHaveOnePolicy(t *testing.T) {
 	defer srv.Close()
 	c := New(srv.URL)
 	ctx := context.Background()
-	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"T1", "T2"} {

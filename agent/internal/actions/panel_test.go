@@ -15,7 +15,7 @@ import (
 func testPanel(dir string) quadlet.Panel {
 	return quadlet.Panel{Registry: "ghcr.io/cloudfactory", Version: "0.2.0", Domain: "panel.example.com", DataDir: filepath.Join(dir, "panel"),
 		Gvisor:  quadlet.Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"},
-		APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort, DatabasePort: quadlet.PanelDatabasePort}
+		APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort, DatabasePort: quadlet.PanelDatabasePort, TerminalPort: quadlet.PanelTerminalPort}
 }
 
 func index(calls []string, prefix string) int {
@@ -45,6 +45,7 @@ func TestInstallPanelStartsTheDatabaseFirst(t *testing.T) {
 		"systemctl --user --machine=cf-panel@ restart cf-panel-api.service",
 		"systemctl --user --machine=cf-panel@ restart cf-panel-queue.service",
 		"systemctl --user --machine=cf-panel@ restart cf-panel-scheduler.service",
+		"systemctl --user --machine=cf-panel@ restart cf-panel-terminal.service",
 		"systemctl --user --machine=cf-panel@ restart cf-panel-web.service",
 	}
 	last := -1
@@ -88,7 +89,7 @@ func TestInstallPanelStartsTheDatabaseFirst(t *testing.T) {
 			t.Errorf("the password is in a command line: %s", c)
 		}
 	}
-	for _, name := range []string{"cf-panel-db.container", "cf-panel-api.container", "cf-panel-queue.container", "cf-panel-scheduler.container", "cf-panel-web.container"} {
+	for _, name := range []string{"cf-panel-db.container", "cf-panel-api.container", "cf-panel-queue.container", "cf-panel-scheduler.container", "cf-panel-terminal.container", "cf-panel-web.container"} {
 		unitFile(t, d, PanelUser, name)
 	}
 }
