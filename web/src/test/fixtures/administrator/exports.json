@@ -14,7 +14,7 @@
                     "complete": 2,
                     "total": 2
                 },
-                "receivedBytes": 904,
+                "receivedBytes": 979,
                 "sizeBytes": 16896,
                 "warnings": [
                     {
@@ -43,7 +43,7 @@
                     "complete": 13,
                     "total": 13
                 },
-                "receivedBytes": 7134,
+                "receivedBytes": 7808,
                 "sizeBytes": 66048,
                 "warnings": [
                     {

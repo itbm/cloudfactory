@@ -406,6 +406,10 @@ not change is between them. Obey these rules:
   one file for each request.
 - Put one item on each line of a list. Put a new item in alphabetical order, or after the
   item that is nearest to it in subject. Do not add all new items at the end of a list.
+- Tests check the alphabetical order of the lists that each feature changes: the methods of
+  the agent service in `agent.proto` and in `agent/internal/server/server.go`
+  (`TestMethodOrder`), the cases and the steps of `AgentAction` (`AgentActionOrderTest`), and the
+  paths of `api/app/Demo/Fixtures.php` (`DemoTest`).
 - Do not write a comment that names each item of a list. Each new item then changes the
   comment.
 - In a document, separate the items with a blank line. A Markdown table has no blank lines

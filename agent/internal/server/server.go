@@ -42,229 +42,238 @@ func (s *Service) submit(job jobs.Job, err error) (*connect.Response[agentv1.Job
 	return connect.NewResponse(&agentv1.JobAccepted{JobId: job.ID, Duplicate: dup}), nil
 }
 
-func (s *Service) CreateWebsite(_ context.Context, r *connect.Request[agentv1.WebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.CreateWebsite(r.Msg))
-}
-
-func (s *Service) DeleteWebsite(_ context.Context, r *connect.Request[agentv1.DeleteWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.DeleteWebsite(r.Msg))
-}
-
-func (s *Service) SetWebsitePower(_ context.Context, r *connect.Request[agentv1.SetWebsitePowerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetWebsitePower(r.Msg))
-}
-
-func (s *Service) SetLimits(_ context.Context, r *connect.Request[agentv1.SetLimitsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetLimits(r.Msg))
-}
-
-func (s *Service) SetRuntime(_ context.Context, r *connect.Request[agentv1.WebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetRuntime(r.Msg))
+// The methods that make a job, in alphabetical order. Keep the order: then two pull requests that
+// add methods do not conflict (TestMethodOrder).
+func (s *Service) ActivateRelease(_ context.Context, r *connect.Request[agentv1.ActivateReleaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ActivateRelease(r.Msg))
 }
 
 func (s *Service) AddDomain(_ context.Context, r *connect.Request[agentv1.DomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.AddDomain(r.Msg))
 }
 
-func (s *Service) RemoveDomain(_ context.Context, r *connect.Request[agentv1.DomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.RemoveDomain(r.Msg))
-}
-
-func (s *Service) CreateDatabase(_ context.Context, r *connect.Request[agentv1.CreateDatabaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.CreateDatabase(r.Msg))
-}
-
-func (s *Service) DeleteDatabase(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.DeleteDatabase(r.Msg))
-}
-
-func (s *Service) SetDatabaseUser(_ context.Context, r *connect.Request[agentv1.SetDatabaseUserRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetDatabaseUser(r.Msg))
-}
-
-func (s *Service) DeleteDatabaseUser(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseUserRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.DeleteDatabaseUser(r.Msg))
-}
-
 func (s *Service) Backup(_ context.Context, r *connect.Request[agentv1.BackupRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.Backup(r.Msg))
-}
-
-func (s *Service) Restore(_ context.Context, r *connect.Request[agentv1.RestoreRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.Restore(r.Msg))
-}
-
-func (s *Service) InstallHostUpdates(_ context.Context, r *connect.Request[agentv1.HostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.InstallHostUpdates(r.Msg))
-}
-
-func (s *Service) Reboot(_ context.Context, r *connect.Request[agentv1.HostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.RebootJob(r.Msg))
-}
-
-func (s *Service) UpdateAgent(_ context.Context, r *connect.Request[agentv1.UpdateAgentRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.UpdateAgent(r.Msg))
-}
-
-func (s *Service) PruneBackups(_ context.Context, r *connect.Request[agentv1.PruneBackupsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.PruneBackups(r.Msg))
-}
-
-// The mail server of this server, and the domains, the mailboxes and the addresses on it.
-func (s *Service) SetMailServer(_ context.Context, r *connect.Request[agentv1.SetMailServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetMailServer(r.Msg))
-}
-
-func (s *Service) PrepareMailNode(_ context.Context, r *connect.Request[agentv1.PrepareMailNodeRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.PrepareMailNode(r.Msg))
-}
-
-func (s *Service) SetMailNode(_ context.Context, r *connect.Request[agentv1.SetMailNodeRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetMailNode(r.Msg))
-}
-
-func (s *Service) SetMailDomain(_ context.Context, r *connect.Request[agentv1.MailDomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetMailDomain(r.Msg))
-}
-
-func (s *Service) DeleteMailDomain(_ context.Context, r *connect.Request[agentv1.MailDomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.DeleteMailDomain(r.Msg))
-}
-
-func (s *Service) SetMailbox(_ context.Context, r *connect.Request[agentv1.SetMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetMailbox(r.Msg))
-}
-
-func (s *Service) DeleteMailbox(_ context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.DeleteMailbox(r.Msg))
-}
-
-func (s *Service) SetMailAlias(_ context.Context, r *connect.Request[agentv1.SetMailAliasRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetMailAlias(r.Msg))
-}
-
-func (s *Service) DeleteMailAlias(_ context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.DeleteMailAlias(r.Msg))
-}
-
-func (s *Service) SetSftp(_ context.Context, r *connect.Request[agentv1.SetSftpRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetSftp(r.Msg))
-}
-
-func (s *Service) SetDatabaseServer(_ context.Context, r *connect.Request[agentv1.DatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetDatabaseServer(r.Msg))
-}
-
-func (s *Service) SetMesh(_ context.Context, r *connect.Request[agentv1.SetMeshRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetMesh(r.Msg))
-}
-
-func (s *Service) RotateMeshKey(_ context.Context, r *connect.Request[agentv1.RotateMeshKeyRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.RotateMeshKey(r.Msg))
-}
-
-func (s *Service) DeleteDatabaseServer(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.DeleteDatabaseServer(r.Msg))
-}
-
-func (s *Service) SendDatabaseServer(_ context.Context, r *connect.Request[agentv1.SendDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SendDatabaseServer(r.Msg))
-}
-
-func (s *Service) ReceiveDatabaseServer(_ context.Context, r *connect.Request[agentv1.ReceiveDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ReceiveDatabaseServer(r.Msg))
-}
-
-func (s *Service) SendWebsite(_ context.Context, r *connect.Request[agentv1.SendWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SendWebsite(r.Msg))
-}
-
-func (s *Service) ReceiveWebsite(_ context.Context, r *connect.Request[agentv1.ReceiveWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ReceiveWebsite(r.Msg))
-}
-
-func (s *Service) SetDnsZones(_ context.Context, r *connect.Request[agentv1.SetDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetDnsZones(r.Msg))
-}
-
-func (s *Service) DeleteDnsZones(_ context.Context, r *connect.Request[agentv1.DeleteDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.DeleteDnsZones(r.Msg))
 }
 
 func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.ConfigureHostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.ConfigureHost(r.Msg))
 }
 
-func (s *Service) SetPanelCertificate(_ context.Context, r *connect.Request[agentv1.SetPanelCertificateRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetPanelCertificate(r.Msg))
+func (s *Service) CreateDatabase(_ context.Context, r *connect.Request[agentv1.CreateDatabaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.CreateDatabase(r.Msg))
 }
 
-func (s *Service) SetPanelBrands(_ context.Context, r *connect.Request[agentv1.SetPanelBrandsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetPanelBrands(r.Msg))
+func (s *Service) CreateWebsite(_ context.Context, r *connect.Request[agentv1.WebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.CreateWebsite(r.Msg))
 }
 
-func (s *Service) SetPacks(_ context.Context, r *connect.Request[agentv1.SetPacksRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetPacks(r.Msg))
+func (s *Service) DeleteDatabase(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteDatabase(r.Msg))
 }
 
-func (s *Service) ScanWebsite(_ context.Context, r *connect.Request[agentv1.ScanWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ScanWebsite(r.Msg))
+func (s *Service) DeleteDatabaseServer(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteDatabaseServer(r.Msg))
 }
 
-func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agentv1.SetWebsiteSecurityRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetWebsiteSecurity(r.Msg))
+func (s *Service) DeleteDatabaseUser(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseUserRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteDatabaseUser(r.Msg))
 }
 
-func (s *Service) SetCertificates(_ context.Context, r *connect.Request[agentv1.SetCertificatesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetCertificates(r.Msg))
-}
-
-func (s *Service) FetchImport(_ context.Context, r *connect.Request[agentv1.FetchImportRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.FetchImport(r.Msg))
-}
-
-func (s *Service) ImportFiles(_ context.Context, r *connect.Request[agentv1.ImportFilesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ImportFiles(r.Msg))
-}
-
-func (s *Service) ImportDatabase(_ context.Context, r *connect.Request[agentv1.ImportDatabaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ImportDatabase(r.Msg))
-}
-
-func (s *Service) ImportMail(_ context.Context, r *connect.Request[agentv1.ImportMailRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ImportMail(r.Msg))
+func (s *Service) DeleteDnsZones(_ context.Context, r *connect.Request[agentv1.DeleteDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteDnsZones(r.Msg))
 }
 
 func (s *Service) DeleteImport(_ context.Context, r *connect.Request[agentv1.DeleteImportRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.DeleteImport(r.Msg))
 }
 
-func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.SetCronJobs(r.Msg))
+func (s *Service) DeleteMailAlias(_ context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteMailAlias(r.Msg))
 }
 
-func (s *Service) RunCronJob(_ context.Context, r *connect.Request[agentv1.RunCronJobRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.RunCronJob(r.Msg))
+func (s *Service) DeleteMailDomain(_ context.Context, r *connect.Request[agentv1.MailDomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteMailDomain(r.Msg))
 }
 
-func (s *Service) RunCommand(_ context.Context, r *connect.Request[agentv1.RunCommandRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.RunCommand(r.Msg))
+func (s *Service) DeleteMailbox(_ context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteMailbox(r.Msg))
 }
 
-func (s *Service) OpenTerminal(_ context.Context, r *connect.Request[agentv1.OpenTerminalRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.OpenTerminal(r.Msg))
+func (s *Service) DeleteWebsite(_ context.Context, r *connect.Request[agentv1.DeleteWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteWebsite(r.Msg))
 }
 
 func (s *Service) Deploy(_ context.Context, r *connect.Request[agentv1.DeployRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.Deploy(r.Msg))
 }
 
-func (s *Service) ActivateRelease(_ context.Context, r *connect.Request[agentv1.ActivateReleaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ActivateRelease(r.Msg))
+func (s *Service) ExtractArchive(_ context.Context, r *connect.Request[agentv1.ExtractArchiveRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ExtractArchive(r.Msg))
+}
+
+func (s *Service) FetchImport(_ context.Context, r *connect.Request[agentv1.FetchImportRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.FetchImport(r.Msg))
+}
+
+func (s *Service) ImportDatabase(_ context.Context, r *connect.Request[agentv1.ImportDatabaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ImportDatabase(r.Msg))
+}
+
+func (s *Service) ImportFiles(_ context.Context, r *connect.Request[agentv1.ImportFilesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ImportFiles(r.Msg))
+}
+
+func (s *Service) ImportMail(_ context.Context, r *connect.Request[agentv1.ImportMailRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ImportMail(r.Msg))
 }
 
 func (s *Service) InstallDependencies(_ context.Context, r *connect.Request[agentv1.InstallDependenciesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.InstallDependencies(r.Msg))
+}
+
+func (s *Service) InstallHostUpdates(_ context.Context, r *connect.Request[agentv1.HostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.InstallHostUpdates(r.Msg))
+}
+
+func (s *Service) MakeArchive(_ context.Context, r *connect.Request[agentv1.MakeArchiveRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.MakeArchive(r.Msg))
+}
+
+func (s *Service) OpenTerminal(_ context.Context, r *connect.Request[agentv1.OpenTerminalRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.OpenTerminal(r.Msg))
+}
+
+func (s *Service) PrepareMailNode(_ context.Context, r *connect.Request[agentv1.PrepareMailNodeRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.PrepareMailNode(r.Msg))
+}
+
+func (s *Service) PruneBackups(_ context.Context, r *connect.Request[agentv1.PruneBackupsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.PruneBackups(r.Msg))
+}
+
+func (s *Service) Reboot(_ context.Context, r *connect.Request[agentv1.HostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RebootJob(r.Msg))
+}
+
+func (s *Service) ReceiveDatabaseServer(_ context.Context, r *connect.Request[agentv1.ReceiveDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ReceiveDatabaseServer(r.Msg))
+}
+
+func (s *Service) ReceiveWebsite(_ context.Context, r *connect.Request[agentv1.ReceiveWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ReceiveWebsite(r.Msg))
+}
+
+func (s *Service) RemoveDomain(_ context.Context, r *connect.Request[agentv1.DomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RemoveDomain(r.Msg))
+}
+
+func (s *Service) Restore(_ context.Context, r *connect.Request[agentv1.RestoreRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.Restore(r.Msg))
+}
+
+func (s *Service) RotateMeshKey(_ context.Context, r *connect.Request[agentv1.RotateMeshKeyRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RotateMeshKey(r.Msg))
+}
+
+func (s *Service) RunCommand(_ context.Context, r *connect.Request[agentv1.RunCommandRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunCommand(r.Msg))
+}
+
+func (s *Service) RunCronJob(_ context.Context, r *connect.Request[agentv1.RunCronJobRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunCronJob(r.Msg))
+}
+
+func (s *Service) ScanWebsite(_ context.Context, r *connect.Request[agentv1.ScanWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ScanWebsite(r.Msg))
+}
+
+func (s *Service) SendDatabaseServer(_ context.Context, r *connect.Request[agentv1.SendDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SendDatabaseServer(r.Msg))
+}
+
+func (s *Service) SendWebsite(_ context.Context, r *connect.Request[agentv1.SendWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SendWebsite(r.Msg))
+}
+
+func (s *Service) SetCertificates(_ context.Context, r *connect.Request[agentv1.SetCertificatesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetCertificates(r.Msg))
+}
+
+func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetCronJobs(r.Msg))
+}
+
+func (s *Service) SetDatabaseServer(_ context.Context, r *connect.Request[agentv1.DatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDatabaseServer(r.Msg))
+}
+
+func (s *Service) SetDatabaseUser(_ context.Context, r *connect.Request[agentv1.SetDatabaseUserRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDatabaseUser(r.Msg))
+}
+
+func (s *Service) SetDnsZones(_ context.Context, r *connect.Request[agentv1.SetDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDnsZones(r.Msg))
+}
+
+func (s *Service) SetLimits(_ context.Context, r *connect.Request[agentv1.SetLimitsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetLimits(r.Msg))
+}
+
+func (s *Service) SetMailAlias(_ context.Context, r *connect.Request[agentv1.SetMailAliasRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailAlias(r.Msg))
+}
+
+func (s *Service) SetMailDomain(_ context.Context, r *connect.Request[agentv1.MailDomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailDomain(r.Msg))
+}
+
+func (s *Service) SetMailNode(_ context.Context, r *connect.Request[agentv1.SetMailNodeRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailNode(r.Msg))
+}
+
+func (s *Service) SetMailServer(_ context.Context, r *connect.Request[agentv1.SetMailServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailServer(r.Msg))
+}
+
+func (s *Service) SetMailbox(_ context.Context, r *connect.Request[agentv1.SetMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailbox(r.Msg))
+}
+
+func (s *Service) SetMesh(_ context.Context, r *connect.Request[agentv1.SetMeshRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMesh(r.Msg))
+}
+
+func (s *Service) SetPacks(_ context.Context, r *connect.Request[agentv1.SetPacksRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetPacks(r.Msg))
+}
+
+func (s *Service) SetPanelBrands(_ context.Context, r *connect.Request[agentv1.SetPanelBrandsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetPanelBrands(r.Msg))
+}
+
+func (s *Service) SetPanelCertificate(_ context.Context, r *connect.Request[agentv1.SetPanelCertificateRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetPanelCertificate(r.Msg))
+}
+
+func (s *Service) SetRuntime(_ context.Context, r *connect.Request[agentv1.WebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetRuntime(r.Msg))
+}
+
+func (s *Service) SetSftp(_ context.Context, r *connect.Request[agentv1.SetSftpRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetSftp(r.Msg))
+}
+
+func (s *Service) SetWebsitePower(_ context.Context, r *connect.Request[agentv1.SetWebsitePowerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetWebsitePower(r.Msg))
+}
+
+func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agentv1.SetWebsiteSecurityRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetWebsiteSecurity(r.Msg))
+}
+
+func (s *Service) UpdateAgent(_ context.Context, r *connect.Request[agentv1.UpdateAgentRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.UpdateAgent(r.Msg))
 }
 
 // fileError gives the error of a file operation or of the logs its code for the panel.
@@ -368,14 +377,6 @@ func (s *Service) SetFileMode(ctx context.Context, r *connect.Request[agentv1.Se
 		return nil, connect.NewError(connect.CodeInternal, errors.New("the file manager gave no entry"))
 	}
 	return connect.NewResponse(&agentv1.FileModeSet{File: actions.FileEntry(*resp.Entry), Changed: int64(resp.Changed)}), nil
-}
-
-func (s *Service) MakeArchive(_ context.Context, r *connect.Request[agentv1.MakeArchiveRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.MakeArchive(r.Msg))
-}
-
-func (s *Service) ExtractArchive(_ context.Context, r *connect.Request[agentv1.ExtractArchiveRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ExtractArchive(r.Msg))
 }
 
 func (s *Service) SearchLogs(ctx context.Context, r *connect.Request[agentv1.SearchLogsRequest]) (*connect.Response[agentv1.LogSearchResult], error) {
