@@ -10,18 +10,19 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 )
 
-// The management contract of an engine image (trial, switch Deps.ManageTrial, off by default).
+// The management contract of an engine image (cf-database/1, docs/packs.md).
 //
-// An engine image can have the program /cf/manage. The agent runs
+// The image of a database pack has the program /cf/manage. The agent runs
 //
 //	podman exec -i <container> /cf/manage <operation>
 //
-// with a JSON object on stdin, and reads one JSON object on stdout. The contract is
-// cf-database/1 (docs/plugins.md). With it, the image and not the agent knows the commands of
-// its engine, so that an engine from a different publisher needs no agent code.
+// with a JSON object on the first line of stdin, and reads one JSON object on stdout. With it,
+// the image and not the agent knows the commands of its engine, so that an engine from a
+// different publisher needs no agent code (engine_pack.go).
 //
-// In this trial, the agent asks the MariaDB image for the sizes of its databases. When the
-// image has no /cf/manage or the answer is not valid, the agent uses its own query, as before.
+// The MariaDB image has the program too. As a trial (switch Deps.ManageTrial, off by
+// default), the agent asks the MariaDB image for the sizes of its databases. When the image
+// has no /cf/manage or the answer is not valid, the agent uses its own query, as before.
 
 // manageProgram is the path of the management program in an engine image.
 const manageProgram = "/cf/manage"
@@ -62,22 +63,10 @@ func (d *Deps) manageSizes(ctx context.Context, s dbServer) (sizes []panel.Datab
 	if !d.ManageTrial {
 		return nil, false
 	}
-	var answer struct {
-		Sizes []struct {
-			Name  string `json:"name"`
-			Bytes *int64 `json:"bytes"`
-		} `json:"sizes"`
-	}
-	if err := d.manage(ctx, s, "sizes", nil, &answer); err != nil {
-		slog.Warn("the management program of the image did not give the sizes; the agent uses its own query", "server", s.String(), "err", err)
+	sizes, err := d.manageSizesOf(ctx, s)
+	if err != nil {
+		slog.Warn("the management program of the image did not give valid sizes; the agent uses its own query", "server", s.String(), "err", err)
 		return nil, false
-	}
-	for _, row := range answer.Sizes {
-		if row.Name == "" || row.Bytes == nil || *row.Bytes < 0 {
-			slog.Warn("the management program of the image gave a size that is not valid; the agent uses its own query", "server", s.String())
-			return nil, false
-		}
-		sizes = append(sizes, panel.DatabaseSize{Engine: s.Engine, Name: row.Name, SizeBytes: *row.Bytes})
 	}
 	return sizes, true
 }

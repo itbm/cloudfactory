@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\WebsiteStatus;
 use App\Models\Concerns\GuardsState;
+use App\Services\DatabaseEngines;
 use App\Services\Mesh;
 use App\Services\Networks;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -166,17 +167,18 @@ class Website extends Model
     /** The databases that a staging copy includes: not the Valkey databases. */
     public function sqlDatabases(): HasMany
     {
-        return $this->databases()->whereIn('engine', Database::SQL_ENGINES);
+        return $this->databases()->whereIn('engine', DatabaseEngines::withUsers());
     }
 
     /**
-     * The databases that a backup includes: the SQL databases, and the Valkey databases in a
+     * The databases that a backup includes: the SQL databases and the databases of pack
+     * engines, and the Valkey databases in a
      * database server on a server whose agent has the feature "valkey-backups" on. The
      * feature is off by default, so a backup has the SQL databases only, as before.
      */
     public function backupDatabases(): HasMany
     {
-        return $this->databases()->where(fn ($q) => $q->whereIn('engine', Database::SQL_ENGINES)
+        return $this->databases()->where(fn ($q) => $q->whereIn('engine', DatabaseEngines::withUsers())
             ->orWhere(fn ($q) => $q->where('engine', Database::VALKEY)
                 ->whereHas('databaseServer.server', fn ($q) => $q->whereJsonContains('agent_features', 'valkey-backups'))));
     }

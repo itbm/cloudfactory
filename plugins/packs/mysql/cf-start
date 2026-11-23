@@ -1,0 +1,17 @@
+#!/bin/sh
+# The start program of the example MySQL pack (cf-database/1, docs/packs.md).
+#
+# The agent gives the password of the administrator in CF_SUPERUSER_PASSWORD. The entrypoint
+# of the base image reads it as MYSQL_ROOT_PASSWORD at the first start, when the data
+# directory is empty. The user root can connect only from the container, through the socket:
+# the websites cannot use it.
+# SPDX-License-Identifier: AGPL-3.0-only
+set -eu
+if [ -z "${CF_SUPERUSER_PASSWORD:-}" ]; then
+	echo "cf-start: the agent did not give the password of the administrator in CF_SUPERUSER_PASSWORD" >&2
+	exit 1
+fi
+MYSQL_ROOT_PASSWORD=$CF_SUPERUSER_PASSWORD
+MYSQL_ROOT_HOST=localhost
+export MYSQL_ROOT_PASSWORD MYSQL_ROOT_HOST
+exec docker-entrypoint.sh "$@"

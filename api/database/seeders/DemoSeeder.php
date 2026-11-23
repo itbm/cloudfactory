@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Demo\DemoAcme;
 use App\Demo\DemoImport;
 use App\Demo\DemoMailDns;
+use App\Demo\StableValues;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
 use App\Enums\JobState;
@@ -58,6 +59,7 @@ use App\Services\Networks;
 use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
 use App\Services\Packs\PackManifest;
+use App\Services\Packs\Packs;
 use App\Services\PanelCertificate;
 use App\Services\Passkeys;
 use App\Services\Plugins\Manifest;
@@ -65,6 +67,7 @@ use App\Services\Plugins\Signatures;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
 use App\Services\WebsiteSecurity;
+use App\Validation\InputRules;
 use CBOR\ByteStringObject;
 use CBOR\MapObject;
 use CBOR\NegativeIntegerObject;
@@ -158,7 +161,7 @@ class DemoSeeder extends Seeder
      */
     private function packs(): void
     {
-        $private = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $private = StableValues::ecKey('pack key');
         $public = openssl_pkey_get_details($private)['key'];
         $key = PluginKey::create(['name' => 'Example Packs Ltd', 'public_key' => $public, 'fingerprint' => Signatures::fingerprint($public)]);
         $image = fn (string $version, string $ends) => [
@@ -186,13 +189,71 @@ class DemoSeeder extends Seeder
                 'policy' => 'manual', 'default_command' => './server', 'default_install' => 'go build -o server .', 'checked_at' => now()->subHour(),
             ]);
         }
+        // A pack of Cloudfactory: PHP 8.3 and 8.2 for Apache + PHP-FPM (cf-php/1). The release
+        // key signs it. The demo has no release key, so it signs the manifest with a new key.
+        $registry = config('cloudfactory.registry');
+        $legacy = fn (string $php, string $ends) => [
+            'version' => $php, 'ref' => "{$registry}/apache-php{$php}:0.1.9",
+            'digest' => 'sha256:'.hash('sha256', "cloudfactory-demo-apache-php{$php}:0.1.9"), 'supportEndsAt' => $ends,
+        ];
+        $manifest = json_encode([
+            'contract' => PackManifest::CONTRACT, 'kind' => 'runtime', 'slug' => 'php-legacy-apache', 'name' => 'Older PHP for Apache + PHP-FPM', 'version' => '0.1.9',
+            'publisher' => 'Cloudfactory', 'description' => 'PHP 8.2 and 8.3 for the Apache + PHP-FPM runtime, for websites that move from a server with an older PHP, for example from cPanel. These versions get only security fixes. PHP 8.2 gets no fixes after 31 December 2026.',
+            'runtime' => ['contract' => PackManifest::PHP_CONTRACT, 'family' => 'apache-php-fpm'],
+            'images' => [$legacy('8.3', '2027-12-31'), $legacy('8.2', '2026-12-31')],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        $release = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        openssl_sign($manifest, $signature, $release, OPENSSL_ALGO_SHA256);
+        $spec = PackManifest::parse($manifest);
+        $php = Pack::create([
+            'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'description' => $spec['description'], 'manifest' => $manifest, 'signature' => base64_encode($signature),
+            'public_key' => openssl_pkey_get_details($release)['key'], 'plugin_key_id' => null, 'signer' => Pack::RELEASE_KEY,
+            'user_id' => User::where('email', 'admin@example.com')->value('id'),
+        ]);
+        Packs::syncImages($php, $spec);
+        // A database pack that adds MySQL (cf-database/1). Its database servers get the first
+        // block of ports.
+        $manifest = json_encode([
+            'contract' => PackManifest::CONTRACT_2, 'kind' => PackManifest::KIND_DATABASE, 'slug' => 'mysql', 'name' => 'MySQL', 'version' => '1.0.0',
+            'publisher' => 'Example Packs Ltd', 'description' => 'MySQL database servers. The image starts from the official MySQL image and adds the program /cf/manage of the contract cf-database/1.',
+            'database' => ['contract' => PackManifest::DATABASE_CONTRACT, 'port' => '3306', 'dataDir' => '/var/lib/mysql'],
+            'images' => [
+                ['version' => '8.4', 'ref' => 'ghcr.io/example-packs/cf-mysql:8.4', 'digest' => 'sha256:'.hash('sha256', 'cf-mysql 8.4'), 'supportEndsAt' => '2032-04-30'],
+                ['version' => '8.0', 'ref' => 'ghcr.io/example-packs/cf-mysql:8.0', 'digest' => 'sha256:'.hash('sha256', 'cf-mysql 8.0'), 'supportEndsAt' => '2026-04-30'],
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        openssl_sign($manifest, $signature, $private, OPENSSL_ALGO_SHA256);
+        $spec = PackManifest::parse($manifest);
+        Pack::create([
+            'slug' => $spec['slug'], 'kind' => $spec['kind'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'description' => $spec['description'], 'manifest' => $manifest, 'signature' => base64_encode($signature),
+            'public_key' => $public, 'plugin_key_id' => $key->id, 'signer' => $key->name, 'database_port' => InputRules::MIN_DATABASE_PACK_PORT,
+            'user_id' => User::where('email', 'admin@example.com')->value('id'),
+        ]);
         foreach (['web-1', 'web-2'] as $name) {
             $this->servers[$name]->update([
-                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0']],
+                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0'], ['slug' => 'php-legacy-apache', 'version' => '0.1.9'], ['slug' => 'mysql', 'version' => '1.0.0']],
                 'agent_runtimes' => ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'golang'],
+                'database_engines' => ['mariadb', 'postgresql', 'valkey', 'mysql'],
             ]);
         }
         $this->servers['web-3']->update(['packs_resync' => ['at' => now()->subMinutes(3)->toIso8601String(), 'tries' => 3]]);
+
+        // A MySQL database server of Acme, with the database of its API. The website connects
+        // to it by its network name.
+        $api = $this->websites['api.acme.example.com'];
+        $plan = $api->customer->plan;
+        $mysql = DatabaseServer::create([
+            'customer_id' => $api->customer_id, 'server_id' => $api->server_id, 'plan_id' => $plan->id, 'engine' => 'mysql', 'engine_version' => '8.4',
+            'name' => 'mysql-1', 'port' => InputRules::MIN_DATABASE_PACK_PORT, 'limits' => $plan->database_limits, 'status' => DatabaseServer::RUNNING,
+            'usage' => ['memoryBytes' => 310 * self::MB, 'diskBytes' => 230 * self::MB, 'diskSizeBytes' => $plan->database_limits['diskBytes']],
+        ]);
+        $name = $api->unix_user.'_events';
+        $database = $api->databases()->create(['engine' => 'mysql', 'name' => $name, 'size_bytes' => 164 * self::MB, 'database_server_id' => $mysql->id]);
+        $user = $api->databaseUsers()->create(['engine' => 'mysql', 'name' => $name, 'access' => 'website', 'database_server_id' => $mysql->id]);
+        $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
+        $this->settleMesh();
     }
 
     /**
@@ -203,7 +264,7 @@ class DemoSeeder extends Seeder
      */
     private function plugins(): void
     {
-        $private = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $private = StableValues::ecKey('plugin key');
         $public = openssl_pkey_get_details($private)['key'];
         $key = PluginKey::create(['name' => 'Example Plugins Ltd', 'public_key' => $public, 'fingerprint' => Signatures::fingerprint($public)]);
         $sign = function (array $manifest) use ($private): array {
@@ -420,8 +481,7 @@ class DemoSeeder extends Seeder
             'client_id' => '123456789012-demo.apps.googleusercontent.com', 'client_secret' => 'demo-secret',
             'link_by_email' => true, 'email_domains' => ['example.com'],
         ]);
-        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
-        openssl_x509_export(openssl_csr_sign(openssl_csr_new(['commonName' => 'Microsoft Azure Federated SSO Certificate'], $key), null, $key, 1095), $certificate);
+        $certificate = DemoAcme::makeAuthority('Microsoft Azure Federated SSO Certificate', days: 1095)['cert'];
         IdentityProvider::create([
             'name' => 'Microsoft Entra ID', 'protocol' => IdentityProvider::SAML, 'enabled' => false,
             'entity_id' => 'https://sts.windows.net/0b5c1e5e-demo-4e0a-9d8e-000000000000/',
@@ -581,7 +641,7 @@ class DemoSeeder extends Seeder
         // One mailbox with encryption: the panel made its OpenPGP keys, and the mail server
         // encrypts its new mail with the public key.
         $encrypted = Mailbox::with('domain')->where('local_part', 'olu')->first();
-        $keys = OpenPgpKey::generate($encrypted->address(), 'Demo-password-123');
+        $keys = OpenPgpKey::generate($encrypted->address(), 'Demo-password-123', now()->getTimestamp(), StableValues::bytes('OpenPGP '.$encrypted->address()));
         $encrypted->update([
             'public_key' => $keys['publicKey'], 'private_key' => $keys['privateKey'],
             'encryption' => ['fingerprints' => [$keys['fingerprint']], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
@@ -735,7 +795,7 @@ class DemoSeeder extends Seeder
             ['harbourbooks.example.net', 'books', 38, null, false, 'web-2'],
         ];
         foreach ($rows as [$name, $customer, $days, $seen, $dnssec, $failed]) {
-            $key = $dnssec ? Dnssec::generate() : null;
+            $key = $dnssec ? Dnssec::generate(StableValues::ecKey("DNSSEC {$name}")) : null;
             $serial = now()->subHours(strlen($name))->timestamp;
             $zone = new DnsZone([
                 'customer_id' => $this->customers[$customer]->id, 'name' => $name, 'serial' => $serial, 'status' => DnsZone::ACTIVE,
@@ -779,7 +839,7 @@ class DemoSeeder extends Seeder
      * The certificates of the customers (docs/certificates.md): a wildcard certificate with DNS
      * validation, an uploaded certificate that expires soon, and an order that failed. web-1
      * and web-2 loaded the certificates. The dates follow the clock of the panel, as the other
-     * sample data does. The PEM data has the dates of the computer that made the sample data.
+     * sample data does.
      */
     private function certificates(): void
     {
@@ -1071,7 +1131,7 @@ class DemoSeeder extends Seeder
         }
 
         $api = $this->websites['api.acme.example.com'];
-        $key = SshKey::generate('cloudfactory-'.$api->unix_user);
+        $key = SshKey::generate('cloudfactory-'.$api->unix_user, StableValues::bytes('deploy key '.$api->name));
         $api->gitSource()->create(GitSource::newWebhook() + [
             'repository' => 'git@github.com:acme-example/api.git', 'branch' => 'main', 'web_directory' => 'public', 'trigger' => GitSource::WEBHOOK,
             'build_commands' => ['composer install --no-dev --optimize-autoloader', 'ln -s /app/shared/.env .env'],
@@ -1357,10 +1417,6 @@ class DemoSeeder extends Seeder
     /** A self-signed certificate, as an example of the certificate of the panel CA. */
     private static function certificate(): string
     {
-        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
-        $request = openssl_csr_new(['commonName' => 'Cloudfactory panel CA (demo)'], $key, ['digest_alg' => 'sha256']);
-        openssl_x509_export(openssl_csr_sign($request, null, $key, 3650, ['digest_alg' => 'sha256']), $pem);
-
-        return $pem;
+        return DemoAcme::makeAuthority('Cloudfactory panel CA (demo)')['cert'];
     }
 }

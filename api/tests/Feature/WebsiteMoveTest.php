@@ -17,6 +17,7 @@ use App\Models\DnsZone;
 use App\Models\Import;
 use App\Models\MeshTunnel;
 use App\Models\NetworkMember;
+use App\Models\Pack;
 use App\Models\Server;
 use App\Models\Snapshot;
 use App\Models\Website;
@@ -258,6 +259,13 @@ class WebsiteMoveTest extends TestCase
         $new->update(['state' => 'healthy', 'roles' => ['dns']]);
         $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])->assertJsonValidationErrors(['serverId' => 'Select a server with the web role.']);
         $new->update(['roles' => ['web']]);
+        // The image of a PHP pack operates only on a server whose agent loaded the pack.
+        $pack = Pack::create(['slug' => 'php-legacy-apache', 'name' => 'Older PHP for Apache + PHP-FPM', 'version' => '0.0.0', 'publisher' => 'Cloudfactory', 'manifest' => '{}']);
+        $image = $website->image;
+        $image->update(['pack_id' => $pack->id]);
+        $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])
+            ->assertJsonValidationErrors(['serverId' => 'The agent on the server web-2 does not have the pack Older PHP for Apache + PHP-FPM yet. The panel sends the packs to each web server: wait for the server to load the pack, or select a different server.']);
+        $new->update(['agent_packs' => [['slug' => 'php-legacy-apache', 'version' => '0.0.0']]]);
 
         // A job of the website that is not complete goes to the old server first.
         $pending = AgentJob::create(['server_id' => $old->id, 'website_id' => $website->id, 'action' => AgentAction::SetLimits, 'title' => 'Apply resource limits', 'payload' => [], 'steps' => [], 'state' => JobState::Queued]);

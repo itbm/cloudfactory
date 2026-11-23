@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\UpdatePolicy;
 use App\Enums\WebsiteStatus;
+use App\Validation\InputRules;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -77,18 +78,22 @@ class Image extends Model
         'python' => ['command' => 'python app.py', 'install' => 'python -m venv .venv && .venv/bin/pip install -r requirements.txt'],
     ];
 
+    /** The names of the built-in PHP runtimes for people. A PHP pack adds versions to them. */
+    public const PHP_LABELS = ['frankenphp' => 'FrankenPHP', 'apache-php-fpm' => 'Apache + PHP-FPM'];
+
+    /** True for an image of a built-in PHP runtime, also an image of a PHP pack (cf-php/1). */
     public function isPhp(): bool
     {
-        return in_array($this->family, ['frankenphp', 'apache-php-fpm'], true);
+        return in_array($this->family, InputRules::PHP_RUNTIMES, true);
     }
 
     /**
-     * True for a Node.js or Python image, or an image of a pack: the container runs the start
-     * command of the website.
+     * True for a Node.js or Python image, or an image of a pack of a new runtime: the container
+     * runs the start command of the website.
      */
     public function isApp(): bool
     {
-        return ! $this->custom && ($this->pack_id !== null || in_array($this->family, self::APP_FAMILIES, true));
+        return ! $this->custom && ! $this->isPhp() && ($this->pack_id !== null || in_array($this->family, self::APP_FAMILIES, true));
     }
 
     /**
@@ -99,7 +104,7 @@ class Image extends Model
      */
     public function appDefaults(): ?array
     {
-        if ($this->pack_id !== null && ! $this->custom) {
+        if ($this->isApp() && $this->pack_id !== null) {
             return ['command' => (string) $this->default_command, 'install' => (string) $this->default_install];
         }
 

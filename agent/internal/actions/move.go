@@ -227,6 +227,9 @@ func checkTransfer(in transferIn) error {
 	if err := checkServer(in.Server); err != nil {
 		return err
 	}
+	if isManaged(in.Server.Engine) {
+		return errPackEngine(in.Server.Engine, "a move to a different server")
+	}
 	if !tokenPattern.MatchString(in.Token) {
 		return errors.New("the token of the move must be 64 hexadecimal digits in lower case")
 	}

@@ -4,13 +4,14 @@ import { useNavigate } from "react-router-dom";
 import { useStore } from "../api/hooks";
 import { createStagingCopy, deleteWebsite, setPower, type StagingCredential } from "../api/store";
 import type { Website } from "../api/types";
-import { ENGINE_NAME } from "../lib/labels";
+import { engineName } from "../lib/labels";
 import { CopyField } from "../pages/website/AccessTab";
 import { MoveWebsiteDialog } from "./MoveWebsiteDialog";
 import { Modal } from "./ui";
 
 /** The actions menu of a website (FR-204, FR-205). */
 export function WebsiteMenu({ website, bordered = false }: { website: Website; bordered?: boolean }) {
+  const state = useStore();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<null | "stop" | "delete" | "move">(null);
   const admin = useStore().session.user.role === "administrator";
@@ -110,7 +111,7 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
           <p><strong>Copy the passwords now.</strong> The panel shows them only once.</p>
           {staging.credentials.map((c) => (
             <div key={c.user} style={{ marginTop: 12 }}>
-              <p className="small">{ENGINE_NAME[c.engine]} user <code>{c.user}</code>{c.host && c.port && <> on <code>{c.host}:{c.port}</code></>} · {c.engine === "valkey" ? "new, empty database" : "databases"} {c.databases.map((d) => <code key={d} style={{ marginRight: 6 }}>{d}</code>)}</p>
+              <p className="small">{engineName(state.databaseEngines, c.engine)} user <code>{c.user}</code>{c.host && c.port && <> on <code>{c.host}:{c.port}</code></>} · {c.engine === "valkey" ? "new, empty database" : "databases"} {c.databases.map((d) => <code key={d} style={{ marginRight: 6 }}>{d}</code>)}</p>
               <CopyField value={c.password} label={`Password of ${c.user}`} />
             </div>
           ))}

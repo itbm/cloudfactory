@@ -24,6 +24,7 @@ use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseEngines;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\Dns\Zones;
@@ -133,21 +134,21 @@ class WebsiteController extends Controller
                 : ['serverId' => 'Only an administrator can select the server.']);
         }
         $plan = Plan::findOrFail($planId);
-        $server = isset($data['serverId'])
-            ? Server::findOrFail($data['serverId'])
-            // A healthy server first. A degraded server can also get a website: its agent answers.
-            // A server that the panel cannot connect to comes last: its jobs fail.
-            : Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->withCount('websites')
-                ->when($image->pack_id !== null, fn ($q) => $q->whereJsonContains('agent_runtimes', $image->family))
+        if (isset($data['serverId'])) {
+            $server = Server::findOrFail($data['serverId']);
+        } else {
+            // A healthy server first. A degraded server can also get a website: its agent
+            // answers. A server that the panel cannot connect to comes last: its jobs fail. The
+            // image of a pack goes only to a server whose agent loaded the pack.
+            $servers = Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->withCount('websites')
                 ->orderByRaw('case when connection_error is null then 0 else 1 end')
-                ->orderByRaw("case when state = 'healthy' then 0 else 1 end")->orderBy('websites_count')->first();
+                ->orderByRaw("case when state = 'healthy' then 0 else 1 end")->orderBy('websites_count')->get();
+            $server = $servers->first(fn (Server $s) => $s->canRun($image)) ?? $servers->first();
+        }
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
         }
-        // The runtime of a pack operates only on a server whose agent loaded the pack.
-        if ($image->pack_id !== null && ! $server->hasRuntime($image->family)) {
-            throw ValidationException::withMessages([(isset($data['serverId']) ? 'serverId' : 'imageId') => "The agent on the server {$server->name} does not have the runtime {$image->family} yet. The panel sends the packs to each web server: wait for the server to load the pack, or select a different server."]);
-        }
+        self::refuseImageOnServer($image, $server, isset($data['serverId']) ? 'serverId' : 'imageId');
         $unixUser = self::unixUser($data['name']);
         $domain = null;
         if ($kind === Website::PUBLIC) {
@@ -391,9 +392,7 @@ class WebsiteController extends Controller
         if (! $website->isPublic() && ! Networks::supportsWebsites($to)) {
             throw ValidationException::withMessages(['serverId' => "The agent on the server {$to->name} did not report that it can operate a ".Website::KIND_NAMES[$website->kind].'. Update the agent of the server, then try again.']);
         }
-        if ($website->image->pack_id !== null && ! $to->hasRuntime($website->image->family)) {
-            throw ValidationException::withMessages(['serverId' => "The agent on the server {$to->name} does not have the runtime {$website->image->family} yet. Wait for the server to load the pack, or select a different server."]);
-        }
+        self::refuseImageOnServer($website->image, $to, 'serverId');
         Networks::checkWebsiteMove($website, $to);
         if ($moving = BackupController::movingServerOf($website)) {
             DatabaseServers::refuseMoving($moving, 'website');
@@ -537,9 +536,9 @@ class WebsiteController extends Controller
         $copies = $users = $credentials = $servers = [];
         $from = DatabaseNames::prefix($source);
         $to = DatabaseNames::prefix($copy);
+        // A website connects to a database server of a pack engine by its member name.
         $connection = fn (string $engine, DatabaseServer $server) => [
-            'host' => DatabaseServer::HOSTS[$engine],
-            'port' => $server->port,
+            ...(DatabaseEngines::isPack($engine) ? DatabaseServers::connection($copy, $server) : ['host' => DatabaseServer::HOSTS[$engine], 'port' => $server->port]),
             'databaseServerId' => $server->id,
         ];
         $all = $source->databases()->with('databaseServer')->orderBy('name')->get();
@@ -548,7 +547,7 @@ class WebsiteController extends Controller
             $servers[] = $databases[0]->databaseServer;
             DatabaseServers::checkSpace($databases[0]->databaseServer, $databases->count());
         }
-        foreach ($all->whereIn('engine', Database::SQL_ENGINES)->groupBy('engine') as $engine => $ofEngine) {
+        foreach ($all->whereIn('engine', DatabaseEngines::withUsers())->groupBy('engine') as $engine => $ofEngine) {
             $number = 0;
             // The database servers in the sequence of their ports: the first database server of
             // an engine has the user "app". The next ones have "app2", "app3", and so on.
@@ -611,6 +610,20 @@ class WebsiteController extends Controller
                     : "The {$reseller->plan->name} plan allows {$reseller->plan->websites} websites in total, for you and your customers."]);
             }
         }
+    }
+
+    /**
+     * The image of a pack operates only on a server whose agent loaded the pack.
+     *
+     * @throws ValidationException
+     */
+    public static function refuseImageOnServer(Image $image, Server $server, string $field): void
+    {
+        if ($server->canRun($image)) {
+            return;
+        }
+        $what = $image->isPhp() ? "the pack {$image->pack?->name}" : "the runtime {$image->family}";
+        throw ValidationException::withMessages([$field => "The agent on the server {$server->name} does not have {$what} yet. The panel sends the packs to each web server: wait for the server to load the pack, or select a different server."]);
     }
 
     /**

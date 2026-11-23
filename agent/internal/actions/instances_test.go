@@ -707,7 +707,7 @@ func TestCheckDatabaseServer(t *testing.T) {
 	if err := checkDatabaseServer(nil); !errors.Is(err, errNoDatabaseServer) {
 		t.Errorf("no database server: %v", err)
 	}
-	for _, engine := range Engines {
+	for _, engine := range engines() {
 		if err := checkDatabaseServer(databaseServer(engine)); err != nil {
 			t.Errorf("%s: %v", engine, err)
 		}

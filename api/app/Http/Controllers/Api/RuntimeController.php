@@ -78,6 +78,7 @@ class RuntimeController extends Controller
             if ($image->custom && ! $request->user()->isAdministrator() && $image->id !== $website->previous_image_id) {
                 throw ValidationException::withMessages(['imageId' => 'Select an official image.']);
             }
+            WebsiteController::refuseImageOnServer($image, $website->server, 'imageId');
             // FR-303: keep the previous image, so that the owner can go back in one action.
             $changes += ['previous_image_id' => $website->image_id, 'previous_image_tag' => $website->currentTag(), 'image_id' => $image->id, 'image_tag' => null];
             $newImage = $image;
