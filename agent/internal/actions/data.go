@@ -50,7 +50,7 @@ func (d *Deps) dbExec(s dbServer, options ...string) ([]string, error) {
 
 // checkEngine checks the name of a database engine.
 func checkEngine(engine string) error {
-	if slices.Contains(Engines, engine) {
+	if slices.Contains(engines(), engine) {
 		return nil
 	}
 	return fmt.Errorf("the database engine %q is not valid", engine)
@@ -210,6 +210,9 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if err := checkWebsiteServer(req.GetDatabaseServer(), engine); err != nil {
 		return jobs.Job{}, err
 	}
+	if isManaged(engine) {
+		return d.createPackDatabase(req)
+	}
 	drv, ok := sqlDriverOf(engine)
 	if !ok {
 		return d.createValkeyDatabase(req)
@@ -277,6 +280,35 @@ func (d *Deps) createValkeyDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Jo
 			return err
 		}},
 	}, Result: func() map[string]any { return map[string]any{"number": number} }}, nil
+}
+
+// createPackDatabase makes a database of a pack engine, and optionally a user with read-write
+// access to it. The user connects from the website containers only.
+func (d *Deps) createPackDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, error) {
+	name, user, engine := req.GetName(), req.GetUser(), req.GetEngine()
+	if a := req.GetAccess(); a != "" && a != "website" {
+		return jobs.Job{}, errPackEngine(engine, "the access from anywhere")
+	}
+	drv := packDriver{}
+	steps := []jobs.Step{
+		{Name: "Create database", Do: func(ctx context.Context) error {
+			srv, err := d.websiteServer(ctx, req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+			if err != nil {
+				return err
+			}
+			return drv.createDatabase(ctx, d, srv, name)
+		}},
+	}
+	if user != "" {
+		steps = append(steps, jobs.Step{Name: "Create user", Do: func(ctx context.Context) error {
+			srv, err := d.serverFor(req.GetWebsiteId(), req.GetDatabaseServer().GetCustomer(), req.GetDatabaseServer().GetId(), engine)
+			if err != nil {
+				return err
+			}
+			return drv.setUser(ctx, d, srv, user, req.GetPassword(), []packAccess{{Name: name, Access: "readwrite"}})
+		}})
+	}
+	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: steps}, nil
 }
 
 // pgCreateDatabase makes the database and its two group roles. Only the roles can connect.
@@ -383,6 +415,33 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 		}
 		host, err := mariaHost(req.GetAccess())
 		return srv, host, err
+	}
+	if isManaged(engine) {
+		if a := req.GetAccess(); a != "" && a != "website" {
+			return jobs.Job{}, errPackEngine(engine, "the access from anywhere")
+		}
+		databases := []packAccess{}
+		for _, g := range req.GetGrants() {
+			databases = append(databases, packAccess{Name: g.GetDatabase(), Access: g.GetPrivileges()})
+		}
+		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+			{Name: "Set user, password and access to databases", Do: func(ctx context.Context) error {
+				srv, _, err := server(ctx)
+				if err != nil {
+					return err
+				}
+				return packDriver{}.setUser(ctx, d, srv, user, pass, databases)
+			}},
+		}, OnFailure: func(ctx context.Context) {
+			if !req.GetCreate() {
+				return
+			}
+			if srv, _, err := server(ctx); err == nil {
+				if err := d.dropUser(ctx, srv, user); err != nil {
+					slog.Warn("remove the database user of a job that failed", "user", user, "err", err)
+				}
+			}
+		}}, nil
 	}
 	drv, ok := sqlDriverOf(engine)
 	if !ok {
@@ -494,8 +553,14 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	}
 	drv, ok := sqlDriverOf(engine)
 	if !ok {
+		// A Valkey database goes with its user. The image of a pack engine removes the
+		// access of all users to the database with the database.
+		step := "Remove database and user"
+		if isManaged(engine) {
+			step = "Remove database"
+		}
 		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
-			{Name: "Remove database and user", Do: func(ctx context.Context) error {
+			{Name: step, Do: func(ctx context.Context) error {
 				srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 				if err != nil {
 					return err
@@ -961,6 +1026,10 @@ func (d *Deps) dumpCommand(ctx context.Context, s dbServer, name string) ([]stri
 	if err := d.EnsureDatabaseService(ctx, s); err != nil {
 		return nil, err
 	}
+	if isManaged(s.Engine) {
+		// The first line of stdin names the database (writeDump).
+		return d.manageArgs(s, "dump")
+	}
 	args, err := d.dbExec(s)
 	if err != nil {
 		return nil, err
@@ -1018,7 +1087,12 @@ func (d *Deps) writeDump(ctx context.Context, unixUser, engine, name string, arg
 		return "", err
 	}
 	h := sha256.New()
-	err = d.Run.Stream(ctx, nil, io.MultiWriter(f, h), argv[0], argv[1:]...)
+	var stdin io.Reader
+	if isManaged(engine) {
+		// The root helper writes the first line from the checked name of the database.
+		stdin = strings.NewReader(manageInput(name))
+	}
+	err = d.Run.Stream(ctx, stdin, io.MultiWriter(f, h), argv[0], argv[1:]...)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -1174,6 +1248,11 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			if isNumbered(dbEngine) {
 				return d.valkeyRestoreStaged(ctx, req.GetJobId(), unixUser, srv, dbName)
 			}
+			if isManaged(dbEngine) {
+				return d.restorePack(ctx, srv, func(ctx context.Context, client []string) error {
+					return d.loadStagedDump(ctx, req.GetJobId(), unixUser, dbEngine, dbName, client)
+				})
+			}
 			return d.restoreDump(ctx, srv, dbName, func(ctx context.Context, client []string) error {
 				return d.loadStagedDump(ctx, req.GetJobId(), unixUser, dbEngine, dbName, client)
 			})
@@ -1302,6 +1381,11 @@ func (d *Deps) loadStagedDump(ctx context.Context, jobID, unixUser, engine, name
 	var dump io.Reader = f
 	if drv, ok := sqlDriverOf(engine); ok && drv.dumpFilter() != nil {
 		dump = drv.dumpFilter()(f)
+	}
+	if isManaged(engine) {
+		// The root helper writes the first line from the checked name of the database. The
+		// image replaces all data of the database.
+		dump = io.MultiReader(strings.NewReader(manageInput(name)), f)
 	}
 	return d.Run.Stream(ctx, dump, nil, client[0], client[1:]...)
 }

@@ -44,8 +44,8 @@ describe("the imports", () => {
     // The website with a name that the panel has already cannot be selected.
     const conflict = await screen.findByText("A website with this name exists.");
     expect((within(conflict.closest("tr")!).getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
-    // PHP 7.4 has no image: the plan selects the first newer version.
-    expect((screen.getByLabelText("Image for orders.bakeryclub.example.org") as HTMLSelectElement).selectedOptions[0].textContent).toBe("Apache + PHP-FPM · PHP 8.4");
+    // PHP 7.4 has no image: the plan selects the first newer version, PHP 8.2 from the pack.
+    expect((screen.getByLabelText("Image for orders.bakeryclub.example.org") as HTMLSelectElement).selectedOptions[0].textContent).toBe("Apache + PHP-FPM · PHP 8.2");
     expect(screen.getByText("1 mailbox gets a new password")).toBeTruthy();
     expect(screen.getByText("The customer has this zone. The import adds the records that it does not have.")).toBeTruthy();
     expect(screen.getByText("The panel has no FTP accounts. Use SFTP with an SSH key in place of FTP.")).toBeTruthy();

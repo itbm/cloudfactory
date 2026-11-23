@@ -41,7 +41,8 @@ export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "f
 /** "app" is a runtime from a manifest of the agent, for example Go. It runs the start command of the website. */
 export type RuntimeKind = "frankenphp" | "apache-php-fpm" | "node" | "python" | "oci" | "static" | "app";
 
-export type PhpVersion = "8.4" | "8.5";
+/** The version of PHP of an image, for example "8.5". A PHP pack adds older versions, for example "8.2" (docs/packs.md). */
+export type PhpVersion = string;
 
 export interface Runtime {
   kind: RuntimeKind;
@@ -518,7 +519,32 @@ export interface DnsAccount {
   createdAt: string;
 }
 
-export type DatabaseEngine = "mariadb" | "postgresql" | "valkey";
+/** The built-in database engines. */
+export type BuiltInDatabaseEngine = "mariadb" | "postgresql" | "valkey";
+
+/** A built-in engine, or the slug of a database pack (cf-database/1, docs/packs.md). */
+export type DatabaseEngine = BuiltInDatabaseEngine | (string & {});
+
+/**
+ * A database engine of the panel, with its features. A database pack adds an engine: its
+ * database servers get a version of the pack, and have no move, no Adminer and no access from
+ * anywhere.
+ */
+export interface DatabaseEngineInfo {
+  engine: DatabaseEngine;
+  name: string;
+  /** The port of the engine. A website connects to a database server of a pack on this port, by its network name. */
+  port: number;
+  /** The database pack of the engine. Null for a built-in engine. */
+  pack: { id: string; slug: string; version: string; publisher: string } | null;
+  /** The versions of a pack engine, newest first. A new database server gets the first one by default. Empty for a built-in engine. */
+  versions: { version: string; supportEndsAt: string | null }[];
+  /** True when the engine has users with access to more than one database (SQL). */
+  users: boolean;
+  moves: boolean;
+  adminer: boolean;
+  anywhere: boolean;
+}
 
 /** The limits of the container of a database server. */
 export interface DatabaseLimits {
@@ -704,6 +730,8 @@ export interface DatabaseServer {
   id: string;
   name: string;
   engine: DatabaseEngine;
+  /** The version of the engine of a database pack, for example "8.4". Null for a built-in engine. */
+  engineVersion: string | null;
   customerId: string;
   /** The server that has the container. */
   serverId: string;
@@ -1114,6 +1142,8 @@ export interface State {
   images: RuntimeImage[];
   rollout?: Rollout;
   databaseServers: DatabaseServer[];
+  /** The built-in database engines and the engines of the database packs. */
+  databaseEngines: DatabaseEngineInfo[];
   mailDomains: MailDomain[];
   mailClusters: MailCluster[];
   mailboxes: Mailbox[];
@@ -1582,14 +1612,19 @@ export interface UsageAlertSettings {
 
 export interface PackRef { id: string; slug: string; name: string; version: string }
 
-/** The runtime contract of a pack: cf-runtime/1 has the type "app". */
-export interface PackRuntime { contract: string; type: "app"; defaultCommand: string; defaultInstall: string }
+/**
+ * The runtime contract of a pack. "cf-runtime/1" adds a runtime of the type "app", which runs
+ * the start command of the website. "cf-php/1" adds versions of PHP to the built-in PHP runtime
+ * in "family". The keys of the other contract are empty.
+ */
+export interface PackRuntime { contract: "cf-runtime/1" | "cf-php/1" | (string & {}); type: "app" | ""; defaultCommand: string; defaultInstall: string; family: string }
 
 /** The key that signed a pack. "release" is true for the release key of Cloudfactory. */
 export interface PackSigner { name: string; fingerprint: string | null; release: boolean }
 
 export interface PackImage {
-  id: string;
+  /** Null for an image of a database pack: it is not a website image. */
+  id: string | null;
   name: string;
   version: string;
   reference: string;
@@ -1599,7 +1634,15 @@ export interface PackImage {
   availableDigest: string | null;
   supportEndsAt: string | null;
   websites: number;
+  /** The number of database servers with this version (database packs only). */
+  databaseServers: number;
 }
+
+/**
+ * The engine of a database pack (cf-database/1). Its database servers get the host ports from
+ * firstPort to lastPort on the address of each customer.
+ */
+export interface PackDatabase { contract: string; port: number; dataDir: string; firstPort: number; lastPort: number; databaseServers: number }
 
 /** The state of a pack on a web server: the server loaded it, waits for it, or failed to load it. */
 export interface PackServer { id: string; name: string; version: string | null; state: "installed" | "pending" | "failing" }
@@ -1613,7 +1656,12 @@ export interface Pack {
   description: string | null;
   signed: boolean;
   signedBy: PackSigner | null;
+  /** runtime: the pack adds a website runtime. database: the pack adds a database engine. */
+  kind: "runtime" | "database";
+  /** The keys are empty for a database pack. */
   runtime: PackRuntime;
+  /** Null for a runtime pack. */
+  database: PackDatabase | null;
   images: PackImage[];
   servers: PackServer[];
   installedBy: string | null;
@@ -1624,12 +1672,13 @@ export interface Pack {
 /** A manifest as the panel reads it, before an install. */
 export interface PackManifest {
   contract: string;
-  kind: "runtime";
+  kind: "runtime" | "database";
   slug: string;
   name: string;
   version: string;
   publisher: string;
   description: string;
   runtime: PackRuntime;
+  database: { contract: string; port: number; dataDir: string } | null;
   images: { version: string; ref: string; repository: string; tag: string; digest: string; supportEndsAt: string | null }[];
 }

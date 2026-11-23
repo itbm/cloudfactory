@@ -658,7 +658,8 @@ database server with limits that an administrator set for it keeps them.
 #### Make a database server
 
 1. Go to **Databases** and select **New database server**.
-2. Select the customer and the engine.
+2. Select the customer and the engine. An engine from a [database pack](packs.md), for example
+   MySQL, also has a version. Select the version. The database server keeps it.
 3. Optional: type a name. With no name, the panel gives one, for example `mariadb-2`.
 4. If the customer has websites on more than one server, select the server. The websites on
    that server can connect to the database server.
@@ -667,7 +668,9 @@ database server with limits that an administrator set for it keeps them.
    the customer.
 6. Select **Create database server**.
 
-With the CLI: `cf database-servers create --engine mariadb --customer ID`.
+With the CLI: `cf database-servers create --engine mariadb --customer ID`. For an engine of a
+pack: `cf database-servers create --engine mysql --version 8.4 --customer ID`. To see the
+engines and their versions, use `cf database-servers engines`.
 
 The agent starts the container. The first start of a database server needs some minutes on
 a slow server. The list shows the host name and the port for the applications.
@@ -681,6 +684,9 @@ a slow server. The list shows the host name and the port for the applications.
   website on the same server can use it. There, the first database server of an engine of a
   customer has the usual port of the engine (3306, 5432 or 6379). The next one has the next
   port, for example 3307. A database server keeps its port.
+- A database server of an engine from a pack has only the network name, for example
+  `mysql-1.internal:3306`. It cannot move to a different server, and it has no Adminer and no
+  access from anywhere.
 
 A database server cannot have the name `mariadb`, `postgres`, `valkey` or `localhost`.
 

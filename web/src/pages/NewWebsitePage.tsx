@@ -7,6 +7,7 @@ import type { RuntimeImage, WebsiteKind } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, PageHeader } from "../components/ui";
 import { bytes } from "../lib/format";
+import { PHP_FAMILIES } from "../lib/labels";
 
 /** The value of the customer field for a customer that does not exist yet. */
 const NEW_CUSTOMER = "new";
@@ -72,8 +73,11 @@ export function runtimeGroups(images: RuntimeImage[]): RuntimeGroup[] {
 /** The title of a runtime from a manifest: the name of its image without the version, for example "Go". */
 const runtimeTitle = (i: RuntimeImage) => i.name.replace(/\s+v?\d[\w.-]*$/, "") || i.family;
 
-/** True for an image that runs the start command of the website: Node.js, Python, or a runtime from a manifest. */
-export const isAppImage = (i: RuntimeImage | undefined) => !!i && !i.custom && (i.family === "node" || i.family === "python" || !!i.pack);
+/**
+ * True for an image that runs the start command of the website: Node.js, Python, or a runtime
+ * from a pack. An image of a PHP pack is a PHP image: it serves the PHP files of the website.
+ */
+export const isAppImage = (i: RuntimeImage | undefined) => !!i && !i.custom && (i.family === "node" || i.family === "python" || (!!i.pack && !PHP_FAMILIES.includes(i.family)));
 
 /** The image of a family with the newest PHP version that still has support, or the first image. */
 export function defaultImage(images: RuntimeImage[], family: RuntimeImage["family"]): string {
@@ -245,6 +249,7 @@ export function NewWebsitePage() {
                 )}
               </div>
               {image?.supportEndsAt && <p className="hint" style={{ marginTop: 10 }}>Security support for {image.name} ends in {new Date(image.supportEndsAt).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}.</p>}
+              {image?.pack && PHP_FAMILIES.includes(image.family) && <p className="hint">This version of PHP comes from the pack {image.pack.name}. Use it to move a website that needs it, then change to a newer version.</p>}
               {app && (
                 <div style={{ marginTop: 16 }}>
                   <Field label="Start command" hint={<>One command line. It runs in <code>/app</code>, in the gVisor sandbox. {kind === "worker" ? "" : <>The app must listen on the port in the variable <code>PORT</code> (8080). </>}When the command stops, the panel starts it again.</>} error={err.command}>

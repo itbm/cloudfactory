@@ -6,8 +6,9 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Packs (docs/packs.md): a signed manifest from a publisher that adds a website runtime, with
- * one image for each version of the runtime. The panel keeps the exact bytes of the manifest
- * that the publisher signed, because each agent checks the signature again.
+ * one image for each version of the runtime, or a database engine. The panel keeps the exact
+ * bytes of the manifest that the publisher signed, because each agent checks the signature
+ * again.
  */
 return new class extends Migration
 {
@@ -20,6 +21,12 @@ return new class extends Migration
             $table->string('version', 40);
             $table->string('publisher', 100);
             $table->string('description', 1000)->nullable();
+            // "runtime" or "database" (the kind of the manifest).
+            $table->string('kind', 20)->default('runtime');
+            // The first host port of the block of a database pack: the database servers of its
+            // engine get the ports from this port (DatabaseEngines::PORTS). It does not change
+            // while the pack is installed. Null for a runtime pack.
+            $table->unsignedInteger('database_port')->nullable()->unique();
             $table->text('manifest');
             // The signature of the manifest and the public key of the key that signed it. The
             // panel sends both to each agent. A pack from the developer mode has neither.
