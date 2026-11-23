@@ -15,6 +15,7 @@ use App\Models\Website;
 use App\Services\AgentClient;
 use App\Services\JobOutcome;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /** The preview websites of pull requests (App\Services\Previews). */
@@ -37,13 +38,30 @@ class PreviewTest extends TestCase
         app(JobOutcome::class)->finish($job, $state, $error, $result);
     }
 
+    /** The webhook secret of the website of the last call of previews(). */
+    private string $secret = '';
+
     /** Connects the website to a repository, turns on the previews, and gives the path of the webhook. */
     private function previews(Website $website, array $settings = [], array $source = []): string
     {
         $deploy = $this->putJson("/api/v1/websites/{$website->id}/deploy", $source + ['repository' => 'git@github.com:acme/shop.git', 'branch' => 'main', 'buildCommands' => ['composer install --no-dev']])->assertOk()->json();
         $this->putJson("/api/v1/websites/{$website->id}/previews", $settings + ['enabled' => true, 'domain' => 'preview.acme.example'])->assertOk()->assertJsonPath('settings.enabled', true);
+        $this->secret = $deploy['source']['webhookSecret'];
 
         return (string) parse_url($deploy['source']['webhookUrl'], PHP_URL_PATH);
+    }
+
+    /** Sends an event to the webhook with the signature of the webhook secret, as GitHub does. */
+    private function hook(string $url, array $body, array $headers = [], ?string $secret = null): TestResponse
+    {
+        $json = (string) json_encode($body);
+        $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $json, $secret ?? $this->secret)];
+        foreach ($headers as $name => $value) {
+            $server['HTTP_'.strtoupper(str_replace('-', '_', $name))] = $value;
+        }
+
+        return $this->call('POST', $url, [], [], [], $server, $json);
     }
 
     /** A pull request event of GitHub. */
@@ -106,7 +124,7 @@ class PreviewTest extends TestCase
         $this->putJson("/api/v1/websites/{$website->id}/deploy/secrets/NPM_TOKEN", ['value' => 's3cret-value'])->assertOk();
         $this->app['auth']->forgetGuards();
 
-        $answer = $this->postJson($url, $this->github('opened'), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'started')->json();
+        $answer = $this->hook($url, $this->github('opened'), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'started')->json();
         $site = Website::findOrFail($answer['previewWebsiteId']);
         $this->assertSame(['pr-7.preview.acme.example', 'starting', $website->server_id, $website->image_id, $website->plan_id], [$site->name, $site->status->value, $site->server_id, $site->image_id, $site->plan_id]);
         $this->assertSame('Preview of acme.example, pull request #7', $site->application);
@@ -125,7 +143,7 @@ class PreviewTest extends TestCase
         $this->app['auth']->forgetGuards();
 
         // New commits while the panel makes the website: the first deploy gets them.
-        $this->postJson($url, $this->github('synchronize'), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'waiting');
+        $this->hook($url, $this->github('synchronize'), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'waiting');
         $this->assertNull($this->deployJob($site));
 
         // The website is made: the first deploy starts, with the head branch and the key.
@@ -137,7 +155,7 @@ class PreviewTest extends TestCase
         Http::assertSent(fn ($r) => str_starts_with($r['deployKey'], '-----BEGIN OPENSSH PRIVATE KEY-----') && (array) $r['secrets'] === []);
 
         // New commits during the deploy: the panel deploys again after it.
-        $this->postJson($url, $this->github('synchronize', more: ['pull_request' => ['title' => 'Add the CSV and the PDF export']]), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'queued');
+        $this->hook($url, $this->github('synchronize', more: ['pull_request' => ['title' => 'Add the CSV and the PDF export']]), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'queued');
         $this->assertSame([true, 'Add the CSV and the PDF export'], [Preview::first()->deploy_again, Preview::first()->title]);
         $this->travel(1)->minutes();
         $this->finish($deploy, JobState::Succeeded, ['commit' => str_repeat('b', 40), 'message' => 'Add the export', 'removed' => []]);
@@ -157,18 +175,18 @@ class PreviewTest extends TestCase
         $this->app['auth']->forgetGuards();
 
         // A new title changes only the title.
-        $this->postJson($url, $this->github('edited', more: ['pull_request' => ['title' => 'Export the orders']]), self::GITHUB)->assertOk()->assertJsonPath('status', 'updated');
+        $this->hook($url, $this->github('edited', more: ['pull_request' => ['title' => 'Export the orders']]), self::GITHUB)->assertOk()->assertJsonPath('status', 'updated');
         $this->assertSame('Export the orders', Preview::first()->title);
 
         // The pull request closes: the panel removes the preview website.
-        $this->postJson($url, $this->github('closed'), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'removing');
+        $this->hook($url, $this->github('closed'), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'removing');
         $removal = AgentJob::where(['website_id' => $site->id, 'action' => AgentAction::DeleteWebsite])->firstOrFail();
         $this->assertTrue(AuditEntry::where(['action' => 'Removed preview', 'target' => 'pr-7.preview.acme.example'])->exists());
-        $this->postJson($url, $this->github('closed'), self::GITHUB)->assertAccepted();
+        $this->hook($url, $this->github('closed'), self::GITHUB)->assertAccepted();
         $this->assertSame(1, AgentJob::where(['website_id' => $site->id, 'action' => AgentAction::DeleteWebsite])->count());
         $this->finish($removal, JobState::Succeeded);
         $this->assertSame([0, 1], [Preview::count(), Website::count()]);
-        $this->postJson($url, $this->github('closed'), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, $this->github('closed'), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
     }
 
     public function test_the_panel_ignores_forks_other_branches_and_events_when_the_previews_are_off(): void
@@ -179,35 +197,39 @@ class PreviewTest extends TestCase
         $this->app['auth']->forgetGuards();
 
         $fork = $this->github('opened', more: ['pull_request' => ['head' => ['repo' => ['full_name' => 'mallory/shop']]]]);
-        $this->postJson($url, $fork, self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, $fork, self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
         $deleted = $this->github('opened');
         $deleted['pull_request']['head']['repo'] = null;
-        $this->postJson($url, $deleted, self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
-        $this->postJson($url, $this->github('opened', more: ['pull_request' => ['base' => ['ref' => 'develop']]]), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
-        $this->postJson($url, $this->github('labeled'), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, $deleted, self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, $this->github('opened', more: ['pull_request' => ['base' => ['ref' => 'develop']]]), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, $this->github('labeled'), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
         // A branch name that is not correct.
-        $this->postJson($url, $this->github('opened', more: ['pull_request' => ['head' => ['ref' => '--upload-pack=x']]]), self::GITHUB)->assertJsonValidationErrors('branch');
-        $this->postJson($url, $this->github('opened', 0), self::GITHUB)->assertJsonValidationErrors('number');
+        $this->hook($url, $this->github('opened', more: ['pull_request' => ['head' => ['ref' => '--upload-pack=x']]]), self::GITHUB)->assertJsonValidationErrors('branch');
+        $this->hook($url, $this->github('opened', 0), self::GITHUB)->assertJsonValidationErrors('number');
         $this->assertSame(0, Preview::count());
 
         // The trigger is "manual": a push does not deploy, but a pull request makes a preview.
-        $this->postJson($url, ['ref' => 'refs/heads/main'])->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, ['ref' => 'refs/heads/main'])->assertOk()->assertJsonPath('status', 'ignored');
         $this->assertSame(0, Release::count());
-        $this->postJson($url, $this->github('opened'), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'started');
+        $this->hook($url, $this->github('opened'), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'started');
+
+        // A request with no correct signature changes nothing.
+        $this->hook($url, $this->github('opened', 8), self::GITHUB, 'not-the-secret')->assertUnauthorized();
+        $this->assertSame(1, Preview::count());
 
         // A suspended customer gets no new preview.
         $website->customer->update(['suspended' => true]);
-        $this->postJson($url, $this->github('opened', 8), self::GITHUB)->assertStatus(409);
+        $this->hook($url, $this->github('opened', 8), self::GITHUB)->assertStatus(409);
         $website->customer->update(['suspended' => false]);
 
-        // The previews go off: the panel removes them, and the webhook is off with the trigger "manual".
+        // The previews go off: the panel removes them, and a pull request makes no preview.
         $this->actingWith($this->user());
         $this->putJson("/api/v1/websites/{$website->id}/previews", ['enabled' => false])->assertOk()->assertJsonPath('settings.enabled', false);
         $this->assertSame(1, AgentJob::where('action', AgentAction::DeleteWebsite)->count());
         $this->app['auth']->forgetGuards();
-        $this->postJson($url, $this->github('opened', 9), self::GITHUB)->assertNotFound();
+        $this->hook($url, $this->github('opened', 9), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
         GitSource::where('website_id', $website->id)->update(['trigger' => GitSource::WEBHOOK]);
-        $this->postJson($url, $this->github('opened', 9), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, $this->github('opened', 9), self::GITHUB)->assertOk()->assertJsonPath('status', 'ignored');
         // A pull request event never deploys the branch of the website.
         $this->assertSame(0, Release::where('website_id', $website->id)->count());
     }
@@ -224,29 +246,29 @@ class PreviewTest extends TestCase
             'title' => 'Fix the login', 'url' => 'https://gitlab.com/acme/shop/-/merge_requests/3',
         ]];
         $headers = ['X-Gitlab-Event' => 'Merge Request Hook'];
-        $this->postJson($url, $gitlab('open', ['source_project_id' => 6]), $headers)->assertOk()->assertJsonPath('status', 'ignored');
-        $this->postJson($url, $gitlab('open'), $headers)->assertAccepted()->assertJsonPath('status', 'started');
-        $this->postJson($url, $gitlab('update', ['title' => 'Fix the sign-in']), $headers)->assertOk()->assertJsonPath('status', 'updated');
-        $this->postJson($url, $gitlab('update', ['oldrev' => str_repeat('a', 40), 'title' => 'Fix the sign-in']), $headers)->assertAccepted()->assertJsonPath('status', 'waiting');
-        $this->postJson($url, $gitlab('approved'), $headers)->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, $gitlab('open', ['source_project_id' => 6]), $headers)->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, $gitlab('open'), $headers)->assertAccepted()->assertJsonPath('status', 'started');
+        $this->hook($url, $gitlab('update', ['title' => 'Fix the sign-in']), $headers)->assertOk()->assertJsonPath('status', 'updated');
+        $this->hook($url, $gitlab('update', ['oldrev' => str_repeat('a', 40), 'title' => 'Fix the sign-in']), $headers)->assertAccepted()->assertJsonPath('status', 'waiting');
+        $this->hook($url, $gitlab('approved'), $headers)->assertOk()->assertJsonPath('status', 'ignored');
         $this->assertSame(['fix-login', 'Fix the sign-in'], [Preview::where('number', 3)->value('branch'), Preview::where('number', 3)->value('title')]);
-        $this->postJson($url, $gitlab('merge'), $headers)->assertAccepted()->assertJsonPath('status', 'removing');
+        $this->hook($url, $gitlab('merge'), $headers)->assertAccepted()->assertJsonPath('status', 'removing');
 
         $gitea = $this->github('opened', 4, ['pull_request' => ['head' => ['ref' => 'docs'], 'html_url' => 'https://git.example/acme/shop/pulls/4']]);
-        $this->postJson($url, $gitea, ['X-Gitea-Event' => 'pull_request', 'X-GitHub-Event' => 'pull_request'])->assertAccepted()->assertJsonPath('status', 'started');
-        $this->postJson($url, ['action' => 'synchronized'] + $gitea, ['X-Forgejo-Event' => 'pull_request'])->assertAccepted()->assertJsonPath('status', 'waiting');
+        $this->hook($url, $gitea, ['X-Gitea-Event' => 'pull_request', 'X-GitHub-Event' => 'pull_request'])->assertAccepted()->assertJsonPath('status', 'started');
+        $this->hook($url, ['action' => 'synchronized'] + $gitea, ['X-Forgejo-Event' => 'pull_request'])->assertAccepted()->assertJsonPath('status', 'waiting');
         $this->assertSame('docs', Preview::where('number', 4)->value('branch'));
         // A push event of Gitea is not a pull request.
-        $this->postJson($url, ['ref' => 'refs/heads/main'], ['X-Gitea-Event' => 'push'])->assertOk()->assertJsonPath('status', 'ignored');
+        $this->hook($url, ['ref' => 'refs/heads/main'], ['X-Gitea-Event' => 'push'])->assertOk()->assertJsonPath('status', 'ignored');
 
         $bitbucket = ['pullrequest' => [
             'id' => 5, 'title' => 'Faster search', 'links' => ['html' => ['href' => 'https://bitbucket.org/acme/shop/pull-requests/5']],
             'source' => ['branch' => ['name' => 'search'], 'repository' => ['full_name' => 'acme/shop']],
             'destination' => ['branch' => ['name' => 'main'], 'repository' => ['full_name' => 'acme/shop']],
         ]];
-        $this->postJson($url, $bitbucket, ['X-Event-Key' => 'pullrequest:created'])->assertAccepted()->assertJsonPath('status', 'started');
+        $this->hook($url, $bitbucket, ['X-Event-Key' => 'pullrequest:created'])->assertAccepted()->assertJsonPath('status', 'started');
         $this->assertSame(['search', 'https://bitbucket.org/acme/shop/pull-requests/5'], [Preview::where('number', 5)->value('branch'), Preview::where('number', 5)->value('url')]);
-        $this->postJson($url, $bitbucket, ['X-Event-Key' => 'pullrequest:rejected'])->assertAccepted()->assertJsonPath('status', 'removing');
+        $this->hook($url, $bitbucket, ['X-Event-Key' => 'pullrequest:rejected'])->assertAccepted()->assertJsonPath('status', 'removing');
     }
 
     public function test_the_limits_keep_the_cause_and_the_next_event_tries_again(): void
@@ -256,8 +278,8 @@ class PreviewTest extends TestCase
         $url = $this->previews($website, ['limit' => 1]);
         $this->app['auth']->forgetGuards();
 
-        $this->postJson($url, $this->github('opened', 1), self::GITHUB)->assertAccepted();
-        $this->postJson($url, $this->github('opened', 2), self::GITHUB)->assertOk()->assertJsonPath('status', 'failed')
+        $this->hook($url, $this->github('opened', 1), self::GITHUB)->assertAccepted();
+        $this->hook($url, $this->github('opened', 2), self::GITHUB)->assertOk()->assertJsonPath('status', 'failed')
             ->assertJsonPath('message', 'The limit of the previews of this website is 1. Close a pull request, or change the limit.');
         $this->actingWith($this->user(Role::Owner, $website->customer));
         $this->getJson("/api/v1/websites/{$website->id}/previews")->assertJsonPath('previews.1.number', 2)->assertJsonPath('previews.1.state', 'failed')
@@ -267,15 +289,15 @@ class PreviewTest extends TestCase
         $website->customer->plan->update(['websites' => 2]);
         $this->putJson("/api/v1/websites/{$website->id}/previews", ['enabled' => true, 'limit' => 5])->assertOk();
         $this->app['auth']->forgetGuards();
-        $this->postJson($url, $this->github('synchronize', 2), self::GITHUB)->assertOk()->assertJsonPath('status', 'failed')->assertJsonPath('message', 'The Business plan allows 2 websites.');
+        $this->hook($url, $this->github('synchronize', 2), self::GITHUB)->assertOk()->assertJsonPath('status', 'failed')->assertJsonPath('message', 'The Business plan allows 2 websites.');
 
         $website->customer->plan->update(['websites' => 10]);
-        $this->postJson($url, $this->github('synchronize', 2), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'started');
+        $this->hook($url, $this->github('synchronize', 2), self::GITHUB)->assertAccepted()->assertJsonPath('status', 'started');
         $this->assertNull(Preview::where('number', 2)->value('error'));
 
         // A preview with no website goes at once when its pull request closes.
         Preview::create(['website_id' => $website->id, 'number' => 3, 'branch' => 'x', 'error' => 'The website has 2 previews.']);
-        $this->postJson($url, $this->github('closed', 3), self::GITHUB)->assertAccepted();
+        $this->hook($url, $this->github('closed', 3), self::GITHUB)->assertAccepted();
         $this->assertFalse(Preview::where('number', 3)->exists());
     }
 
@@ -287,7 +309,7 @@ class PreviewTest extends TestCase
         $this->putJson("/api/v1/websites/{$website->id}/deploy/secrets/NPM_TOKEN", ['value' => 's3cret-value'])->assertOk();
         $this->app['auth']->forgetGuards();
 
-        $site = Website::findOrFail($this->postJson($url, $this->github('opened'), self::GITHUB)->assertAccepted()->json('previewWebsiteId'));
+        $site = Website::findOrFail($this->hook($url, $this->github('opened'), self::GITHUB)->assertAccepted()->json('previewWebsiteId'));
         $this->assertSame(['APP_KEY' => 'live-key'], $site->variables());
         $this->assertSame(['NPM_TOKEN' => 's3cret-value'], $site->gitSource->secrets);
     }
@@ -323,7 +345,7 @@ class PreviewTest extends TestCase
         $this->actingWith($this->user(Role::Owner, $website->customer));
         $url = $this->previews($website);
         $this->app['auth']->forgetGuards();
-        $site = $this->postJson($url, $this->github('opened'), self::GITHUB)->assertAccepted()->json('previewWebsiteId');
+        $site = $this->hook($url, $this->github('opened'), self::GITHUB)->assertAccepted()->json('previewWebsiteId');
 
         $this->actingWith($this->user(Role::Owner, $website->customer));
         $this->deleteJson("/api/v1/websites/{$website->id}/deploy")->assertNoContent();

@@ -246,7 +246,7 @@ class DemoTest extends TestCase
         $this->assertSame([JobState::Succeeded, 0], [$job->state, $cron->fresh()->last_exit_code]);
 
         // A deploy goes live. A repository with "fail" in its address fails in the build.
-        $this->getJson("{$base}/deploy")->assertOk()->assertJsonPath('source.trigger', 'webhook')->assertJsonPath('source.secrets', ['COMPOSER_AUTH', 'SENTRY_AUTH_TOKEN'])->assertJsonCount(5, 'releases');
+        $this->getJson("{$base}/deploy")->assertOk()->assertJsonPath('source.trigger', 'webhook')->assertJsonPath('source.secrets', ['COMPOSER_AUTH', 'SENTRY_AUTH_TOKEN'])->assertJsonCount(6, 'releases');
         $answer = $this->postJson("{$base}/deploy/releases")->assertAccepted()->json();
         $this->assertSame(JobState::Succeeded, $this->runJob($answer['job']['id'])->state);
         $this->getJson("{$base}/deploy")->assertJsonPath('releases.0.id', $answer['release']['id'])->assertJsonPath('releases.0.live', true)->assertJsonPath('releases.0.state', 'ready');

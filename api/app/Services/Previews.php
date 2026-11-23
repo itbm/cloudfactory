@@ -11,8 +11,8 @@ use App\Models\AgentJob;
 use App\Models\Domain;
 use App\Models\GitSource;
 use App\Models\Preview;
-use App\Models\Release;
 use App\Models\Website;
+use App\Services\Deploys\Deploys;
 use App\Services\Deploys\PullRequest;
 use App\Services\Dns\Zones;
 use App\Services\Plugins\Hooks;
@@ -333,8 +333,7 @@ class Previews
         if (self::openJob($site, AgentAction::CreateWebsite)) {
             return [self::WAITING, 'The panel makes the preview. Its first deploy gets the latest commit.'];
         }
-        $busy = $site->releases()->where('state', Release::BUILDING)->exists() || self::openJob($site, AgentAction::ActivateRelease);
-        if ($busy) {
+        if (Deploys::busy($site)) {
             $preview->update(['deploy_again' => true]);
 
             return [self::QUEUED, 'A deploy of the preview is in progress. The panel deploys the new commits after it.'];
@@ -369,18 +368,24 @@ class Previews
     {
         $own = GitSource::where('website_id', $site->id)->first();
         if (! $own) {
-            // The preview has its own webhook token, but its trigger is "manual": the webhook of
-            // the website of the pull request starts its deploys.
-            $own = $source->replicate(['webhook_token', 'webhook_token_hash']);
-            $token = Str::random(48);
-            $own->fill(['website_id' => $site->id, 'webhook_token' => $token, 'webhook_token_hash' => hash('sha256', $token)]);
+            // The preview has its own webhook token and secret, but its trigger is "manual": the
+            // webhook of the website of the pull request starts its deploys.
+            $own = $source->replicate(['webhook_token', 'webhook_token_hash', 'webhook_secret']);
+            $own->fill(['website_id' => $site->id] + GitSource::newWebhook());
         }
         $own->fill([
             'repository' => $source->repository,
             'branch' => $preview->branch,
             'web_directory' => $source->web_directory,
             'trigger' => GitSource::MANUAL,
+            'deploy_queued' => false,
+            'queued_commit' => null,
+            'checked_at' => null,
+            'check_error' => null,
             'build_commands' => $source->build_commands ?? [],
+            // A preview does not change a database: the code of a pull request is not reviewed,
+            // and the variables can point to the live database.
+            'migration_command' => null,
             'public_key' => $source->public_key,
             'private_key' => $source->private_key,
             'secrets' => $source->preview_environment ? ($source->secrets ?? []) : [],

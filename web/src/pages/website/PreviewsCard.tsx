@@ -118,10 +118,23 @@ export function PreviewsCard({ website, source }: { website: Website; source: Gi
                 <tr><th scope="row">Variables</th><td>{settings.copyEnvironment ? "The previews get the environment variables and the build secrets of this website." : "The previews do not get the environment variables and the build secrets of this website."}</td></tr>
               </tbody>
             </table>
-            <p className="muted small" style={{ margin: "14px 0 10px" }}>
-              On your Git host, send the pull request events (merge request events on GitLab) to the webhook address. The panel ignores a pull request from a fork.
-            </p>
-            {source.webhookUrl && <CopyField value={source.webhookUrl} label="Webhook address" />}
+            {source.trigger === "webhook" ? (
+              <p className="muted small" style={{ marginTop: 14 }}>
+                On your Git host, also send the pull request events (merge request events on GitLab) to the webhook in <strong>Access to the repository</strong>. The panel ignores a pull request from a fork.
+              </p>
+            ) : (
+              <p className="muted small" style={{ margin: "14px 0 10px" }}>
+                On your Git host, send the pull request events (merge request events on GitLab) to this webhook address, with this secret. The panel ignores a pull request from a fork.
+              </p>
+            )}
+            {source.trigger !== "webhook" && source.webhookUrl && source.webhookSecret && (
+              <>
+                <div className="label-like" aria-hidden="true">Address</div>
+                <CopyField value={source.webhookUrl} label="Webhook address" />
+                <div className="label-like" aria-hidden="true" style={{ marginTop: 12 }}>Secret</div>
+                <CopyField value={source.webhookSecret} label="Webhook secret" />
+              </>
+            )}
           </>
         ) : (
           <p className="muted">Get a preview website for each pull request to <code>{source.branch}</code>. The panel makes the preview when the pull request opens, deploys each new commit, and removes the preview when the pull request closes.</p>

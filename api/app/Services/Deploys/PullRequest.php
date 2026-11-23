@@ -54,6 +54,27 @@ final readonly class PullRequest
     ) {}
 
     /**
+     * The Git host of a pull request event: github, gitea, gitlab or bitbucket. Null when the
+     * request is a different event, for example a push. This reads only the headers, and the
+     * kind of a GitLab request with no header.
+     */
+    public static function provider(Request $request): ?string
+    {
+        $github = strtolower((string) $request->header('X-GitHub-Event'));
+        $gitea = strtolower((string) ($request->header('X-Gitea-Event') ?? $request->header('X-Forgejo-Event') ?? $request->header('X-Gogs-Event')));
+        $gitlab = (string) $request->header('X-Gitlab-Event');
+        if ($gitea !== '' || $github !== '') {
+            // Gitea and Forgejo also send the header of GitHub.
+            return in_array($gitea !== '' ? $gitea : $github, ['pull_request', 'pull_request_sync'], true) ? ($gitea !== '' ? 'gitea' : 'github') : null;
+        }
+        if ($gitlab !== '' || $request->input('object_kind') === 'merge_request') {
+            return $gitlab === '' || $gitlab === 'Merge Request Hook' ? 'gitlab' : null;
+        }
+
+        return str_starts_with((string) $request->header('X-Event-Key'), 'pullrequest:') ? 'bitbucket' : null;
+    }
+
+    /**
      * The pull request event of a webhook request, or null when the request is a different
      * event, for example a push.
      *
@@ -61,28 +82,12 @@ final readonly class PullRequest
      */
     public static function from(Request $request): ?self
     {
-        $github = strtolower((string) $request->header('X-GitHub-Event'));
-        $gitea = strtolower((string) ($request->header('X-Gitea-Event') ?? $request->header('X-Forgejo-Event') ?? $request->header('X-Gogs-Event')));
-        $gitlab = (string) $request->header('X-Gitlab-Event');
-        $bitbucket = (string) $request->header('X-Event-Key');
-
-        if ($gitea !== '' || $github !== '') {
-            // Gitea and Forgejo also send the header of GitHub.
-            $event = $gitea !== '' ? $gitea : $github;
-            if (! in_array($event, ['pull_request', 'pull_request_sync'], true)) {
-                return null;
-            }
-
-            return self::github($request, $gitea !== '' ? 'gitea' : 'github');
-        }
-        if ($gitlab !== '' || $request->input('object_kind') === 'merge_request') {
-            return $gitlab === '' || $gitlab === 'Merge Request Hook' ? self::gitlab($request) : null;
-        }
-        if (str_starts_with($bitbucket, 'pullrequest:')) {
-            return self::bitbucket($request, substr($bitbucket, strlen('pullrequest:')));
-        }
-
-        return null;
+        return match (self::provider($request)) {
+            'github', 'gitea' => self::github($request, (string) self::provider($request)),
+            'gitlab' => self::gitlab($request),
+            'bitbucket' => self::bitbucket($request, substr((string) $request->header('X-Event-Key'), strlen('pullrequest:'))),
+            default => null,
+        };
     }
 
     /** GitHub, Gitea and Forgejo. */
