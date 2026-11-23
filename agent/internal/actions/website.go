@@ -591,6 +591,9 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if err := d.Edge.EnsureBase(ctx); err != nil {
 				return err
 			}
+			if err := d.ensureAccessLog(w.GetId()); err != nil {
+				return err
+			}
 			return d.Edge.Apply(ctx, d.site(w, port))
 		}},
 		{Name: "Get TLS certificate", Do: func(ctx context.Context) error {
@@ -995,7 +998,14 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			return nil
 		}},
 		{Name: "Remove edge proxy route", Do: func(ctx context.Context) error {
-			return d.Edge.Remove(ctx, req.GetWebsiteId())
+			if err := d.Edge.Remove(ctx, req.GetWebsiteId()); err != nil {
+				return err
+			}
+			// The edge proxy has no route for the website now, so no entry comes after this.
+			if d.AccessLogs != nil {
+				return d.AccessLogs.Remove(req.GetWebsiteId())
+			}
+			return nil
 		}},
 		{Name: "Remove Unix user", Do: func(ctx context.Context) error {
 			// The names of the databases start with the Unix user. Remove them, so that a later

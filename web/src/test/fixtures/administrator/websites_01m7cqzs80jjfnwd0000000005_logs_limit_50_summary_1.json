@@ -1,0 +1,843 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000005/logs?limit=50&summary=1",
+    "status": 200,
+    "body": {
+        "entries": [
+            {
+                "at": "2026-11-14T09:58:57.697Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "POST",
+                    "host": "old.acme.example.com",
+                    "uri": "/cart",
+                    "proto": "HTTP/2.0",
+                    "status": 303,
+                    "sizeBytes": 0,
+                    "durationMs": 94.9,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": "https://old.acme.example.com/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:58:57.687Z",
+                "source": "output",
+                "text": "Sent the confirmation of order 1158 to the customer.",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:56:07.592Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "POST",
+                    "host": "old.acme.example.com",
+                    "uri": "/contact",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 15053,
+                    "durationMs": 109.8,
+                    "userAgent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:53:01.296Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.130",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 5756,
+                    "durationMs": 3.8,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:52:14.029Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.61",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/robots.txt",
+                    "proto": "HTTP/3.0",
+                    "status": 200,
+                    "sizeBytes": 24088,
+                    "durationMs": 18.7,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:50:50.321Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/api/stock?id=42",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 45553,
+                    "durationMs": 31.1,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:50:22.185Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/17",
+                    "proto": "HTTP/2.0",
+                    "status": 301,
+                    "sizeBytes": 0,
+                    "durationMs": 59,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:50:00.283Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/42",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 24928,
+                    "durationMs": 39.6,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:49:09.440Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/17",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 37628,
+                    "durationMs": 86.7,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:48:55.307Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products",
+                    "proto": "HTTP/3.0",
+                    "status": 200,
+                    "sizeBytes": 6788,
+                    "durationMs": 78.5,
+                    "userAgent": "curl/8.11.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:48:44.580Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/robots.txt",
+                    "proto": "HTTP/3.0",
+                    "status": 200,
+                    "sizeBytes": 30876,
+                    "durationMs": 32.4,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:48:33.026Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.130",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/",
+                    "proto": "HTTP/3.0",
+                    "status": 200,
+                    "sizeBytes": 8620,
+                    "durationMs": 81.1,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:45:43.643Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:91::12",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/favicon.ico",
+                    "proto": "HTTP/2.0",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 613,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:41:30.460Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 28231,
+                    "durationMs": 109.2,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://www.google.com/"
+                }
+            },
+            {
+                "at": "2026-11-14T09:38:44.707Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/17",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 34701,
+                    "durationMs": 6.8,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:38:34.183Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 31333,
+                    "durationMs": 102.8,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:38:33.857Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/api/stock?id=42",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 34479,
+                    "durationMs": 68.2,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:37:07.834Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/favicon.ico",
+                    "proto": "HTTP/1.1",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 30.3,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:35:00.399Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:91::12",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/api/stock?id=42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 8785,
+                    "durationMs": 86.5,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:32:46.963Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 46801,
+                    "durationMs": 23.5,
+                    "userAgent": "curl/8.11.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:31:48.440Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/1.1",
+                    "status": 304,
+                    "sizeBytes": 0,
+                    "durationMs": 86.9,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": "https://old.acme.example.com/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:29:58.028Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "POST",
+                    "host": "old.acme.example.com",
+                    "uri": "/cart",
+                    "proto": "HTTP/1.1",
+                    "status": 303,
+                    "sizeBytes": 0,
+                    "durationMs": 325,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": "https://old.acme.example.com/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:29:58.018Z",
+                "source": "output",
+                "text": "Sent the confirmation of order 1708 to the customer.",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:29:58.008Z",
+                "source": "error",
+                "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:29:46.154Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 30233,
+                    "durationMs": 14.5,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:27:47.629Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.250",
+                    "method": "POST",
+                    "host": "old.acme.example.com",
+                    "uri": "/wp-login.php",
+                    "proto": "HTTP/2.0",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 740,
+                    "userAgent": "Mozilla/5.0 zgrab/0.x",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:26:39.379Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 17310,
+                    "durationMs": 78,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:26:19.565Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:91::12",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 35543,
+                    "durationMs": 76.7,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": "https://www.google.com/"
+                }
+            },
+            {
+                "at": "2026-11-14T09:23:40.955Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/favicon.ico",
+                    "proto": "HTTP/2.0",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 85.3,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:23:40.935Z",
+                "source": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:21:54.801Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.88",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/contact",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 2480,
+                    "durationMs": 47.8,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:20:44.922Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 304,
+                    "sizeBytes": 0,
+                    "durationMs": 63.4,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://old.acme.example.com/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:20:33.035Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/favicon.ico",
+                    "proto": "HTTP/1.1",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 626,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:19:05.162Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/api/stock?id=42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 7991,
+                    "durationMs": 95.8,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:17:54.460Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/cart",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 23184,
+                    "durationMs": 69.3,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://old.acme.example.com/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:17:54.440Z",
+                "source": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:16:18.322Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/17",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 5779,
+                    "durationMs": 107.8,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:15:28.179Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/17",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 9682,
+                    "durationMs": 87.7,
+                    "userAgent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:13:54.011Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 1478,
+                    "durationMs": 665,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:11:02.228Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/3.0",
+                    "status": 200,
+                    "sizeBytes": 2416,
+                    "durationMs": 94.9,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": "https://old.acme.example.com/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:09:25.652Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/products/42",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 44571,
+                    "durationMs": 79.2,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:07:56.915Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.88",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/favicon.ico",
+                    "proto": "HTTP/2.0",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 23.6,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://www.google.com/"
+                }
+            },
+            {
+                "at": "2026-11-14T09:07:56.895Z",
+                "source": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:06:34.172Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 43351,
+                    "durationMs": 95.5,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:06:05.173Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 2416,
+                    "durationMs": 74.2,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": "https://old.acme.example.com/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:06:05.153Z",
+                "source": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:01:17.727Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.130",
+                    "method": "POST",
+                    "host": "old.acme.example.com",
+                    "uri": "/contact",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 17989,
+                    "durationMs": 6.6,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:57:14.056Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.88",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 29455,
+                    "durationMs": 104.6,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:57:01.170Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "old.acme.example.com",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 24008,
+                    "durationMs": 57.1,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:56:59.898Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "POST",
+                    "host": "old.acme.example.com",
+                    "uri": "/contact",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 24171,
+                    "durationMs": 17.5,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            }
+        ],
+        "next": "eyJkZW1vIjo1MH0",
+        "summary": {
+            "total": 1505,
+            "sources": {
+                "access": 1343,
+                "output": 62,
+                "error": 100
+            },
+            "statuses": {
+                "1xx": 0,
+                "2xx": 1035,
+                "3xx": 157,
+                "4xx": 137,
+                "5xx": 14
+            },
+            "topPaths": [
+                {
+                    "value": "/",
+                    "count": 297
+                },
+                {
+                    "value": "/css/site.css",
+                    "count": 200
+                },
+                {
+                    "value": "/products",
+                    "count": 160
+                },
+                {
+                    "value": "/products/42",
+                    "count": 127
+                },
+                {
+                    "value": "/api/stock",
+                    "count": 92
+                }
+            ],
+            "topClients": [
+                {
+                    "value": "203.0.113.7",
+                    "count": 342
+                },
+                {
+                    "value": "198.51.100.23",
+                    "count": 267
+                },
+                {
+                    "value": "2001:db8:4e::7a",
+                    "count": 163
+                },
+                {
+                    "value": "192.0.2.44",
+                    "count": 161
+                },
+                {
+                    "value": "203.0.113.88",
+                    "count": 129
+                }
+            ],
+            "sizeBytes": 22553886,
+            "oldest": "2026-11-12T10:11:46.688Z"
+        }
+    }
+}

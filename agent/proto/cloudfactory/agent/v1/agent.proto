@@ -121,13 +121,18 @@ service AgentService {
   // The last requests of a website that the firewall of the edge proxy blocked or detected.
   // This method does not make a job.
   rpc GetFirewallEvents(GetFirewallEventsRequest) returns (FirewallEvents);
-  rpc GetLogs(GetLogsRequest) returns (Logs);
   // Returns the actual state of the server.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
   rpc ListFiles(FileRequest) returns (FileList);
   rpc MakeDirectory(FileRequest) returns (FileEntry);
   rpc MoveFile(MoveFileRequest) returns (FileEntry);
   rpc ReadFile(FileRequest) returns (FileContent);
+  // Searches the logs of a website: the access log of the edge proxy, and the output and the
+  // errors of the containers of the website. The agent reads the log of the containers as the
+  // Unix user of the website. With no website, it searches the access log of the edge proxy
+  // for the requests that are not for a website: the panel, the webmail and the mail host.
+  // This method does not make a job.
+  rpc SearchLogs(SearchLogsRequest) returns (LogSearchResult);
   rpc SetFileMode(SetFileModeRequest) returns (FileModeSet);
   rpc WriteFile(WriteFileRequest) returns (FileEntry);
 }
@@ -1209,22 +1214,92 @@ message BranchHeads {
   repeated BranchHead heads = 1;
 }
 
-message GetLogsRequest {
+message SearchLogsRequest {
+  // The website, or "" for the access log of the routes that are not for a website.
   string website_id = 1;
-  // The maximum number of lines of each stream. 0 means 200.
-  int32 lines = 2;
-}
-
-message LogLine {
-  // RFC 3339.
-  string at = 1;
-  // "access" (standard output of the container) or "error" (standard error).
-  string stream = 2;
+  // "access" (the access log of the edge proxy), "output" (the standard output of the
+  // containers) and "error" (their standard error). No source means all sources.
+  repeated string sources = 2;
+  // The words that each entry must have, in upper or lower case. A word that starts with "-"
+  // must not be in the entry. Words in double quotation marks are one word.
   string text = 3;
+  // The access log only: status codes ("404") or classes of status codes ("5xx").
+  repeated string statuses = 4;
+  // The access log only: HTTP methods, for example "POST".
+  repeated string methods = 5;
+  // The access log only: the address of a client or a network, for example "203.0.113.0/24".
+  string client = 6;
+  // RFC 3339. The entries at this time or later.
+  string from = 7;
+  // RFC 3339. The entries before this time.
+  string to = 8;
+  // The value "next" of an earlier result. The search then gives the older entries.
+  string cursor = 9;
+  // The largest number of entries. 0 means 100.
+  int32 limit = 10;
+  // True to count all entries that agree with the search (LogSummary). The count ignores the
+  // cursor.
+  bool summary = 11;
 }
 
-message Logs {
-  repeated LogLine lines = 1;
+// A request in the access log of the edge proxy.
+message AccessEntry {
+  // The address of the client.
+  string client = 1;
+  string method = 2;
+  string host = 3;
+  // The path and the query.
+  string uri = 4;
+  // For example "HTTP/2.0".
+  string proto = 5;
+  int32 status = 6;
+  // The size of the body of the answer.
+  int64 size_bytes = 7;
+  double duration_seconds = 8;
+  string user_agent = 9;
+  string referer = 10;
+}
+
+message LogEntry {
+  // RFC 3339 with nanoseconds, in UTC.
+  string at = 1;
+  // "access", "output" or "error".
+  string source = 2;
+  // The line of a container. An entry of the access log has no text.
+  string text = 3;
+  AccessEntry access = 4;
+}
+
+message LogCount {
+  string value = 1;
+  int64 count = 2;
+}
+
+// The count of all entries that agree with a search.
+message LogSummary {
+  // The number of entries of each source.
+  int64 access = 1;
+  int64 output = 2;
+  int64 error = 3;
+  // The access log: the number of requests in each class of status codes, for example "5xx".
+  map<string, int64> statuses = 4;
+  // The access log: the paths and the clients with the most requests, at most 5 of each.
+  repeated LogCount top_paths = 5;
+  repeated LogCount top_clients = 6;
+  // The access log: the sum of the sizes of the answers.
+  int64 size_bytes = 7;
+  // RFC 3339. The time of the oldest entry that the server keeps, in the sources of the
+  // search. "" when the sources have no entries.
+  string oldest = 8;
+}
+
+message LogSearchResult {
+  // The newest entry first.
+  repeated LogEntry entries = 1;
+  // The cursor for the older entries, or "" when there are no more.
+  string next = 2;
+  // Only when the request asked for it.
+  LogSummary summary = 3;
 }
 
 message GetFirewallEventsRequest {
