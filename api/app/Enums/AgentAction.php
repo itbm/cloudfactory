@@ -55,6 +55,7 @@ enum AgentAction: string
     case SendWebsite = 'SendWebsite';
     case ReceiveWebsite = 'ReceiveWebsite';
     case SetPacks = 'SetPacks';
+    case SetWebsiteSecurity = 'SetWebsiteSecurity';
     case SetCertificates = 'SetCertificates';
     // The import of an account from a different panel (docs/imports.md).
     case FetchImport = 'FetchImport';
@@ -118,6 +119,7 @@ enum AgentAction: string
             self::SendWebsite => ['Stop website', 'Send files'],
             self::ReceiveWebsite => ['Create Unix user', 'Receive files', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Set SFTP access and cron jobs', 'Get TLS certificate'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
+            self::SetWebsiteSecurity => ['Set edge proxy rules'],
             self::SetCertificates => ['Load certificates', 'Check certificates'],
             // A download for a server that only copies a part has no second step.
             self::FetchImport => ['Download archive', 'Read archive'],

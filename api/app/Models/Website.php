@@ -20,10 +20,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
     'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command', 'install_command', 'environment',
-    'bandwidth_month', 'bandwidth_bytes', 'moving_to_server_id',
+    'bandwidth_month', 'bandwidth_bytes', 'security', 'moving_to_server_id',
 ])]
-// The API never gives the values of the environment variables.
-#[Hidden(['environment'])]
+// The API never gives the values of the environment variables, or the password hashes of the
+// protection (App\Services\WebsiteSecurity).
+#[Hidden(['environment', 'security'])]
 class Website extends Model
 {
     use GuardsState, HasFactory, HasUlids;
@@ -92,6 +93,7 @@ class Website extends Model
             'stopped_by_suspension' => 'boolean',
             'sftp_closed_by_suspension' => 'boolean',
             'environment' => 'encrypted:array',
+            'security' => 'array',
         ];
     }
 
