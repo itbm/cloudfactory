@@ -10,39 +10,79 @@ on:
       # The test of the Valkey image uses the access rules and the server options of the agent.
       - agent/internal/actions/valkey*.go
       - agent/internal/quadlet/quadlet.go
+      # The panel-api image has the OpenAPI document. The panel images use .dockerignore.
+      - openapi/openapi.yaml
+      - .dockerignore
       - .github/workflows/images.yml
 
 permissions:
   contents: read
 
+# A new push to a pull request stops the builds of the earlier push.
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Each image builds only when its files change. A change to this workflow builds all images.
+  changes:
+    name: Select the images
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.select.outputs.images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The merge commit of the pull request and its first parent, the base branch.
+          fetch-depth: 2
+      - name: Select the images with changed files
+        id: select
+        env:
+          # The files of each image are the paths that start with an item of "paths".
+          IMAGES: |
+            [
+              { "image": "frankenphp-php8.4", "context": "images/frankenphp", "file": "images/frankenphp/Containerfile", "args": "PHP_VERSION=8.4", "paths": ["images/frankenphp/"] },
+              { "image": "frankenphp-php8.5", "context": "images/frankenphp", "file": "images/frankenphp/Containerfile", "args": "PHP_VERSION=8.5", "paths": ["images/frankenphp/"] },
+              { "image": "apache-php8.4", "context": "images/apache-php-fpm", "file": "images/apache-php-fpm/Containerfile", "args": "PHP_VERSION=8.4", "paths": ["images/apache-php-fpm/"] },
+              { "image": "node22", "context": "images/node", "file": "images/node/Containerfile", "args": "NODE_VERSION=22", "paths": ["images/node/"] },
+              { "image": "node24", "context": "images/node", "file": "images/node/Containerfile", "args": "NODE_VERSION=24", "paths": ["images/node/"] },
+              { "image": "node26", "context": "images/node", "file": "images/node/Containerfile", "args": "NODE_VERSION=26", "paths": ["images/node/"] },
+              { "image": "python3.13", "context": "images/python", "file": "images/python/Containerfile", "args": "PYTHON_VERSION=3.13", "paths": ["images/python/"] },
+              { "image": "python3.14", "context": "images/python", "file": "images/python/Containerfile", "args": "PYTHON_VERSION=3.14", "paths": ["images/python/"] },
+              { "image": "edge", "context": "images/edge", "file": "images/edge/Containerfile", "args": "", "paths": ["images/edge/"] },
+              { "image": "sftp", "context": "images/sftp", "file": "images/sftp/Containerfile", "args": "", "paths": ["images/sftp/"] },
+              { "image": "adminer", "context": "images/adminer", "file": "images/adminer/Containerfile", "args": "", "paths": ["images/adminer/"] },
+              { "image": "dns", "context": "images/dns", "file": "images/dns/Containerfile", "args": "", "paths": ["images/dns/"] },
+              { "image": "panel-api", "context": ".", "file": "images/panel-api/Containerfile", "args": "", "paths": ["images/panel-api/", "api/", "openapi/openapi.yaml", ".dockerignore"] },
+              { "image": "panel-web", "context": ".", "file": "images/panel-web/Containerfile", "args": "", "paths": ["images/panel-web/", "web/", ".dockerignore"] },
+              { "image": "mariadb", "context": "images/mariadb", "file": "images/mariadb/Containerfile", "args": "", "paths": ["images/mariadb/"] },
+              { "image": "postgresql", "context": "images/postgresql", "file": "images/postgresql/Containerfile", "args": "", "paths": ["images/postgresql/"] },
+              { "image": "valkey", "context": "images/valkey", "file": "images/valkey/Containerfile", "args": "", "paths": ["images/valkey/", "agent/internal/actions/valkey", "agent/internal/quadlet/quadlet.go"] },
+              { "image": "mail", "context": "images/mail", "file": "images/mail/Containerfile", "args": "", "paths": ["images/mail/"] },
+              { "image": "mail-keep", "context": "images/mail-keep", "file": "images/mail-keep/Containerfile", "args": "", "paths": ["images/mail-keep/"] },
+              { "image": "webmail", "context": "images/webmail", "file": "images/webmail/Containerfile", "args": "", "paths": ["images/webmail/"] }
+            ]
+        run: |
+          set -eu
+          git diff --name-only HEAD^1 HEAD >"$RUNNER_TEMP/changed"
+          images=$(jq -c --rawfile changed "$RUNNER_TEMP/changed" '
+            ($changed | split("\n") | map(select(. != ""))) as $files
+            | map((.paths + [".github/workflows/images.yml"]) as $paths
+              | select(any($files[]; . as $file | any($paths[]; . as $path | $file | startswith($path))))
+              | del(.paths))' <<<"$IMAGES")
+          echo "Images to build: $(jq -r 'map(.image) | join(", ")' <<<"$images")"
+          echo "images=$images" >>"$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.image }}
+    needs: changes
+    if: needs.changes.outputs.images != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { image: frankenphp-php8.4, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.4 }
-          - { image: frankenphp-php8.5, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.5 }
-          - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
-          - { image: node22, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=22 }
-          - { image: node24, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=24 }
-          - { image: node26, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=26 }
-          - { image: python3.13, context: images/python, file: images/python/Containerfile, args: PYTHON_VERSION=3.13 }
-          - { image: python3.14, context: images/python, file: images/python/Containerfile, args: PYTHON_VERSION=3.14 }
-          - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
-          - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
-          - { image: adminer, context: images/adminer, file: images/adminer/Containerfile, args: '' }
-          - { image: dns, context: images/dns, file: images/dns/Containerfile, args: '' }
-          - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
-          - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
-          - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
-          - { image: postgresql, context: images/postgresql, file: images/postgresql/Containerfile, args: '' }
-          - { image: valkey, context: images/valkey, file: images/valkey/Containerfile, args: '' }
-          - { image: mail, context: images/mail, file: images/mail/Containerfile, args: '' }
-          - { image: mail-keep, context: images/mail-keep, file: images/mail-keep/Containerfile, args: '' }
-          - { image: webmail, context: images/webmail, file: images/webmail/Containerfile, args: '' }
+        include: ${{ fromJSON(needs.changes.outputs.images) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
