@@ -26,6 +26,8 @@ enum AgentAction: string
     case DeleteMailbox = 'DeleteMailbox';
     case DeleteWebsite = 'DeleteWebsite';
     case Deploy = 'Deploy';
+    case ExportWebsite = 'ExportWebsite';
+    // The import of an account from a different panel (docs/imports.md).
     case FetchImport = 'FetchImport';
     case ImportDatabase = 'ImportDatabase';
     case ImportFiles = 'ImportFiles';
@@ -37,6 +39,7 @@ enum AgentAction: string
     case PruneBackups = 'PruneBackups';
     case Reboot = 'Reboot';
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
+    case ReceiveWebsite = 'ReceiveWebsite';
     case RemoveDomain = 'RemoveDomain';
     case Restore = 'Restore';
     case RotateMeshKey = 'RotateMeshKey';
@@ -44,6 +47,7 @@ enum AgentAction: string
     case RunCronJob = 'RunCronJob';
     case ScanWebsite = 'ScanWebsite';
     case SendDatabaseServer = 'SendDatabaseServer';
+    case SendWebsite = 'SendWebsite';
     case SetCertificates = 'SetCertificates';
     case SetCronJobs = 'SetCronJobs';
     case SetDatabaseServer = 'SetDatabaseServer';
@@ -87,6 +91,8 @@ enum AgentAction: string
             // The steps after "Build" are the steps of SetRuntime: the agent starts the website
             // from the new release with no stop.
             self::Deploy => ['Get the code', 'Build', 'Migrate the database', ...self::SetRuntime->steps(), 'Remove old releases'],
+            // An account export: the agent sends each part to the panel while it makes it.
+            self::ExportWebsite => ['Send database dumps', 'Send files'],
             // A download for a server that only copies a part has no second step.
             self::FetchImport => ['Download archive', 'Read archive'],
             self::ImportDatabase => ['Check archive', 'Load dump'],
@@ -98,9 +104,10 @@ enum AgentAction: string
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
             self::OpenTerminal => ['Open the terminal'],
             self::PrepareMailNode => ['Make keys'],
-            self::PruneBackups => ['Remove backups of deleted websites', 'Remove unused data'],
+            self::PruneBackups => ['Remove backups of deleted and moved websites', 'Remove unused data'],
             self::Reboot => ['Drain the edge proxy', 'Stop containers', 'Reboot', 'Start containers', 'Check all services'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
+            self::ReceiveWebsite => ['Create Unix user', 'Receive files', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Set SFTP access and cron jobs', 'Get TLS certificate'],
             self::RemoveDomain => ['Remove edge proxy route'],
             self::Restore => ['Download snapshot', 'Restore', 'Health check'],
             self::RotateMeshKey => ['Make new key'],
@@ -108,6 +115,7 @@ enum AgentAction: string
             self::RunCronJob => ['Run the command'],
             self::ScanWebsite => ['Update malware signatures', 'Scan files'],
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
+            self::SendWebsite => ['Stop website', 'Send files'],
             self::SetCertificates => ['Load certificates', 'Check certificates'],
             self::SetCronJobs => ['Save the cron jobs'],
             self::SetDatabaseServer => ['Start database server'],

@@ -1872,6 +1872,65 @@ The administrator moves a database server in the list of the database servers (*
 different server**), with `cf database-servers move DATABASE_SERVER --server SERVER`, or with
 `POST /v1/database-servers/{id}/move`.
 
+### Move a website
+
+An administrator can move a website to a different server. The website keeps its ID, its
+Unix user, its domains, its databases, its SFTP keys, its cron jobs, its network name and its
+member address. The move uses the same tunnel, port and token as the move of a database
+server:
+
+1. The panel makes a token of 32 random bytes and the tunnel between the two servers. It
+   sends `ReceiveWebsite` to the new server and then `SendWebsite` to the old server. The
+   status of the website is `moving`.
+2. The new server makes the Unix user and the disk limit of the website. Its state records
+   the website as stopped. Its firewall lets the mesh address of the old server connect to
+   TCP port 7445, only for the time of the move.
+3. The old server stops the website and turns off its SFTP access. A stopped website has a
+   unit with no `[Install]` section, so the website does not start again at a restart of the
+   server. Then the root helper connects from its mesh address, and sends the token and two
+   parts: the files of `/app`, and the known SSH hosts of the deploys. `tar` runs as the
+   website user for each part (CF-05), and each part is in frames. A frame of length 0 ends
+   a part. `tar` writes that frame only after it read all files, so an incomplete stream is
+   never complete for the new server.
+4. The root helper of the new server compares the token, and writes the files with `tar` as
+   the website user, with no owner from the stream. It answers `ok`.
+5. The new server pulls and checks the image, starts the website in gVisor, makes the route
+   of the edge proxy, sets the SFTP keys and the cron jobs, and gets the TLS certificate.
+6. The panel records the new server. The DNS zones of the panel get the addresses of the new
+   server. A zone with a DNS account also goes to its provider. The new server gets the
+   certificates from the panel for the domains of the website (`SetCertificates`). The old
+   server removes its copy with `DeleteWebsite` and `moved`: that job does not remove the
+   databases.
+
+When the move fails, the website stays on the old server. If the old server could not send
+the files, it starts the website again at once. In the other cases, the panel starts it
+again and turns on its SFTP access again. The new server removes what it received.
+
+If the old server sent all the files and got no answer, the website stays stopped on the old
+server until the panel has the result of the new server. Thus the website never operates on
+the two servers at the same time.
+
+- The website does not operate while its files move.
+- The databases stay on their database servers. After the move, the website connects to a
+  database server on a different server only with the network name. So, before the move,
+  each database server of the website must be on the new server, or in a network with the
+  website. The panel refuses the move when this is not true.
+- While the website moves, the panel refuses each change of the website with HTTP status
+  409. A suspension, a rollout and the nightly backup wait for the end of the move. A change
+  of the plan goes to the new server at the end of the move.
+- The panel does not start a move while a job of the website or of its staging copy is not
+  complete, or while an import of the customer runs on the old server.
+- The backups of the files from before the move are in the repository of the old server. The
+  panel can restore only a database from them. The weekly job of the old server removes them
+  after the time for the backups of a deleted website (`forget_moved_website_ids` of
+  `PruneBackups`). The backups of the databases on the old server stay.
+- A domain with no DNS zone in the panel points to the old server until its owner changes the
+  address records.
+
+The administrator moves a website with the menu of the website (**Move to a different
+server**), with `cf websites move WEBSITE --server SERVER`, or with
+`POST /v1/websites/{id}/move`.
+
 ### Reference size
 
 The test `api/tests/Feature/NetworkScaleTest.php` makes a panel with 20 servers, 100 websites
@@ -2087,6 +2146,32 @@ not keep them.
   and then the data that no snapshot uses.
 - A snapshot from the time when all servers used one repository has a mark. The panel
   restores it from the old repository with the old password.
+
+## Account exports
+
+A user exports the account of a customer as one archive (refer to
+[account-export.md](account-export.md)). The panel writes the description of the account
+(`cf-account/1`) and the zone files itself. Only the servers have the files of the websites and
+the data of the databases, so the panel sends one `ExportWebsite` job to each server that has
+them.
+
+- The agent sends each part (the files of a website or the dump of a database) to the panel
+  while it makes it, in pieces of 4 MiB (`PUT /api/agent/v1/export-parts/{id}`). The server
+  keeps no copy. A piece names its offset in the part, and the panel keeps a piece only at the
+  end of the part, so a piece that the agent sends again is not added two times.
+- The agent does no new root work. `cf-agent site-archive` reads the files as the Unix user
+  of the website, as the file manager does. The dump command of a backup runs in the database
+  container, as the Unix user of the database server.
+- The panel keeps the parts in `CF_EXPORT_PATH` (`/data/exports`, on the volume of the panel).
+  The API, the queue worker and the scheduler share the directory.
+- When all parts are complete, the queue job `BuildAccountExport` writes the small members of
+  the archive. A download sends these members and then each part with its tar header
+  (`ArchiveStream`). The panel does not copy the parts into one file: the disk keeps one copy,
+  and the queue worker is not busy for a long time.
+- The headers of the archive have the time of the completion, so each download gives the same
+  bytes. A download can thus continue at an offset (an HTTP range).
+- The scheduler runs `cloudfactory:expire-exports` each hour. It removes the exports that
+  expired and fails an export that is not complete after a day.
 
 ## Plugins
 

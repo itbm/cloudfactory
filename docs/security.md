@@ -1063,6 +1063,30 @@ Known limits:
   and keeps it in its own repository. No dump and no repository password goes to a
   different server, and no database user for backups is open to the network.
 
+## Account exports
+
+- An archive has the environment variables of the websites, which often have passwords and
+  keys. Only a token with the scope `exports:read` or `exports:write` can see, start or
+  download an export, and a plugin cannot have these scopes. An owner exports only its own
+  account, and a reseller exports only its own account and the accounts of its customers.
+- The archive has no passwords, no password hashes and no private keys. The panel does not
+  keep the passwords of the database users and of the mailboxes, and the description does not
+  have the private key of a deploy, the DNSSEC key or the values of the build secrets.
+- The panel keeps the description encrypted in its database. The parts are files on the disk
+  of the panel, in a directory that only the panel can read (mode 0700). The panel removes
+  them after 7 days, and when a user removes the export.
+- A download link has a signature with the application key of the panel, and is valid for
+  10 minutes. The link is the only credential, so the browser downloads the archive with no
+  token. The audit log records each link with the user who asked for it.
+- The agent makes the parts with no new root work. `cf-agent site-archive` runs as the Unix
+  user of the website, so it cannot read a file that the website cannot read, and it does not
+  follow symbolic links. The agent accepts a job only for a website in its state, with the
+  Unix user of that website, and only for the databases of that Unix user.
+- A part of a server goes only to the parts of that server: the panel answers 404 when the
+  agent of a different server sends a piece of it.
+- The panel refuses a piece when its disk has less free space than the reserve (2 GiB or 5%
+  of the disk). An export thus cannot fill the disk of the panel.
+
 ## The mesh between servers
 
 The mesh is the set of encrypted tunnels between the servers of one panel (refer to
@@ -1113,6 +1137,14 @@ through the internet, so the design assumes that a person can read and change ea
   path outside the data directory, a hard link, a device file and a secret that is not of
   the engine. It writes each file with the owner of the database server, and it applies the
   disk limit of the database server.
+- **The move of a website.** The files of a website that moves use the same tunnel, port and
+  token. The root helpers never read or write the files as root (CF-05): `tar` runs as the
+  website user on the two servers, and the new server does not take the owners from the
+  stream. Thus a file of the stream cannot go outside the directories of the website user,
+  and the disk limit of the website applies. The new server accepts the files only for a
+  website that its state records as stopped and with the same Unix user. The old website
+  stays stopped, with no SFTP access, while its files move. A website never operates on the
+  two servers at the same time.
 - **Checks of the state.** The worker and the root helper examine each value of the state
   from the panel: the range is a private IPv4 network, each mesh address is in the range,
   each tunnel address is a public IP address, and each key has the correct form. The root

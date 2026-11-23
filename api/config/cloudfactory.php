@@ -105,6 +105,20 @@ return [
     // a sign-in session. Set CF_REQUIRE_TOTP=false only for development or a demonstration.
     'require_totp' => filter_var(env('CF_REQUIRE_TOTP', true), FILTER_VALIDATE_BOOL),
 
+    // Account exports (docs/account-export.md). The panel keeps the archives in this directory.
+    // On a server it is /data/exports, on the volume of the panel. The panel refuses a part of
+    // an export when the disk has less free space than "reserve_bytes" or 5% of the disk.
+    'exports' => [
+        'path' => env('CF_EXPORT_PATH', storage_path('app/exports')),
+        // The number of days that the panel keeps an archive.
+        'days' => (int) env('CF_EXPORT_DAYS', 7),
+        // The number of archives that the panel keeps for each account.
+        'keep' => (int) env('CF_EXPORT_KEEP', 3),
+        'reserve_bytes' => (int) env('CF_EXPORT_RESERVE_BYTES', 2 * 1024 ** 3),
+        // The time that a download link is valid.
+        'link_minutes' => (int) env('CF_EXPORT_LINK_MINUTES', 10),
+    ],
+
     // FR-104: the scopes that an API token can have.
     'scopes' => [
         'websites:read', 'websites:write',
@@ -128,5 +142,8 @@ return [
         'plugins:read', 'plugins:write',
         // Only an administrator can install packs. A plugin cannot have this scope.
         'packs:read', 'packs:write',
+        // An export has the environment variables of all websites of the account. A plugin
+        // cannot have this scope.
+        'exports:read', 'exports:write',
     ],
 ];

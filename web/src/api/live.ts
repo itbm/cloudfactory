@@ -5,6 +5,7 @@
 import { createPasskey, getPasskey } from "../lib/webauthn";
 import type {
   Account,
+  AccountExport,
   ApiToken,
   AuditEntry,
   BackupPolicy,
@@ -173,7 +174,7 @@ interface ApiMe {
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
 interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
-  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; installCommand?: string | null; environment?: string[]; status: Website["status"];
+  id: string; name: string; application: string; customerId: string; serverId: string; movingToServerId?: string | null; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; installCommand?: string | null; environment?: string[]; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; version?: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null; bandwidthBytes?: number;
@@ -271,7 +272,7 @@ export function toPanelCertificate(c: ApiPanelCertificate): PanelCertificate {
 
 export function toWebsite(w: ApiWebsite): Website {
   return {
-    id: w.id, name: w.name, application: w.application || "Website", customerId: w.customerId, serverId: w.serverId, unixUser: w.unixUser,
+    id: w.id, name: w.name, application: w.application || "Website", customerId: w.customerId, serverId: w.serverId, movingToServerId: w.movingToServerId ?? undefined, unixUser: w.unixUser,
     // An API from before the networks sends no name. The name comes from the Unix user.
     networkHost: w.kind === "worker" ? null : w.networkHost ?? `${w.unixUser.replaceAll("_", "-")}.internal`, networkPort: w.kind === "worker" ? null : w.networkPort ?? 80,
     kind: w.kind ?? "public", command: w.command ?? null, installCommand: w.installCommand ?? null, environment: w.environment ?? [],
@@ -510,6 +511,7 @@ export async function load(previous: State): Promise<State> {
     databaseServers,
     dns,
     dnsAccounts,
+    exports,
     images,
     jobs,
     mailAliases,
@@ -545,6 +547,8 @@ export async function load(previous: State): Promise<State> {
     dns: optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
     // The accounts at external DNS providers, and the providers of the plugins.
     dnsAccounts: optional(request<{ data: ApiDnsAccount[]; providers: DnsProvider[] }>("GET", "/dns-accounts"), { data: [], providers: [] }),
+    // The account exports. A token with no exports scope gets none.
+    exports: optional(request<{ data: AccountExport[] }>("GET", "/exports").then((r) => r.data), []),
     images: admin ? request<{ data: ApiImage[] }>("GET", "/images").then((r) => r.data) : Promise.resolve([] as ApiImage[]),
     jobs: request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     mailAliases: optional(request<{ data: MailAlias[] }>("GET", "/mail/aliases").then((r) => r.data), []),
@@ -642,6 +646,7 @@ export async function load(previous: State): Promise<State> {
     remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
     backupPolicy: policy,
+    exports,
     plans,
     customers: customers.map(toCustomer),
     users: users.map(toUser),

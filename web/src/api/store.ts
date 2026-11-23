@@ -10,6 +10,7 @@
 import { BUILT_IN_ENGINES } from "../lib/labels";
 import * as live from "./live";
 import type {
+  AccountExport,
   ApiToken,
   BackupPolicy,
   BrandFields,
@@ -104,6 +105,7 @@ export function emptyState(): State {
     dnsAccounts: [],
     dnsProviders: [],
     dnsZones: [],
+    exports: [],
     images: [],
     jobs: [],
     joinCaSha256: undefined,
@@ -420,6 +422,21 @@ export function createStagingCopy(websiteId: string): Promise<{ websiteId: strin
       d.websites = [live.toWebsite(r.website), ...d.websites.filter((w) => w.id !== r.website.id)];
     });
     return { websiteId: r.website.id, job: track(r.job), credentials: r.databaseCredentials ?? [] };
+  });
+}
+
+/**
+ * Moves a website to a different server (administrators only). The new server receives the
+ * files, and the old server sends them. The panel reads the websites again when the two jobs
+ * are complete.
+ */
+export function moveWebsite(websiteId: string, serverId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ website: live.ApiWebsite; jobs: live.ApiJob[] }>("POST", `/websites/${websiteId}/move`, { serverId });
+    update((d) => {
+      d.websites = d.websites.map((w) => (w.id === websiteId ? live.toWebsite(r.website) : w));
+    });
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh());
   });
 }
 
@@ -1892,6 +1909,42 @@ export function createToken(name: string, scopes: TokenScope[], days: number, pa
     await refresh();
     const token: ApiToken = { id: String(r.id), name: name.trim(), scopes: r.scopes, createdAt: now(), expiresAt: r.expiresAt, prefix: `${r.id}|` };
     return { token, secret: r.token };
+  });
+}
+
+// Account exports (docs/account-export.md)
+
+/**
+ * Starts an export of an account. With no customer, the API exports the account of the user.
+ * An administrator or a reseller gives the customer.
+ */
+export function startExport(options: { customerId?: string; files: boolean; databases: boolean }) {
+  return call(() => live.request<AccountExport>("POST", "/exports", { ...(options.customerId ? { customerId: options.customerId } : {}), files: options.files, databases: options.databases })).then(async (e) => {
+    await refresh();
+    return e;
+  });
+}
+
+export function removeExport(exportId: string) {
+  return call(() => live.request("DELETE", `/exports/${q(exportId)}`)).then(() => refresh());
+}
+
+/**
+ * Downloads the archive of an export. The API gives a short link with a signature, so that the
+ * browser downloads the large file itself, with no token.
+ */
+export function downloadExport(exportId: string) {
+  return call(async () => {
+    const link = await live.request<{ url: string; fileName: string }>("POST", `/exports/${q(exportId)}/download-link`);
+    const a = document.createElement("a");
+    a.href = link.url;
+    a.download = link.fileName;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    void refresh();
+    return link;
   });
 }
 

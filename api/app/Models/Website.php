@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'limits',
     'malware_scan_schedule',
     'managed_by_terraform',
+    'moving_to_server_id',
     'name',
     'php_ini',
     'plan_id',
@@ -160,6 +161,12 @@ class Website extends Model
     public function server(): BelongsTo
     {
         return $this->belongsTo(Server::class);
+    }
+
+    /** The server that receives the website, while the status is "moving". */
+    public function movingTo(): BelongsTo
+    {
+        return $this->belongsTo(Server::class, 'moving_to_server_id');
     }
 
     public function plan(): BelongsTo

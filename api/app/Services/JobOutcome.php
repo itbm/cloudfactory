@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\WebsiteStatus;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\BackupRemoval;
@@ -24,6 +25,7 @@ use App\Models\WebsiteCommand;
 use App\Services\Certificates\Certificates;
 use App\Services\Deploys\Deploys;
 use App\Services\Dns\Zones;
+use App\Services\Exports\AccountExports;
 use App\Services\Imports\Runner;
 use App\Services\Notifications\Notifier;
 use App\Services\Packs\Packs;
@@ -127,12 +129,17 @@ class JobOutcome
             if ($job->action === AgentAction::SetPacks && $state === JobState::Succeeded) {
                 Packs::jobFinished($job, $result);
             }
+            // A part of an account export is complete, or the export failed.
+            if ($job->action === AgentAction::ExportWebsite) {
+                AccountExports::jobFinished($job, $state === JobState::Succeeded, $error, $result);
+            }
             if ($job->action === AgentAction::SetCertificates && $state === JobState::Succeeded) {
                 Certificates::jobFinished($job, $result);
             }
             // The domains of the server changed: the server gets the certificates from the
-            // panel for its domains now, not at the next report.
-            if ($state === JobState::Succeeded && in_array($job->action, [AgentAction::CreateWebsite, AgentAction::DeleteWebsite, AgentAction::AddDomain, AgentAction::RemoveDomain], true)) {
+            // panel for its domains now, not at the next report. A website that moved is a new
+            // website on the new server.
+            if ($state === JobState::Succeeded && in_array($job->action, [AgentAction::CreateWebsite, AgentAction::DeleteWebsite, AgentAction::ReceiveWebsite, AgentAction::AddDomain, AgentAction::RemoveDomain], true)) {
                 app(Certificates::class)->serverChanged($job->server, $job->customer_id);
             }
             // A job of an import: the next parts of the import can start.
@@ -229,9 +236,10 @@ class JobOutcome
         match ($job->action) {
             AgentAction::CreateWebsite => $website && $this->websiteMade($website, $result),
             AgentAction::SetWebsitePower => $website?->moveTo(($p['power'] ?? '') === 'stop' ? WebsiteStatus::Stopped : WebsiteStatus::Running),
-            AgentAction::DeleteWebsite => $website && $this->deleteWebsite($website),
+            // A website that moved keeps its record: the job removed only its old copy.
+            AgentAction::DeleteWebsite => $website && ! ($p['moved'] ?? false) && $this->deleteWebsite($website),
             // Audit finding R8: the backups of these deleted websites are gone.
-            AgentAction::PruneBackups => BackupRemoval::where('server_id', $job->server_id)->whereIn('website_id', array_filter((array) ($p['forgetWebsiteIds'] ?? []), 'is_string'))->delete(),
+            AgentAction::PruneBackups => $this->backupsPruned($job, $p),
             AgentAction::SetSftp => $website?->update([
                 'sftp_enabled' => (bool) ($p['enabled'] ?? false),
                 'sftp_keys' => $p['authorizedKeys'] ?? [],
@@ -256,6 +264,8 @@ class JobOutcome
             AgentAction::DeleteDatabaseServer => $this->databaseServerRemoved($job),
             // The database server operates on the new server.
             AgentAction::ReceiveDatabaseServer => $this->databaseServerMoved($job, $p),
+            // The website operates on the new server.
+            AgentAction::ReceiveWebsite => $website && $this->websiteMoved($job, $website, $p, $result),
             AgentAction::DeleteDatabaseUser => $website && ($website->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete() || true) && $this->continueRemoval($website, $p),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),
@@ -330,6 +340,8 @@ class JobOutcome
             AgentAction::DeleteDatabaseServer => $this->databaseServerStays($job, $p),
             // The database server stays on the old server.
             AgentAction::ReceiveDatabaseServer => $this->databaseServerNotMoved($job, $p),
+            // The website stays on the old server.
+            AgentAction::ReceiveWebsite => $website && $this->websiteNotMoved($job, $website, $p),
             // A mail server that operated before the change operates with its old host name.
             AgentAction::SetMailServer => $job->server->update(($p['previous']['status'] ?? null) === 'running' && ! $job->server->mailDomains()->exists()
                 ? ['mail_hostname' => $p['previous']['hostname'] ?? $job->server->mail_hostname, 'mail_status' => 'running']
@@ -402,6 +414,129 @@ class JobOutcome
         $jobs->dispatch($job->server, AgentAction::DeleteDatabaseServer, ['databaseServer' => $server->id, 'moved' => true],
             "Remove the incomplete copy of database server {$server->name}", databaseServer: $server);
         Mesh::refreshLater();
+    }
+
+    /**
+     * The backups of the deleted websites are gone from the repository of the server, and the
+     * backups of the files of the websites that moved from the server.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function backupsPruned(AgentJob $job, array $p): void
+    {
+        $deleted = array_filter((array) ($p['forgetWebsiteIds'] ?? []), 'is_string');
+        $moved = array_filter((array) ($p['forgetMovedWebsiteIds'] ?? []), 'is_string');
+        BackupRemoval::where('server_id', $job->server_id)->where(fn ($q) => $q
+            ->where(fn ($q) => $q->where('files_only', false)->whereIn('website_id', $deleted))
+            ->orWhere(fn ($q) => $q->where('files_only', true)->whereIn('website_id', $moved)))->delete();
+        // A website that moved has the backups of its databases on the server still.
+        Snapshot::where('server_id', $job->server_id)->whereIn('website_id', $moved)->where('part', Snapshot::WEBSITE)->delete();
+    }
+
+    /**
+     * The new server received the files of a website, and the website operates there. The
+     * panel records the new server, the DNS zones of the panel get the addresses of the new
+     * server, and the old server removes its copy. The website keeps its network name and its
+     * network address, so the tunnels now take its traffic to the new server.
+     *
+     * @param  array<string, mixed>  $p
+     * @param  array<string, mixed>  $result
+     */
+    private function websiteMoved(AgentJob $job, Website $website, array $p, array $result): bool
+    {
+        if ($website->status !== WebsiteStatus::Moving || $website->moving_to_server_id !== $job->server_id) {
+            return false;
+        }
+        $from = $website->server;
+        // The backups from before the move are in the repository of the old server.
+        Snapshot::where('website_id', $website->id)->whereNull('server_id')->update(['server_id' => $from->id]);
+        $website->update([
+            'server_id' => $job->server_id,
+            'status' => ($p['stopped'] ?? false) ? WebsiteStatus::Stopped : WebsiteStatus::Running,
+            'moving_to_server_id' => null,
+        ]);
+        $website->load('server');
+        if (array_key_exists('dnsPointsHere', $result)) {
+            $website->domains()->where('name', $website->name)->update(['dns_points_here' => (bool) $result['dnsPointsHere']]);
+        }
+        app(Zones::class)->websiteMoved($website);
+        $jobs = app(JobDispatcher::class);
+        // The databases stay: the job has no databases to remove.
+        $jobs->dispatch($from, AgentAction::DeleteWebsite, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'databases' => [], 'databaseUsers' => [], 'moved' => true],
+            "Remove the old copy of {$website->name}", $website);
+        // The backups of the files on the old server stay for the time of the backups of a
+        // deleted website. The panel cannot restore files from them, because the files are on
+        // the new server now. The backups of the databases on the old server stay.
+        BackupRemoval::where(['website_id' => $website->id, 'server_id' => $website->server_id, 'files_only' => true])->delete();
+        if (Snapshot::where(['website_id' => $website->id, 'server_id' => $from->id, 'part' => Snapshot::WEBSITE])->exists()) {
+            BackupRemoval::updateOrCreate(['website_id' => $website->id, 'server_id' => $from->id], [
+                'website_name' => $website->name,
+                'remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_website_backup_days', 30))),
+                'files_only' => true,
+            ]);
+        }
+        $this->changedWhileMoving($website, (array) ($p['website'] ?? []));
+        CustomerController::applySuspensionTo($jobs, $website->fresh(['server']), $website->customer->isSuspended());
+
+        return true;
+    }
+
+    /**
+     * The new server could not receive or start a website. The website operates on the old
+     * server: the old server starts it again when it could not send the files, and this job
+     * starts it when the files went to the new server. The new server removes what it
+     * received.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function websiteNotMoved(AgentJob $job, Website $website, array $p): bool
+    {
+        if ($website->status !== WebsiteStatus::Moving || $website->moving_to_server_id !== $job->server_id) {
+            return false;
+        }
+        $stopped = (bool) ($p['stopped'] ?? false);
+        $website->update(['status' => $stopped ? WebsiteStatus::Stopped : WebsiteStatus::Running, 'moving_to_server_id' => null]);
+        $jobs = app(JobDispatcher::class);
+        if (! $stopped) {
+            $jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'start'],
+                "Start {$website->name} again", $website);
+        }
+        // The old server turned off SFTP for the move.
+        if ($website->sftp_enabled && ($website->sftp_keys ?? []) !== []) {
+            $jobs->dispatch($website->server, AgentAction::SetSftp, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'enabled' => true, 'authorizedKeys' => $website->sftp_keys],
+                "Turn on SFTP access of {$website->name} again", $website);
+        }
+        $jobs->dispatch($job->server, AgentAction::DeleteWebsite, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'databases' => [], 'databaseUsers' => [], 'moved' => true],
+            "Remove the incomplete copy of {$website->name}", $website);
+        Mesh::refreshLater();
+        CustomerController::applySuspensionTo($jobs, $website->fresh(['server']), $website->customer->isSuspended());
+
+        return true;
+    }
+
+    /**
+     * A change of the plan or a rollout while the website moved went to the old server. The
+     * new server got the website from before the change, so it gets the change now.
+     *
+     * @param  array<string, mixed>  $sent  The website in the job of the new server.
+     */
+    private function changedWhileMoving(Website $website, array $sent): void
+    {
+        $now = JobDispatcher::websitePayload($website->fresh(['image', 'domains']))['website'];
+        $jobs = app(JobDispatcher::class);
+        if (($sent['limits'] ?? null) != $now['limits']) {
+            $jobs->dispatch($website->server, AgentAction::SetLimits, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'limits' => $now['limits']], 'Apply resource limits', $website);
+        }
+        $changed = (array) ($sent['phpIni'] ?? []) != (array) $now['phpIni'];
+        foreach (['image', 'imageDigest', 'extensions', 'workerMode', 'documentRoot', 'command'] as $field) {
+            $changed = $changed || ($sent[$field] ?? null) != $now[$field];
+        }
+        if ($changed) {
+            $jobs->dispatch($website->server, AgentAction::SetRuntime, JobDispatcher::websitePayload($website) + [
+                'previousImageId' => $website->image_id,
+                'previousTag' => $website->currentTag(),
+            ], 'Apply the changes from the time of the move', $website);
+        }
     }
 
     /** The agent could not remove a database server. It is a member of its networks again. */
@@ -605,6 +740,8 @@ class JobOutcome
             BackupRemoval::updateOrCreate(['website_id' => $website->id, 'server_id' => $serverId], [
                 'website_name' => $website->name,
                 'remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_website_backup_days', 30))),
+                // An old server of a website that moved removes all its backups now.
+                'files_only' => false,
             ]);
         }
 

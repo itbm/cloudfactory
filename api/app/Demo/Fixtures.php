@@ -35,6 +35,7 @@ class Fixtures
         '/database-servers',
         '/dns-accounts',
         '/dns-zones',
+        '/exports',
         '/identity-providers',
         '/images',
         '/imports',

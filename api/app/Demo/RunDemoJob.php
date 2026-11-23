@@ -156,7 +156,10 @@ class RunDemoJob implements ShouldQueue
 
         return match ($job->action) {
             AgentAction::CreateWebsite, AgentAction::AddDomain => ['dnsPointsHere' => true],
+            AgentAction::ReceiveWebsite => ['dnsPointsHere' => true, 'port' => 20000],
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
+            // The demo agent sends the parts of an account export, as a real agent does.
+            AgentAction::ExportWebsite => DemoExport::send($job),
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
             // The demonstration agent loads each pack of the panel, as a real agent does.
