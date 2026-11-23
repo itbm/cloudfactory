@@ -1082,6 +1082,28 @@ a.stat-link .stat-value { margin-bottom: 8px; }
 .scope-list code, .scope-list strong { flex: none; }
 .manifest-input { font-family: var(--font-mono); font-size: 12px; min-height: 160px; }
 
+/* Uptime checks (docs/architecture.md#uptime-checks). Each bar has a text summary, so the colours are not the only sign. */
+.alert-success { background: var(--success-soft); border-color: var(--success-border); }
+.row-selected > td { background: var(--primary-soft); }
+.uptime-url { text-align: left; overflow-wrap: anywhere; font-weight: 500; }
+.uptime-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.stack > * + .uptime-figures { margin-top: 24px; }
+.uptime-figures > div { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.uptime-figures dt { color: var(--text-muted); font-size: 13px; }
+.uptime-figures dd { margin: 4px 0 0; font-size: 20px; font-weight: 600; }
+.uptime-heading { margin: 0 0 8px; font-size: 15px; }
+.uptime-strip { margin: 0; }
+.uptime-bar { display: flex; gap: 2px; height: 32px; margin: 0; padding: 0; list-style: none; }
+.uptime-part { flex: 1 1 0; min-width: 2px; border-radius: 2px; background: var(--border); }
+.uptime-up { background: var(--success); }
+.uptime-partial { background: var(--warning-dot); }
+.uptime-down { background: var(--danger); }
+.uptime-axis { display: flex; justify-content: space-between; margin: 6px 0 4px; color: var(--text-subtle); font-size: 12.5px; }
+@media (max-width: 860px) {
+  .uptime-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .uptime-bar { gap: 1px; height: 28px; }
+}
+
 /* The web terminal (FR-802). The terminal is dark in the light and in the dark theme. */
 .terminal-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .terminal-actions { display: flex; gap: 8px; }

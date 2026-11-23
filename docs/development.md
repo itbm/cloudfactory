@@ -104,6 +104,10 @@ starts with `backup_`, gives a Plesk backup. A file name with `hestia`, or a fil
 form `USER.2026-11-22_05-00-00.tar`, gives a HestiaCP backup. Each other name gives a cPanel
 backup.
 
+The demonstration mode sends no request for an uptime check. Each sample website answers with
+HTTP status 200 and a page with its name. A check with `fail` in its path gets no answer, and a
+check that expects a different status or a text that is not on the page fails.
+
 In the demonstration mode, the file manager shows a small set of sample files for each
 website, and keeps your changes in the cache. The logs are sample entries for the last two
 days. The search and its filters work on these entries. **Run a command** gives a sample
