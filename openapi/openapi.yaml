@@ -32,6 +32,8 @@ tags:
       website.
   - name: Deploys
     description: Deploys of a website from a Git repository.
+  - name: Previews
+    description: The preview websites of the pull requests of a website that deploys from Git.
   - name: Databases
   - name: DNS
     description: DNS hosting. The zones of the customers and their records.
@@ -145,13 +147,28 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [passwordReset]
+                required: [passwordReset, passkeys, providers]
                 properties:
                   passwordReset:
                     type: boolean
                     description: >-
                       The panel can send an email with a link to set a new password: an SMTP server
                       is on for the reseller of this panel domain, or for the panel.
+                  passkeys:
+                    type: boolean
+                    description: >-
+                      Passkeys work on this domain (FR-103). A passkey works only on the panel
+                      domain or on the panel domain of a reseller brand.
+                  providers:
+                    type: array
+                    description: >-
+                      The identity providers for single sign-on. The list is empty on a domain that is
+                      not the panel domain. To sign in, the browser goes to /v1/auth/sso/{id}.
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
 
   /v1/auth/password-reset:
     post:
@@ -214,6 +231,179 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ValidationError' }
         '429': { description: More than 10 requests in one minute from this address. }
+
+  /v1/auth/passkey/options:
+    post:
+      tags: [Auth]
+      summary: Start to sign in with a passkey
+      description: >-
+        The first step to sign in with a passkey (FR-103). Give `publicKey` to the browser
+        (PublicKeyCredential.parseRequestOptionsFromJSON). The browser shows the passkeys of the
+        domain, so the request has no email. The challenge works one time only, for 5 minutes.
+      security: []
+      responses:
+        '200':
+          description: The options for the browser.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasskeyCeremony' }
+        '409': { description: Passkeys do not work on this domain. Open the panel at its own domain. }
+        '429': { description: Too many requests from this address. }
+
+  /v1/auth/passkey:
+    post:
+      tags: [Auth]
+      summary: Sign in with a passkey
+      description: >-
+        The second step to sign in with a passkey. Give the answer of the browser
+        (PublicKeyCredential.toJSON()). The passkey must verify the user, for example with a
+        fingerprint, so the panel does not ask for a TOTP code. The passkey must be for the domain
+        of the challenge. The token expires after 12 hours, as for a sign-in with a password.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, credential]
+              properties:
+                ceremony: { type: string, maxLength: 100, description: The `ceremony` of /v1/auth/passkey/options. }
+                credential: { type: object, additionalProperties: true, description: The JSON of the browser (PublicKeyCredential.toJSON()). }
+                deviceId: { type: string, maxLength: 100, description: The same as for /v1/auth/login. }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '403': { description: The account is suspended, or the user cannot sign in. }
+        '422': { description: 'The challenge is too old or was used (error on `ceremony`), or the panel does not know the passkey or cannot verify it (error on `credential`).', content: { application/json: { schema: { $ref: '#/components/schemas/ValidationError' } } } }
+        '429': { description: Too many requests from this address. }
+
+  /v1/auth/sso/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Auth]
+      summary: Start single sign-on
+      description: >-
+        For a browser navigation, not for a script. The answer sends the browser to the identity
+        provider, and sets a cookie that binds the sign-in to this browser. With `connect`, the
+        sign-in connects the account of the provider to a user (/v1/me/identities/{id}). Single
+        sign-on works only on the panel domain. When the provider is off or not available, the
+        answer sends the browser to `/login#sso-error=<reason>`.
+      security: []
+      parameters:
+        - { name: connect, in: query, required: false, schema: { type: string }, description: 'The ticket of /v1/me/identities/{id}.' }
+      responses:
+        '302': { description: The address of the identity provider. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Single sign-on does not work on this domain. }
+
+  /v1/auth/sso/oidc/callback:
+    get:
+      tags: [Auth]
+      summary: The redirect address for the OpenID Connect providers
+      description: >-
+        The address is the same for all the providers: the state identifies the provider. The
+        provider sends the browser to this address with a code. The panel changes the code into
+        an ID token, and verifies the signature, the issuer, the audience, the time and the nonce of
+        the token. The answer sends the browser to `/sso#ticket=<ticket>`, to
+        `/settings#sso-connected=<id>` after a connection, or to `/login#sso-error=<reason>`. The
+        reasons are `expired`, `cancelled`, `failed`, `no-account`, `taken`, `disabled` and
+        `unavailable`.
+      security: []
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: error, in: query, required: false, schema: { type: string } }
+      responses:
+        '302': { description: The address of the web panel. }
+
+  /v1/auth/sso/saml/acs:
+    post:
+      tags: [Auth]
+      summary: The assertion consumer service for the SAML providers
+      description: >-
+        The address is the same for all the providers: the RelayState identifies the provider. The
+        provider posts the SAML answer (HTTP-POST binding). The issuer of the answer must be the
+        provider, and the answer or its assertion must have a valid signature of the certificate of
+        the provider. The answers are the same as for /v1/auth/sso/oidc/callback.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [SAMLResponse, RelayState]
+              properties:
+                SAMLResponse: { type: string }
+                RelayState: { type: string }
+      responses:
+        '302': { description: The address of the web panel. }
+
+  /v1/auth/sso/saml/metadata:
+    get:
+      tags: [Auth]
+      summary: The SAML metadata of the panel
+      description: The metadata of the panel as a SAML service provider, for all the SAML providers. The address is also the entity ID of the panel.
+      security: []
+      responses:
+        '200':
+          description: The metadata.
+          content:
+            application/samlmetadata+xml:
+              schema: { type: string }
+
+  /v1/auth/sso/complete:
+    post:
+      tags: [Auth]
+      summary: End single sign-on
+      description: >-
+        Changes the ticket of /v1/auth/sso/oidc/callback or /v1/auth/sso/saml/acs into a session
+        token. A ticket works for 5 minutes. When TOTP is on for the user, a request with no `totp`
+        gives status 422 with `totpRequired: true`, as for /v1/auth/login. After 5 wrong codes, the
+        ticket stops. The token expires after 12 hours.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket]
+              properties:
+                ticket: { type: string, maxLength: 100 }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+                deviceId: { type: string, maxLength: 100, description: The same as for /v1/auth/login. }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '403': { description: The account is suspended. }
+        '422':
+          description: The ticket is too old (error on `ticket`), or the code is missing or not correct (error on `totp`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ValidationError' }
+                  - type: object
+                    properties:
+                      totpRequired: { type: boolean }
+        '429': { description: Too many failed attempts for this account. }
 
   /v1/auth/logout:
     post:
@@ -316,6 +506,282 @@ paths:
       responses:
         '204': { description: TOTP is off. }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/me/passkeys:
+    get:
+      tags: [Auth]
+      summary: List your passkeys
+      description: The passkeys of the user of the token (FR-103). An API token can read the list, but only a sign-in session can change it.
+      responses:
+        '200':
+          description: The passkeys, the oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Passkey' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      tags: [Auth]
+      summary: Add a passkey
+      description: >-
+        The second step to add a passkey. Needs a sign-in session token. Give the answer of the
+        browser (PublicKeyCredential.toJSON()) for the options of /v1/me/passkeys/options. The
+        passkey must verify the user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, name, credential]
+              properties:
+                ceremony: { type: string, maxLength: 100, description: The `ceremony` of /v1/me/passkeys/options. }
+                name: { type: string, maxLength: 100, description: 'A name for the passkey, for example "iPhone".' }
+                credential: { type: object, additionalProperties: true, description: The JSON of the browser (PublicKeyCredential.toJSON()). }
+      responses:
+        '201':
+          description: The passkey.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Passkey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/me/passkeys/options:
+    post:
+      tags: [Auth]
+      summary: Start to add a passkey
+      description: >-
+        The first step to add a passkey. Needs a sign-in session token. Give your password, and
+        your TOTP code when TOTP is on. After 5 incorrect attempts, the panel refuses for 15
+        minutes. Give `publicKey` to the browser (PublicKeyCredential.parseCreationOptionsFromJSON).
+        The passkey is for the domain of the request. A user can have 20 passkeys.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$', description: Necessary when TOTP is on for the user. }
+      responses:
+        '200':
+          description: The options for the browser.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasskeyCeremony' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Passkeys do not work on this domain. Open the panel at its own domain. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many incorrect attempts. Wait 15 minutes. }
+
+  /v1/me/passkeys/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Auth]
+      summary: Rename a passkey
+      description: Needs a sign-in session token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: The passkey.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Passkey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Auth]
+      summary: Remove a passkey
+      description: >-
+        Needs a sign-in session token. Give your password, and your TOTP code when TOTP is on. The
+        passkey stays on the device: remove it there also.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many incorrect attempts. Wait 15 minutes. }
+
+  /v1/me/identities:
+    get:
+      tags: [Auth]
+      summary: List the single sign-on providers and your connected accounts
+      responses:
+        '200':
+          description: Each provider that is on, and the account of the user at it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/UserIdentity' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/me/identities/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Auth]
+      summary: Start to connect an account of a provider
+      description: >-
+        Needs a sign-in session token. Give your password, and your TOTP code when TOTP is on. Open
+        `url` in the browser: the user signs in at the provider, and the panel connects the account.
+        The address works one time only, for 5 minutes. An account of a provider connects to one
+        user only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: The address for the browser.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Single sign-on does not work on this domain. }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Auth]
+      summary: Disconnect an account of a provider
+      description: Needs a sign-in session token. Give your password, and your TOTP code when TOTP is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Disconnected. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/identity-providers:
+    get:
+      tags: [Auth]
+      summary: List the single sign-on providers
+      description: Only for an administrator, with the users scope.
+      responses:
+        '200':
+          description: The providers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, serviceProvider]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/IdentityProvider' } }
+                  serviceProvider:
+                    type: object
+                    description: The values to give to a provider. They are the same for all the providers.
+                    required: [redirectUri, entityId, acsUrl]
+                    properties:
+                      redirectUri: { type: string, description: OpenID Connect. Register this address at the provider. }
+                      entityId: { type: string, description: SAML. The entity ID of the panel, and the address of its metadata. }
+                      acsUrl: { type: string, description: SAML. The assertion consumer service of the panel. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Auth]
+      summary: Add a single sign-on provider
+      description: >-
+        Needs the sign-in session of an administrator. Give your password, and your TOTP code when
+        TOTP is on. For OpenID Connect, the panel reads the discovery document of the issuer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityProviderInput' }
+      responses:
+        '201':
+          description: The provider.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/identity-providers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Auth]
+      summary: Change a single sign-on provider
+      description: >-
+        Needs the sign-in session of an administrator, with your password and your TOTP code. The
+        protocol does not change. With no `clientSecret`, the secret stays.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityProviderInput' }
+      responses:
+        '200':
+          description: The provider.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Auth]
+      summary: Remove a single sign-on provider
+      description: Needs the sign-in session of an administrator, with your password and your TOTP code. The panel also removes the connected accounts of the users.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/tokens:
@@ -1297,6 +1763,16 @@ paths:
         the build commands is the release. The directory `/app/shared` is for the files that all
         releases use, for example an `.env` file. The link `/app/current` points to the release
         that the website serves.
+
+
+        The migration command runs after the build commands, in the build container, before the
+        switch. After the switch, the agent checks the website for 5 minutes. When the check
+        fails, the website goes back to the previous release. After a migration command, the
+        website keeps the new release, and the owner gets the email `deploy.attention`.
+
+
+        The trigger `schedule` checks the branch each `checkMinutes` minutes, and deploys each new
+        commit one time. A commit whose deploy failed does not deploy again on the next check.
       requestBody:
         required: true
         content:
@@ -1308,8 +1784,10 @@ paths:
                 repository: { type: string, example: 'git@github.com:acme/shop.git' }
                 branch: { type: string, example: main }
                 webDirectory: { type: string, default: public, description: 'The directory in the repository that the web server serves. "." is the repository itself.' }
-                trigger: { type: string, enum: [manual, webhook], default: manual, description: With "webhook", a request to `webhookUrl` starts a deploy. }
+                trigger: { type: string, enum: [manual, webhook, schedule], default: manual, description: 'With "webhook", a signed request to `webhookUrl` starts a deploy. With "schedule", the panel checks the branch each `checkMinutes` minutes.' }
+                checkMinutes: { type: integer, minimum: 1, maximum: 1440, default: 5, description: The interval of the branch check for the trigger "schedule". }
                 buildCommands: { type: array, maxItems: 10, items: { type: string, maxLength: 1000 }, example: ['composer install --no-dev', 'ln -s /app/shared/.env .env'] }
+                migrationCommand: { type: [string, 'null'], maxLength: 1000, example: 'php artisan migrate --force', description: A command that changes the database. Empty or null removes it. }
       responses:
         '200':
           description: The repository and the releases.
@@ -1328,6 +1806,25 @@ paths:
         '204': { description: Disconnected. }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: A deploy is in progress. }
+
+  /v1/websites/{websiteId}/deploy/webhook:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Deploys]
+      summary: Make a new webhook address and secret
+      description: >-
+        The old address stops at once. Give the new `webhookUrl` and `webhookSecret` to the Git
+        host.
+      responses:
+        '200':
+          description: The repository with the new address and secret.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/deploy/secrets/{name}:
     parameters:
@@ -1376,9 +1873,11 @@ paths:
       tags: [Deploys]
       summary: Deploy the branch now
       description: >-
-        The job gets the code, builds it, starts a new container from the new release, checks
-        it, and only then sends the traffic to it. If a step fails, the website continues from
-        the release that it had, and the release has the state `failed` with the error. The
+        The job gets the code, builds it, runs the migration command, starts a new container
+        from the new release, checks it, and only then sends the traffic to it. Then the agent
+        checks the website for 5 minutes. If a step or this check fails, the website goes back to
+        the release that it had, and the release has the state `failed` with the error. After a
+        migration command, a failed check does not go back: the release has `healthError`. The
         server keeps the last 5 releases. A website has one deploy at a time (409).
       responses:
         '202': { $ref: '#/components/responses/ReleaseJob' }
@@ -1402,6 +1901,109 @@ paths:
         '409': { description: 'A deploy is in progress, or the customer of the website is suspended.' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/websites/{websiteId}/previews:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Previews]
+      summary: Show the preview settings and the previews of a website
+      responses:
+        '200':
+          description: The settings and the previews.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Previews' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Previews]
+      summary: Turn the previews of pull requests on or off, or change their settings
+      description: >-
+        A website that deploys from Git can get a preview website for each pull request to its
+        branch. The webhook of the website (`webhookUrl` of the deploy settings) gets the pull
+        request events of GitHub, GitLab, Gitea, Forgejo and Bitbucket Cloud. A preview is a
+        website of the plan, with the name `pr-<number>.<domain>`, on the server of the website.
+        It deploys the head branch of the pull request. The panel removes it when the pull
+        request closes, and removes all previews when the previews go off.
+
+
+        The customer must control `domain`: it is a sub-domain of a verified domain of the
+        customer, or it is in a DNS zone of the customer that the public DNS delegates to the
+        panel. Add a wildcard DNS record `*.<domain>` that points to the server of the website.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+                domain: { type: [string, 'null'], example: preview.example.com, description: Required when enabled is true. }
+                limit: { type: integer, minimum: 1, maximum: 10, default: 3, description: The largest number of previews at the same time. }
+                copyEnvironment: { type: boolean, default: false, description: True gives the environment variables and the build secrets of the website to each preview. }
+      responses:
+        '200':
+          description: The settings and the previews.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Previews' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+    post:
+      tags: [Previews]
+      summary: Make the preview of a pull request, or deploy it again
+      description: >-
+        For a Git host whose pull request events the panel does not read, or for a CI pipeline.
+        The webhook does the same for each pull request event. The panel makes no preview when
+        the website has `limit` previews, or when the plan has no space for one more website
+        (422).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [number, branch]
+              properties:
+                number: { type: integer, minimum: 1, maximum: 999999, description: The number of the pull request. }
+                branch: { type: string, example: feature/export, description: The head branch of the pull request. It must be in the repository of the website. }
+                title: { type: [string, 'null'], maxLength: 200 }
+                url: { type: [string, 'null'], maxLength: 500, description: The page of the pull request on the Git host. }
+      responses:
+        '202':
+          description: The panel makes the preview or deploys it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [started, queued, waiting, removing] }
+                  message: { type: string }
+                  preview: { $ref: '#/components/schemas/Preview' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/previews/{number}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: number, in: path, required: true, schema: { type: integer } }
+    delete:
+      tags: [Previews]
+      summary: Remove the preview of a pull request
+      description: The panel removes the preview website. A preview that the panel could not make has no job.
+      responses:
+        '202':
+          description: The removal started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/hooks/deploy/{token}:
     parameters:
       - { name: token, in: path, required: true, schema: { type: string } }
@@ -1409,13 +2011,31 @@ paths:
       tags: [Deploys]
       summary: Start a deploy from a webhook
       description: >-
-        The address is `webhookUrl` of the deploy settings. The token in the address is the only
-        credential, so keep the address secret. The route operates only when the trigger of the
-        website is `webhook` (404). A Git host sends the branch of a push in `ref`, for example
-        `refs/heads/main`: a push to a different branch starts no deploy (`ignored`). A request
-        while a deploy is in progress starts no second deploy (`busy`). At most 30 requests in
-        one minute from one address.
+        The address is `webhookUrl` of the deploy settings. Each request must have a signature
+        from `webhookSecret` (401): `X-Hub-Signature-256: sha256=<HMAC-SHA256 of the body>` from
+        GitHub, Gitea, Forgejo or a script, `X-Gitea-Signature`, `X-Forgejo-Signature` or
+        `X-Gogs-Signature` with the HMAC-SHA256 as hexadecimal, `X-Hub-Signature:
+        sha256=<HMAC-SHA256>` from Bitbucket, or `X-Gitlab-Token: <secret>` from GitLab.
+
+
+        A push to the branch of the website starts a deploy when the trigger is `webhook`. The
+        panel reads the push events of GitHub, GitLab, Gitea, Forgejo, Gogs and Bitbucket, and
+        `ref` of a different request, for example `refs/heads/main` or `main`. A push to a
+        different branch, a tag, a removed branch and a different event start no deploy
+        (`ignored`). A push while a deploy is in progress starts a deploy when that deploy is
+        complete (`queued`). At most 30 requests in one minute from one address.
+
+
+        A pull request event of GitHub, GitLab, Gitea, Forgejo, Gogs or Bitbucket Cloud (the
+        event header of the Git host) makes, deploys or removes the preview of the pull request,
+        when the website has previews. It needs the same signature. It never deploys the branch
+        of the website, and it does not need the trigger `webhook`. The panel ignores a pull
+        request from a different repository, for example a fork, and a pull request to a
+        different branch.
       security: []
+      parameters:
+        - { name: X-Hub-Signature-256, in: header, required: false, schema: { type: string, example: 'sha256=5d1f...' } }
+        - { name: X-Gitlab-Token, in: header, required: false, schema: { type: string } }
       requestBody:
         required: false
         content:
@@ -1424,17 +2044,19 @@ paths:
               type: object
               properties:
                 ref: { type: string, example: refs/heads/main }
+                after: { type: string, description: The ID of the new commit. }
       responses:
         '200':
-          description: The push was to a different branch.
+          description: 'A test request of the Git host (`ok`), a request that starts no deploy (`ignored`), a pull request event that changes no preview, or a preview that the panel could not make (`failed`).'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HookAnswer' }
         '202':
-          description: 'The deploy started, or a deploy is in progress.'
+          description: 'The deploy started, or it starts when the deploy in progress is complete, or the panel makes, deploys or removes a preview.'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HookAnswer' }
+        '401': { description: The request has no correct signature. }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'The panel could not make the website, or its customer is suspended.' }
 
@@ -5798,6 +6420,65 @@ components:
         - type: object
           properties:
             temporaryPassword: { type: string, description: The panel shows this value one time only. }
+    Passkey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        domain: { type: string, description: The panel domain of the passkey. The browser uses a passkey only on its own domain. }
+        synced: { type: boolean, description: The passkey is in a password manager or a cloud account, so it is on more than one device. }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+    UserIdentity:
+      type: object
+      properties:
+        providerId: { type: string }
+        name: { type: string }
+        protocol: { type: string, enum: [oidc, saml] }
+        connected: { type: boolean }
+        email: { type: [string, 'null'], description: The email that the provider gave at the last sign-in. }
+        connectedAt: { type: [string, 'null'], format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+    IdentityProvider:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, description: 'The text of the button "Sign in with <name>".' }
+        protocol: { type: string, enum: [oidc, saml] }
+        enabled: { type: boolean }
+        issuer: { type: [string, 'null'], description: OpenID Connect only. }
+        clientId: { type: [string, 'null'], description: OpenID Connect only. }
+        hasClientSecret: { type: boolean, description: The panel does not show the secret. }
+        entityId: { type: [string, 'null'], description: SAML only. The entity ID of the provider. }
+        ssoUrl: { type: [string, 'null'], description: SAML only. The address of the provider for the sign-in (HTTP-Redirect binding). }
+        certificate: { type: [string, 'null'], description: SAML only. The certificate of the provider, in PEM format. }
+        certificateExpiresAt: { type: [string, 'null'], format: date-time }
+        linkByEmail: { type: boolean, description: 'The first sign-in connects the user with the same verified email, when the domain of the email is in emailDomains.' }
+        emailDomains: { type: array, items: { type: string } }
+        users: { type: integer, description: The number of connected accounts. }
+        createdAt: { type: string, format: date-time }
+    IdentityProviderInput:
+      type: object
+      required: [name, password]
+      properties:
+        name: { type: string, maxLength: 100 }
+        protocol: { type: string, enum: [oidc, saml], description: Only to add a provider. }
+        enabled: { type: boolean }
+        issuer: { type: string, format: uri, description: 'OpenID Connect: necessary. HTTPS.' }
+        clientId: { type: string, description: 'OpenID Connect: necessary.' }
+        clientSecret: { type: string, description: 'OpenID Connect: necessary to add a provider.' }
+        entityId: { type: string, description: 'SAML: necessary.' }
+        ssoUrl: { type: string, format: uri, description: 'SAML: necessary. HTTPS.' }
+        certificate: { type: string, description: 'SAML: necessary. PEM format, or the base64 text of the metadata.' }
+        linkByEmail: { type: boolean }
+        emailDomains: { type: array, items: { type: string }, description: Necessary when linkByEmail is true. }
+        password: { type: string }
+        totp: { type: string, pattern: '^[0-9]{6}$' }
+    PasskeyCeremony:
+      type: object
+      properties:
+        ceremony: { type: string, description: Give this ID with the answer of the browser. }
+        publicKey: { type: object, additionalProperties: true, description: The options for the browser, in the JSON form of WebAuthn (base64url for the binary values). }
     Token:
       type: object
       properties:
@@ -5944,6 +6625,15 @@ components:
           items: { $ref: '#/components/schemas/Domain' }
         sftp: { $ref: '#/components/schemas/Sftp' }
         stagingOf: { type: [string, 'null'] }
+        previewOf:
+          type: [object, 'null']
+          description: The pull request of a preview website. The panel removes the preview when the pull request closes.
+          properties:
+            websiteId: { type: string, description: The website of the Git source. }
+            number: { type: integer }
+            branch: { type: string }
+            title: { type: string }
+            url: { type: [string, 'null'] }
         diskLimitApplied:
           type: [boolean, 'null']
           description: >-
@@ -6011,10 +6701,16 @@ components:
             repository: { type: string }
             branch: { type: string }
             webDirectory: { type: string }
-            trigger: { type: string, enum: [manual, webhook] }
+            trigger: { type: string, enum: [manual, webhook, schedule] }
+            checkMinutes: { type: integer, description: The interval of the branch check for the trigger "schedule". }
+            checkedAt: { type: [string, 'null'], format: date-time, description: The time of the last branch check. }
+            checkError: { type: [string, 'null'], description: The error of the last branch check. }
             buildCommands: { type: array, items: { type: string } }
+            migrationCommand: { type: [string, 'null'], description: The command that changes the database. }
             deployKey: { type: string, description: The public SSH key of the website. Add it to a private repository as a read-only deploy key. }
-            webhookUrl: { type: string, description: A POST request to this address starts a deploy when the trigger is "webhook". }
+            webhookUrl: { type: [string, 'null'], description: 'A signed POST request to this address starts a deploy when the trigger is "webhook". Only a token with the scope to change websites gets it.' }
+            webhookSecret: { type: [string, 'null'], description: The secret of the webhook signatures. Only a token with the scope to change websites gets it. }
+            deployQueued: { type: boolean, description: True when a push came during a deploy. The panel deploys it when the deploy is complete. }
             secrets: { type: array, items: { type: string }, description: The names of the secrets. No route gives a value. }
         releases: { type: array, items: { $ref: '#/components/schemas/Release' } }
     Release:
@@ -6026,17 +6722,48 @@ components:
         message: { type: string, description: The subject of the commit. }
         state: { type: string, enum: [building, ready, failed, removed], description: '"ready": the release is on the server. "removed": the agent removed its directory.' }
         live: { type: boolean, description: True for the release that the website serves. }
-        trigger: { type: string, enum: [manual, webhook] }
+        trigger: { type: string, enum: [manual, webhook, schedule] }
+        migration: { type: boolean, description: True when the deploy ran the migration command. }
+        healthError: { type: [string, 'null'], description: 'The error of the health check after the switch, for a deploy with a migration. The website kept the release.' }
         durationSeconds: { type: integer }
-        error: { type: [string, 'null'], description: 'The error of a deploy that failed, with the end of the output of Git or of the build command.' }
+        error: { type: [string, 'null'], description: 'The error of a deploy that failed, with the end of the output of Git, of a build command or of the migration command.' }
         jobId: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
     HookAnswer:
       type: object
       properties:
-        status: { type: string, enum: [started, busy, ignored] }
+        status: { type: string, enum: [ok, started, queued, ignored, waiting, removing, updated, failed, refused] }
         message: { type: string }
         releaseId: { type: string }
+        previewWebsiteId: { type: string, description: The preview website of a pull request event. }
+    Previews:
+      type: object
+      properties:
+        settings:
+          type: [object, 'null']
+          description: Null when the website has no Git source, or is a preview itself.
+          properties:
+            enabled: { type: boolean }
+            domain: { type: [string, 'null'], example: preview.example.com }
+            limit: { type: integer }
+            copyEnvironment: { type: boolean }
+        suggestedDomain: { type: [string, 'null'], description: A domain for the previews. Null for a website with no domain. }
+        maxLimit: { type: integer, example: 10 }
+        previews: { type: array, items: { $ref: '#/components/schemas/Preview' } }
+    Preview:
+      type: object
+      properties:
+        number: { type: integer, description: The number of the pull request. }
+        title: { type: string }
+        branch: { type: string, description: The head branch of the pull request. }
+        url: { type: [string, 'null'], description: The page of the pull request on the Git host. }
+        websiteId: { type: [string, 'null'], description: The preview website. Null when the panel could not make it. }
+        name: { type: [string, 'null'], example: pr-12.preview.example.com }
+        state: { type: string, enum: [creating, deploying, live, failed, removing] }
+        release: { oneOf: [{ $ref: '#/components/schemas/Release' }, { type: 'null' }], description: The last deploy of the preview. }
+        error: { type: [string, 'null'], description: Why the panel could not make the preview, or could not start its deploy. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
@@ -7044,7 +7771,7 @@ components:
             id: { type: string }
     NotificationEvent:
       type: string
-      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline]
+      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline, deploy.attention, password.reset]
     NotificationPreference:
       type: object
       properties:

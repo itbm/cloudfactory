@@ -104,7 +104,7 @@ enum AgentAction: string
             self::RunCommand => ['Run the command'],
             // The steps after "Build" are the steps of SetRuntime: the agent starts the website
             // from the new release with no stop.
-            self::Deploy => ['Get the code', 'Build', ...self::SetRuntime->steps(), 'Remove old releases'],
+            self::Deploy => ['Get the code', 'Build', 'Migrate the database', ...self::SetRuntime->steps(), 'Remove old releases'],
             self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
             // The agent installs the dependencies in a build container, then starts the website
             // again with no stop.

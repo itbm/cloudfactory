@@ -20,6 +20,7 @@ use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\Domain;
 use App\Models\GitSource;
+use App\Models\IdentityProvider;
 use App\Models\Image;
 use App\Models\Import;
 use App\Models\MailAlias;
@@ -36,6 +37,7 @@ use App\Models\Plan;
 use App\Models\Plugin;
 use App\Models\PluginDelivery;
 use App\Models\PluginKey;
+use App\Models\Preview;
 use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Server;
@@ -57,17 +59,26 @@ use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
 use App\Services\Packs\PackManifest;
 use App\Services\PanelCertificate;
+use App\Services\Passkeys;
 use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Signatures;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
+use CBOR\ByteStringObject;
+use CBOR\MapObject;
+use CBOR\NegativeIntegerObject;
+use CBOR\UnsignedIntegerObject;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use ParagonIE\ConstantTime\Base64UrlSafe;
 use RuntimeException;
+use Symfony\Component\Uid\Uuid;
+use Webauthn\CredentialRecord;
+use Webauthn\TrustPath\EmptyTrustPath;
 
 /**
  * The sample data of the demonstration mode (config/demo.php). The web panel uses this data
@@ -120,6 +131,8 @@ class DemoSeeder extends Seeder
         $this->servers();
         $this->websites();
         $this->brand();
+        $this->passkeys();
+        $this->singleSignOn();
         $this->dns();
         $this->certificates();
         $this->databases();
@@ -363,6 +376,63 @@ class DemoSeeder extends Seeder
         $u('Bea Baker', 'bea@cornerbakery.example.org', Role::Owner, $this->customers['bakery'])->forceFill(['must_change_password' => true])->save();
         $u('Hari Books', 'hari@harbourbooks.example.net', Role::Owner, $this->customers['books']);
         $u('Lee Lawson', 'lee@lawson.example.org', Role::Owner, $this->customers['lawson']);
+    }
+
+    /**
+     * FR-103: passkeys of some users. Each passkey has a new ES256 key, but the private key is
+     * not kept: nobody can sign in with these passkeys.
+     */
+    private function passkeys(): void
+    {
+        $passkeys = app(Passkeys::class);
+        $panel = config('cloudfactory.panel_domain');
+        $add = function (string $email, string $name, string $rpId, bool $synced, ?Carbon $used, int $daysAgo) use ($passkeys) {
+            $user = User::where('email', $email)->firstOrFail();
+            $handle = $user->passkeys()->value('user_handle') ?? Base64UrlSafe::encodeUnpadded(random_bytes(32));
+            $key = openssl_pkey_get_details(openssl_pkey_new(['curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC]))['ec'];
+            $cose = MapObject::create()
+                ->add(UnsignedIntegerObject::create(1), UnsignedIntegerObject::create(2))
+                ->add(UnsignedIntegerObject::create(3), NegativeIntegerObject::create(-7))
+                ->add(NegativeIntegerObject::create(-1), UnsignedIntegerObject::create(1))
+                ->add(NegativeIntegerObject::create(-2), ByteStringObject::create(str_pad($key['x'], 32, "\0", STR_PAD_LEFT)))
+                ->add(NegativeIntegerObject::create(-3), ByteStringObject::create(str_pad($key['y'], 32, "\0", STR_PAD_LEFT)));
+            $record = CredentialRecord::create(random_bytes(32), 'public-key', ['internal', 'hybrid'], 'none', EmptyTrustPath::create(), Uuid::fromString('00000000-0000-0000-0000-000000000000'),
+                (string) $cose, Base64UrlSafe::decodeNoPadding($handle), $used ? 4 : 0, backupEligible: $synced, backupStatus: $synced, uvInitialized: true);
+            $passkey = $passkeys->keep($user, $record, $name, $rpId, $handle);
+            $passkey->forceFill(['created_at' => now()->subDays($daysAgo), 'last_used_at' => $used])->save();
+        };
+        $add('owner@example.com', 'iPhone', $panel, true, now()->subHours(3), 40);
+        $add('owner@example.com', 'YubiKey 5C', $panel, false, null, 12);
+        $add('admin@example.com', 'MacBook Pro', $panel, true, now()->subMinutes(25), 90);
+        // A passkey works only on its own domain: this one is for the panel domain of the brand.
+        $add('reseller@example.com', 'Pixel 9', Branding::panelDomains()[0] ?? $panel, true, now()->subDays(2), 30);
+    }
+
+    /**
+     * Single sign-on: an OpenID Connect provider that connects the users of example.com by
+     * email, and a SAML provider that is off. The demonstration panel cannot reach them.
+     */
+    private function singleSignOn(): void
+    {
+        $google = IdentityProvider::create([
+            'name' => 'Google Workspace', 'protocol' => IdentityProvider::OIDC, 'issuer' => 'https://accounts.google.com',
+            'client_id' => '123456789012-demo.apps.googleusercontent.com', 'client_secret' => 'demo-secret',
+            'link_by_email' => true, 'email_domains' => ['example.com'],
+        ]);
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        openssl_x509_export(openssl_csr_sign(openssl_csr_new(['commonName' => 'Microsoft Azure Federated SSO Certificate'], $key), null, $key, 1095), $certificate);
+        IdentityProvider::create([
+            'name' => 'Microsoft Entra ID', 'protocol' => IdentityProvider::SAML, 'enabled' => false,
+            'entity_id' => 'https://sts.windows.net/0b5c1e5e-demo-4e0a-9d8e-000000000000/',
+            'sso_url' => 'https://login.microsoftonline.com/0b5c1e5e-demo-4e0a-9d8e-000000000000/saml2',
+            'certificate' => $certificate, 'link_by_email' => false, 'email_domains' => [],
+        ]);
+        // The owner signed in with the provider, and the administrator connected the account.
+        foreach (['owner@example.com' => now()->subDays(2), 'admin@example.com' => null] as $email => $used) {
+            User::where('email', $email)->firstOrFail()->identities()->create([
+                'identity_provider_id' => $google->id, 'subject' => '1'.substr(hash('sha256', $email), 0, 20), 'email' => $email, 'last_used_at' => $used,
+            ]);
+        }
     }
 
     private function images(): void
@@ -984,25 +1054,27 @@ class DemoSeeder extends Seeder
 
         $api = $this->websites['api.acme.example.com'];
         $key = SshKey::generate('cloudfactory-'.$api->unix_user);
-        $api->gitSource()->create([
+        $api->gitSource()->create(GitSource::newWebhook() + [
             'repository' => 'git@github.com:acme-example/api.git', 'branch' => 'main', 'web_directory' => 'public', 'trigger' => GitSource::WEBHOOK,
-            'build_commands' => ['composer install --no-dev --optimize-autoloader', 'ln -s /app/shared/.env .env', 'php artisan migrate --force'],
+            'build_commands' => ['composer install --no-dev --optimize-autoloader', 'ln -s /app/shared/.env .env'],
+            'migration_command' => 'php artisan migrate --force',
             'public_key' => $key['public'], 'private_key' => $key['private'],
-            'webhook_token' => $token = Str::random(48), 'webhook_token_hash' => hash('sha256', $token),
             'secrets' => ['COMPOSER_AUTH' => '{"github-oauth":{"github.com":"demo"}}', 'SENTRY_AUTH_TOKEN' => 'demo'],
         ]);
-        // hours ago, commit subject, state, live, seconds, trigger, error
+        // hours ago, commit subject, state, live, seconds, trigger, error, migration. A deploy
+        // takes about 6 minutes: the agent checks the website for 5 minutes after the switch.
         $releases = [
-            [400, 'Add the invoice endpoints', Release::REMOVED, false, 71, GitSource::MANUAL, null],
-            [170, 'Cache the product list', Release::READY, false, 64, GitSource::WEBHOOK, null],
-            [72, 'Use the new stock service', Release::READY, false, 69, GitSource::WEBHOOK, null],
-            [26, 'Update the dependencies', Release::FAILED, false, 22, GitSource::WEBHOOK, "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.\n\n  Problem 1\n    - laravel/framework is locked to version v13.2.0 and an update of this package was not requested."],
-            [25, 'Update the dependencies and the lock file', Release::READY, true, 75, GitSource::WEBHOOK, null],
+            [400, 'Add the invoice endpoints', Release::REMOVED, false, 371, GitSource::MANUAL, null, true],
+            [170, 'Cache the product list', Release::READY, false, 364, GitSource::WEBHOOK, null, false],
+            [72, 'Use the new stock service', Release::READY, false, 369, GitSource::WEBHOOK, null, true],
+            [50, 'Show the stock of each warehouse', Release::FAILED, false, 352, GitSource::WEBHOOK, 'the health check failed after the switch: 9 of 30 checks failed, last error: status 500', false],
+            [26, 'Update the dependencies', Release::FAILED, false, 22, GitSource::WEBHOOK, "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.\n\n  Problem 1\n    - laravel/framework is locked to version v13.2.0 and an update of this package was not requested.", false],
+            [25, 'Update the dependencies and the lock file', Release::READY, true, 375, GitSource::WEBHOOK, null, true],
         ];
-        foreach ($releases as [$hours, $message, $state, $live, $seconds, $trigger, $error]) {
+        foreach ($releases as [$hours, $message, $state, $live, $seconds, $trigger, $error, $migration]) {
             $release = new Release([
                 'website_id' => $api->id, 'ref' => 'main', 'commit' => sha1($message), 'message' => $message, 'state' => $state, 'live' => $live,
-                'duration_seconds' => $seconds, 'trigger' => $trigger, 'error' => $error,
+                'duration_seconds' => $seconds, 'trigger' => $trigger, 'error' => $error, 'migration' => $migration,
             ]);
             $release->id = $release->newUniqueId();
             $release->document_root = 'releases/'.$release->id.'/public';
@@ -1012,6 +1084,54 @@ class DemoSeeder extends Seeder
                 $api->update(['document_root' => $release->document_root]);
             }
         }
+        $this->previews($api);
+    }
+
+    /**
+     * The previews of the pull requests of the API. The settings permit one preview at a time,
+     * so the second pull request has no preview: the page shows the cause.
+     */
+    private function previews(Website $api): void
+    {
+        $source = $api->gitSource;
+        $source->update(['previews' => true, 'preview_domain' => 'preview.acme.example.com', 'preview_limit' => 1]);
+        $name = 'pr-42.preview.acme.example.com';
+        $site = new Website([
+            ...$api->only(['customer_id', 'server_id', 'plan_id', 'image_id', 'extensions', 'php_ini', 'limits', 'worker_mode']),
+            'name' => $name, 'application' => 'Preview of api.acme.example.com, pull request #42', 'unix_user' => self::unixUser($name), 'status' => 'running',
+            'usage' => ['cpuPercent' => 2, 'memoryBytes' => 180 * self::MB, 'diskBytes' => 310 * self::MB, 'processes' => 6],
+        ]);
+        $site->created_at = $site->updated_at = now()->subHours(5);
+        $site->save();
+        $site->domains()->create(['name' => $name, 'kind' => DomainKind::Primary, 'verification_token' => 'cf-demo', 'verified_at' => now(), 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(89)]);
+        $own = $source->replicate(['webhook_token', 'webhook_token_hash']);
+        $own->fill([
+            'website_id' => $site->id, 'branch' => 'feature/invoice-csv', 'trigger' => GitSource::MANUAL, 'secrets' => [], 'previews' => false, 'preview_domain' => null,
+            'webhook_token' => $token = Str::random(48), 'webhook_token_hash' => hash('sha256', $token),
+        ])->save();
+        // hours ago, commit subject, state, live, seconds
+        foreach ([[5, 'Add the export of invoices', Release::READY, false, 62], [2, 'Export the invoices as CSV', Release::READY, true, 58]] as [$hours, $message, $state, $live, $seconds]) {
+            $release = new Release(['website_id' => $site->id, 'ref' => 'feature/invoice-csv', 'commit' => sha1($message), 'message' => $message, 'state' => $state, 'live' => $live, 'duration_seconds' => $seconds, 'trigger' => GitSource::WEBHOOK]);
+            $release->id = $release->newUniqueId();
+            $release->document_root = 'releases/'.$release->id.'/public';
+            $release->created_at = $release->updated_at = now()->subHours($hours);
+            $release->save();
+            if ($live) {
+                $site->update(['document_root' => $release->document_root]);
+            }
+        }
+        $preview = fn (int $number, array $values, int $hours) => tap(new Preview(['website_id' => $api->id, 'number' => $number, ...$values]), function (Preview $p) use ($hours) {
+            $p->created_at = now()->subHours($hours);
+            $p->updated_at = now()->subHours(min($hours, 2));
+            $p->save();
+        });
+        $preview(42, ['preview_website_id' => $site->id, 'branch' => 'feature/invoice-csv', 'title' => 'Add the export of invoices as CSV', 'url' => 'https://github.com/acme-example/api/pull/42'], 5);
+        $preview(47, [
+            'branch' => 'dependabot/composer/laravel/framework-13.3.0', 'title' => 'Bump laravel/framework from 13.2.0 to 13.3.0', 'url' => 'https://github.com/acme-example/api/pull/47',
+            'error' => 'The limit of the previews of this website is 1. Close a pull request, or change the limit.',
+        ], 1);
+        // The preview is a member of the network of Acme, so the mesh state changed again.
+        $this->settleMesh();
     }
 
     /**

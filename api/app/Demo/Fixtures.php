@@ -22,12 +22,14 @@ class Fixtures
 
     /** The requests that the web panel sends when it loads (web/src/api/live.ts). */
     public const PATHS = [
-        '/me', '/websites?perPage=100&page=1', '/jobs?perPage=50', '/customers', '/plans', '/tokens', '/backup-policy', '/servers', '/images',
+        '/me', '/me/passkeys', '/me/identities', '/websites?perPage=100&page=1', '/jobs?perPage=50', '/customers', '/plans', '/tokens', '/backup-policy', '/servers', '/images',
         '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/dns-zones', '/dns-accounts', '/mesh', '/networks', '/usage-alerts',
         '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
         '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
         '/plugin-pages', '/plugin-actions', '/plugins', '/trusted-keys', '/plugin-settings', '/packs', '/pack-settings', '/imports',
         '/certificates',
+        // Single sign-on.
+        '/identity-providers',
     ];
 
     /**
@@ -42,7 +44,7 @@ class Fixtures
         // It reads the cron jobs, the command log, the deploys, the files and the logs of a
         // website when the user opens that part of the website.
         foreach (self::websites($user) as $id) {
-            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/commands", "/websites/{$id}/deploy",
+            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/commands", "/websites/{$id}/deploy", "/websites/{$id}/previews",
                 "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200");
         }
         // The page of a DNS zone reads the zone with its records.
