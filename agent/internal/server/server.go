@@ -203,6 +203,10 @@ func (s *Service) SetPacks(_ context.Context, r *connect.Request[agentv1.SetPack
 	return s.submit(s.Deps.SetPacks(r.Msg))
 }
 
+func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agentv1.SetWebsiteSecurityRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetWebsiteSecurity(r.Msg))
+}
+
 func (s *Service) SetCertificates(_ context.Context, r *connect.Request[agentv1.SetCertificatesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetCertificates(r.Msg))
 }
@@ -233,6 +237,10 @@ func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetC
 
 func (s *Service) RunCronJob(_ context.Context, r *connect.Request[agentv1.RunCronJobRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.RunCronJob(r.Msg))
+}
+
+func (s *Service) RunCommand(_ context.Context, r *connect.Request[agentv1.RunCommandRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunCommand(r.Msg))
 }
 
 func (s *Service) Deploy(_ context.Context, r *connect.Request[agentv1.DeployRequest]) (*connect.Response[agentv1.JobAccepted], error) {
@@ -344,6 +352,14 @@ func (s *Service) GetLogs(ctx context.Context, r *connect.Request[agentv1.GetLog
 		return nil, fileError(err)
 	}
 	return connect.NewResponse(&agentv1.Logs{Lines: lines}), nil
+}
+
+func (s *Service) GetFirewallEvents(ctx context.Context, r *connect.Request[agentv1.GetFirewallEventsRequest]) (*connect.Response[agentv1.FirewallEvents], error) {
+	events, err := s.Deps.FirewallEvents(ctx, r.Msg.GetWebsiteId(), int(r.Msg.GetLimit()))
+	if err != nil {
+		return nil, fileError(err)
+	}
+	return connect.NewResponse(&agentv1.FirewallEvents{Events: events}), nil
 }
 
 // CheckBranches gives the last commit of the branch of each Git source (FR-1004).
