@@ -249,7 +249,7 @@ class RunDemoJob implements ShouldQueue
         $website = $job->website_id ? Website::find($job->website_id) : null;
 
         return match (true) {
-            $website && $job->action === AgentAction::MakeArchive => DemoSite::archive($website, array_values((array) ($p['paths'] ?? [])), (string) ($p['path'] ?? '')),
+            $website && $job->action === AgentAction::MakeArchive => DemoSite::makeArchive($website, array_values((array) ($p['paths'] ?? [])), (string) ($p['path'] ?? '')),
             $website && $job->action === AgentAction::ExtractArchive => DemoSite::extract($website, (string) ($p['path'] ?? ''), (string) ($p['to'] ?? '/'), (bool) ($p['overwrite'] ?? false)),
             default => [],
         };
