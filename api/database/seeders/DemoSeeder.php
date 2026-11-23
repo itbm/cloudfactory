@@ -745,7 +745,7 @@ class DemoSeeder extends Seeder
             ['harbourbooks.example.net', 'books', 38, null, false, 'web-2'],
         ];
         foreach ($rows as [$name, $customer, $days, $seen, $dnssec, $failed]) {
-            $key = $dnssec ? Dnssec::generate() : null;
+            $key = $dnssec ? self::dnssecKey('acme.example.com 1') : null;
             $serial = now()->subHours(strlen($name))->timestamp;
             $zone = new DnsZone([
                 'customer_id' => $this->customers[$customer]->id, 'name' => $name, 'serial' => $serial, 'status' => DnsZone::ACTIVE,
@@ -763,9 +763,7 @@ class DemoSeeder extends Seeder
             // Acme Ltd changes the DNSSEC key of its main zone. The DNS servers publish the CDS
             // record of the new key, and the panel waits for the new DS record at the registry.
             if ($name === 'acme.example.com') {
-                do {
-                    $next = Dnssec::generate();
-                } while ($next['keyTag'] === $key['keyTag']);
+                $next = self::dnssecKey('acme.example.com 2');
                 $zone->update(['dnssec_rollover' => Rollover::SUBMIT, 'dnssec_next_key' => $next['key'], 'dnssec_next_public_key' => $next['publicKey'],
                     'dnssec_next_key_tag' => $next['keyTag'], 'dnssec_rollover_at' => now()->subHours(5), 'dnssec_rollover_until' => null]);
             }
@@ -848,6 +846,22 @@ class DemoSeeder extends Seeder
                     ->update(['certificate_state' => 'valid', 'certificate_expires_at' => Certificate::find($c['id'])->expires_at]);
             }
         }
+    }
+
+    /**
+     * A DNSSEC key of the demonstration, made from a fixed text, so that the web fixtures do
+     * not change at each run. Never use such a key for a real zone: anybody can make it again.
+     *
+     * @return array{key: string, publicKey: string, keyTag: int}
+     */
+    private static function dnssecKey(string $seed): array
+    {
+        $key = openssl_pkey_new(['ec' => ['curve_name' => 'prime256v1', 'd' => hash('sha256', 'cloudfactory demo '.$seed, true)]]);
+        if ($key === false || ! openssl_pkey_export($key, $pem)) {
+            throw new RuntimeException('OpenSSL did not make the DNSSEC key of the demonstration.');
+        }
+
+        return Dnssec::fromPem($pem);
     }
 
     private function databases(): void

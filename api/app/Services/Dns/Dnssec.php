@@ -38,7 +38,23 @@ class Dnssec
         if (! str_starts_with($pem, '-----BEGIN PRIVATE KEY-----')) {
             throw new RuntimeException('OpenSSL did not give the DNSSEC key in the PKCS #8 format.');
         }
-        $details = openssl_pkey_get_details($key);
+
+        return self::fromPem($pem);
+    }
+
+    /**
+     * The public key and the key tag of an ECDSA P-256 private key in the PKCS #8 format, in
+     * the form that generate() gives.
+     *
+     * @return array{key: string, publicKey: string, keyTag: int}
+     */
+    public static function fromPem(string $pem): array
+    {
+        $key = openssl_pkey_get_private($pem);
+        $details = $key === false ? false : openssl_pkey_get_details($key);
+        if ($details === false || ($details['ec']['curve_name'] ?? null) !== 'prime256v1') {
+            throw new RuntimeException('The DNSSEC key is not an ECDSA P-256 key.');
+        }
         $public = str_pad($details['ec']['x'], 32, "\0", STR_PAD_LEFT).str_pad($details['ec']['y'], 32, "\0", STR_PAD_LEFT);
 
         return ['key' => $pem, 'publicKey' => base64_encode($public), 'keyTag' => self::keyTag($public)];
