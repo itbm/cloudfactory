@@ -240,6 +240,10 @@ func (s *Service) SetMailServer(_ context.Context, r *connect.Request[agentv1.Se
 	return s.submit(s.Deps.SetMailServer(r.Msg))
 }
 
+func (s *Service) SetMailSettings(_ context.Context, r *connect.Request[agentv1.SetMailSettingsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailSettings(r.Msg))
+}
+
 func (s *Service) SetMailbox(_ context.Context, r *connect.Request[agentv1.SetMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetMailbox(r.Msg))
 }

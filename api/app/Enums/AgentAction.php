@@ -61,6 +61,7 @@ enum AgentAction: string
     case SetMailDomain = 'SetMailDomain';
     case SetMailNode = 'SetMailNode';
     case SetMailServer = 'SetMailServer';
+    case SetMailSettings = 'SetMailSettings';
     case SetMailbox = 'SetMailbox';
     case SetMesh = 'SetMesh';
     case SetPacks = 'SetPacks';
@@ -132,6 +133,7 @@ enum AgentAction: string
             self::SetMailDomain => ['Add domain', 'Make DKIM keys'],
             self::SetMailNode => ['Make private network', 'Start cluster store', 'Start database'],
             self::SetMailServer => ['Start mail server', 'Start webmail', 'Open mail ports', 'Get TLS certificate'],
+            self::SetMailSettings => ['Set spam filter', 'Set outbound relay'],
             self::SetMailbox => ['Set mailbox'],
             self::SetMesh => ['Set tunnels and firewall', 'Check tunnels'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],

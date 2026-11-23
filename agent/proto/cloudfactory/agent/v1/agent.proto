@@ -93,6 +93,7 @@ service AgentService {
   rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
   rpc SetMailNode(SetMailNodeRequest) returns (JobAccepted);
   rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
+  rpc SetMailSettings(SetMailSettingsRequest) returns (JobAccepted);
   rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
   rpc SetMesh(SetMeshRequest) returns (JobAccepted);
   // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
@@ -390,6 +391,34 @@ message SetMailAliasRequest {
   string domain = 2;
   string local_part = 3;
   repeated string destinations = 4;
+}
+
+// SetMailSettings sets the spam filter and the outbound relay of the mail server.
+message SetMailSettingsRequest {
+  string job_id = 1;
+  // True: the mail server examines each new message and gives it a spam score.
+  bool spam_filter = 2;
+  // A message with this score or more goes to the junk folder of the mailbox. From 1 to 50.
+  double spam_score = 3;
+  // The mail server refuses a message with this score or more. 0: it refuses no message for
+  // its score. Not 0: more than spam_score, and 100 or less.
+  double reject_score = 4;
+  // Not set: the mail server sends each message to the mail server of the recipient (port 25).
+  MailRelay relay = 5;
+}
+
+// A mail server that sends the outgoing mail for this mail server, for example the SMTP
+// service of a provider. Mail for the mail domains of this server does not go through it.
+message MailRelay {
+  // The host name of the relay. It must have a public address.
+  string host = 1;
+  // 25, 465, 587 or 2525. 465 uses TLS from the start. The other ports use STARTTLS.
+  int32 port = 2;
+  // Empty: the relay accepts the mail with no sign-in.
+  string username = 3;
+  // The panel adds the password each time that it sends the job: the job record does not
+  // have it.
+  string password = 4;
 }
 
 // Stops a database server and removes its data. The panel sends it only for a database

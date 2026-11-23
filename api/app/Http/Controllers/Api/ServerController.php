@@ -17,6 +17,7 @@ use App\Services\AgentClient;
 use App\Services\Audit;
 use App\Services\Dns\Zones;
 use App\Services\JobDispatcher;
+use App\Services\MailSettings;
 use App\Services\Mesh;
 use App\Services\PanelCertificate;
 use App\Validation\Input;
@@ -122,6 +123,67 @@ class ServerController extends Controller
         $server->update(['mail_hostname' => $data['hostname'], 'mail_status' => 'starting']);
         $job = $this->jobs->dispatch($server, AgentAction::SetMailServer, ['hostname' => $data['hostname'], 'previous' => $previous], "Set up email on {$server->name}");
         Audit::record($request, 'Set up email', "{$server->name} {$data['hostname']}");
+
+        return response()->json(['server' => self::present($server), 'job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * Sets the spam filter and the outbound relay of the mail server of a server. A message
+     * with the spam score or more goes to the junk folder of the mailbox. With a reject score,
+     * the mail server refuses a message with that score or more. With a relay, the mail server
+     * sends the outgoing mail through it, for example when the provider of the server blocks
+     * port 25. Leave out "relay.password" to keep the password.
+     */
+    public function setMailSettings(Request $request, string $id): JsonResponse
+    {
+        $server = Server::withCount(['websites', 'databaseServers'])->findOrFail($id);
+        $data = $request->validate([
+            'spamFilter' => ['required', 'boolean'],
+            'spamScore' => ['required', 'numeric', 'between:'.MailSettings::MIN_SPAM_SCORE.','.MailSettings::MAX_SPAM_SCORE],
+            'rejectScore' => ['nullable', 'numeric', 'gt:spamScore', 'max:'.MailSettings::MAX_REJECT_SCORE],
+            'relay' => ['nullable', 'array'],
+            'relay.host' => ['required_with:relay', 'string', Input::rule('domain')],
+            'relay.port' => ['required_with:relay', 'integer', Rule::in(MailSettings::RELAY_PORTS)],
+            'relay.username' => ['nullable', 'string', 'max:500', 'regex:/^[^\x00-\x1f\x7f]*$/'],
+            'relay.password' => ['sometimes', 'nullable', 'string', 'max:500', 'regex:/^[^\x00-\x1f\x7f]*$/'],
+        ], [
+            'rejectScore.gt' => 'The reject score must be more than the spam score.',
+            'relay.port.in' => 'Use one of the ports 25, 465, 587 or 2525.',
+            'relay.username.regex' => 'The user name cannot have a line break or a control character.',
+            'relay.password.regex' => 'The password cannot have a line break or a control character.',
+        ]);
+        if ($server->mail_cluster_id !== null) {
+            throw ValidationException::withMessages(['spamFilter' => 'This server is a member of a mail cluster. The cluster controls its mail server.']);
+        }
+        if (! $server->hasMail()) {
+            throw ValidationException::withMessages(['spamFilter' => 'Turn on email for this server first.']);
+        }
+        $open = AgentJob::where('server_id', $server->id)->whereIn('action', [AgentAction::SetMailServer->value, AgentAction::SetMailSettings->value])
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists();
+        if ($open) {
+            throw ValidationException::withMessages(['spamFilter' => 'The panel changes the mail server. Wait until it is complete.']);
+        }
+        $relay = null;
+        $password = null;
+        if (! empty($data['relay'])) {
+            $username = ($data['relay']['username'] ?? '') !== '' ? $data['relay']['username'] : null;
+            $relay = ['host' => $data['relay']['host'], 'port' => (int) $data['relay']['port'], 'username' => $username];
+            // Leave out the password to keep it. A relay with no user name has no password.
+            $password = $username === null ? null : (array_key_exists('password', $data['relay']) ? ($data['relay']['password'] ?? '') : (string) $server->mail_relay_password);
+            if ($username !== null && $password === '') {
+                throw ValidationException::withMessages(['relay.password' => 'Type the password of the relay.']);
+            }
+        }
+        $previous = $server->mail_settings;
+        $settings = [
+            'spamFilter' => (bool) $data['spamFilter'],
+            'spamScore' => round((float) $data['spamScore'], 1),
+            'rejectScore' => isset($data['rejectScore']) ? round((float) $data['rejectScore'], 1) : null,
+            'relay' => $relay,
+        ];
+        $server->update(['mail_settings' => $settings, 'mail_relay_password' => $password]);
+        $job = $this->jobs->dispatch($server, AgentAction::SetMailSettings, [...MailSettings::payload($settings), 'revert' => ['mail_settings' => $previous]], "Change spam filter and relay of {$server->name}");
+        Audit::record($request, 'Changed mail settings', $server->name.($relay ? " relay {$relay['host']}:{$relay['port']}" : ''));
 
         return response()->json(['server' => self::present($server), 'job' => new JobResource($job)], 202);
     }
@@ -347,6 +409,7 @@ class ServerController extends Controller
                 'domains' => $s->mailDomains()->count(),
                 // Not null: the server is a member of this mail cluster.
                 'clusterId' => $s->mail_cluster_id,
+                'settings' => MailSettings::present($s),
             ],
             'websites' => $s->websites_count ?? null,
             'lastSeenAt' => $s->last_seen_at?->toIso8601String(),

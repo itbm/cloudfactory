@@ -8,6 +8,7 @@ import type { HostUpdatePolicy, Server, ServerRole } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { CopyField } from "./website/AccessTab";
 import { MailClustersCard } from "./MailClusters";
+import { MailSettingsPanel } from "./MailSettings";
 import { Card, ConfirmButton, Empty, Field, FormError, JobRow, Meter, Modal, PageHeader, Status, TableWrap } from "../components/ui";
 import { relativeTime } from "../lib/format";
 import { HOST_POLICY_LABEL, jobActive, roleList, SERVER_ROLE, SERVER_STATE } from "../lib/labels";
@@ -263,6 +264,7 @@ function MailCard({ server, busy }: { server: Server; busy: boolean }) {
           <div className="field"><span className="label" aria-hidden="true">&nbsp;</span><button type="submit" className="btn" disabled={busy || save.busy || !hostname.trim() || (hostname.trim().toLowerCase() === mail?.hostname && mail?.status === "running")}>{mail ? "Save" : "Turn on email"}</button></div>
         </form>
         {mail && mail.domains > 0 && <p className="muted small" style={{ marginTop: 10 }}>A new host name changes the MX and SPF records that each mail domain needs. The customers must change their DNS records.</p>}
+        {mail && <MailSettingsPanel server={server} busy={busy || mail.status === "starting"} />}
       </div>
     </Card>
   );

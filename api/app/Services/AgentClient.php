@@ -49,6 +49,7 @@ class AgentClient
                 // The secrets of a mail cluster are not in the job.
                 ...MailClusters::secretsFor($job),
                 ...Mail::keyFileFor($job),
+                ...MailSettings::passwordFor($job),
                 ...Zones::keysFor($job),
                 // The secondary DNS servers and their TSIG secrets are not in the job either.
                 ...Secondaries::forAgent($job),

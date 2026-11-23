@@ -628,6 +628,9 @@ class DemoSeeder extends Seeder
             'services' => array_map(fn (string $n) => ['name' => $n, 'state' => 'running'], ['edge', 'cf-mail', 'firewall', 'podman']),
             'usage' => ['cpuPercent' => 6, 'memoryPercent' => 31, 'diskPercent' => 18], 'last_update_at' => now()->subDays(5),
             'mail_hostname' => $host, 'mail_status' => 'running',
+            // The provider of mail-1 blocks port 25: the outgoing mail goes through a relay.
+            'mail_settings' => ['spamFilter' => true, 'spamScore' => 5.0, 'rejectScore' => 15.0, 'relay' => ['host' => 'smtp.relay.example.net', 'port' => 587, 'username' => 'mail-1']],
+            'mail_relay_password' => 'demo-relay-password',
         ]);
         $this->servers['mail-1'] = $server;
 

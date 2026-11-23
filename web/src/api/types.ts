@@ -742,6 +742,28 @@ export interface ServerMail {
   domains: number;
   /** Set when the server is a member of this mail cluster. The cluster controls its mail server. */
   clusterId?: string | null;
+  /** The spam filter and the outbound relay. A new mail server has the default settings. */
+  settings: MailSettings;
+}
+
+/** The spam filter and the outbound relay of a mail server. An administrator sets them. */
+export interface MailSettings {
+  /** True: the mail server gives each new message a spam score. */
+  spamFilter: boolean;
+  /** A message with this score or more goes to the junk folder. */
+  spamScore: number;
+  /** The mail server refuses a message with this score or more. Null: no refusal for the score. */
+  rejectScore: number | null;
+  /** Null: the mail server sends each message to the mail server of the recipient (port 25). */
+  relay: { host: string; port: number; username: string | null; hasPassword: boolean } | null;
+}
+
+/** The values that change the settings. Leave out the password of the relay to keep it. */
+export interface MailSettingsInput {
+  spamFilter: boolean;
+  spamScore: number;
+  rejectScore: number | null;
+  relay: { host: string; port: number; username: string | null; password?: string | null } | null;
 }
 
 /** The step of a member in the setup of its mail cluster. */

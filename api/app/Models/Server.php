@@ -19,10 +19,10 @@ use Illuminate\Support\Facades\DB;
     'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'dns_name', 'dns', 'addresses', 'dns_resync',
     'mesh_public_key', 'mesh_address', 'mesh_endpoint', 'mesh_version', 'mesh_wanted_version', 'mesh_networks', 'mesh_websites', 'mesh_moves', 'mesh_state_hash',
     'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'mail_hostname', 'mail_status',
-    'mail_cluster_id', 'mail_cluster_member', 'agent_runtimes', 'agent_features', 'agent_packs', 'packs_resync',
+    'mail_settings', 'mail_relay_password', 'mail_cluster_id', 'mail_cluster_member', 'agent_runtimes', 'agent_features', 'agent_packs', 'packs_resync',
     'agent_certificates', 'certificates_resync',
 ])]
-#[Hidden(['agent_token_hash', 'backup_password', 'backup_credentials'])]
+#[Hidden(['agent_token_hash', 'backup_password', 'backup_credentials', 'mail_relay_password'])]
 class Server extends Model
 {
     use HasFactory, HasUlids;
@@ -81,6 +81,8 @@ class Server extends Model
         return [
             'roles' => 'array',
             'mail_cluster_member' => 'array',
+            'mail_settings' => 'array',
+            'mail_relay_password' => 'encrypted',
             'pending_updates' => 'array',
             'services' => 'array',
             'usage' => 'array',
