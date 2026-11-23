@@ -29,7 +29,8 @@ describe("the uptime checks", () => {
   it("shows the checks of a website, the details of a check and the result of a check now", async () => {
     const api = await open("owner", (w) => `/websites/${w("shop.acme.example.com").id}/uptime`);
     await waitFor(() => expect(within(main()).getByRole("button", { name: /^https:\/\/shop\.acme\.example\.com\/wp-json\// })).toBeTruthy());
-    const rows = within(main()).getAllByRole("row").slice(1);
+    // Only the rows of the list: the details of the first check can load first and add tables.
+    const rows = within(card("Uptime checks")).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain("Up");
     expect(rows[0].textContent).toContain("Every 1 minute · Status 200 to 399");
