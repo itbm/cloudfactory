@@ -155,6 +155,12 @@ type Deps struct {
 	// WebmailImage is the image of the webmail (Bulwark) of a mail server. Empty means no
 	// webmail: the edge proxy then answers the host name of the mail server with a short page.
 	WebmailImage string
+	// ScanImage is the image of the malware scanner (ClamAV) of this agent version. Empty
+	// means no malware scan.
+	ScanImage string
+	// ScanHome is the home directory of the Unix user of the malware scanner. The default is
+	// "/var/lib/cf-scan". Tests replace it.
+	ScanHome string
 	// WebmailHome and WebmailConfigDir are the directories of the webmail. The defaults are
 	// "/var/lib/cf-webmail" and "/etc/cloudfactory/webmail". Tests replace them.
 	WebmailHome      string

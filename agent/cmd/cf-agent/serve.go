@@ -266,6 +266,7 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		MailKeepImage: cfg.Registry + "/mail-keep:" + version,
 		WebmailImage:  cfg.Registry + "/webmail:" + version,
 		DnsImage:      cfg.Registry + "/dns:" + version,
+		ScanImage:     cfg.Registry + "/scan:" + version,
 		SftpPort:      cfg.SftpPort,
 		// The panel uses these addresses for the DNS records of the websites on this server.
 		PublicAddresses: cfg.PublicAddresses,

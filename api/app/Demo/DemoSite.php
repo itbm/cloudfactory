@@ -20,6 +20,12 @@ class DemoSite
     private const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
     /**
+     * The EICAR anti-malware test file. Each scanner finds it, and it does no harm. The text is
+     * in two parts, so that a scanner does not find this source file.
+     */
+    public const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR'.'-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
+
+    /**
      * @param  array<string, mixed>  $p
      * @return array<string, mixed>
      */
@@ -78,6 +84,37 @@ class DemoSite
             '/storage/cache' => $dir(1),
             '/composer.json' => $file("{\n    \"name\": \"example/website\",\n    \"require\": {\n        \"php\": \"^8.3\"\n    }\n}\n", 190),
             '/.env.example' => $file("APP_ENV=production\nDB_HOST=mariadb.internal\n", 190),
+        ] + (str_starts_with($website->name, 'shop.') ? [
+            // The malware scan of the demonstration finds this file.
+            '/public/uploads' => $dir(40),
+            '/public/uploads/invoice-2026-11.php' => $file(self::EICAR, 40),
+        ] : []);
+    }
+
+    /**
+     * The result of a malware scan of the files of the demonstration, as a real agent gives it
+     * (actions.ScanWebsite). Only the EICAR test file is malware.
+     *
+     * @return array<string, mixed>
+     */
+    public static function scan(Website $website): array
+    {
+        $files = array_filter(self::tree($website), fn (array $node) => $node['type'] === 'file');
+        $findings = [];
+        foreach ($files as $path => $node) {
+            if (str_starts_with($node['content'], self::EICAR)) {
+                $findings[] = ['path' => $path, 'signature' => 'Eicar-Test-Signature'];
+            }
+        }
+
+        return [
+            'scannedFiles' => count($files),
+            'infectedFiles' => count($findings),
+            'errors' => 0,
+            'signatures' => 3627519,
+            'engine' => '1.4.4',
+            'findings' => $findings,
+            'truncated' => false,
         ];
     }
 

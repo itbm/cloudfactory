@@ -517,6 +517,56 @@ available" to all visitors.
 - An event of the mode `detect` has no host, because Coraza writes the host only in the line
   that it writes when it blocks a request.
 
+## Malware scan
+
+The agent can scan the files of a website for malware with ClamAV. The user starts a scan
+and sets the schedule on the **Security** tab of the website, with `cf security scan` or with
+`/v1/websites/{id}/malware-scans`. All kinds of websites have a scan: a private website and a
+worker also have files.
+
+```text
+ Panel ──► job ScanWebsite ──► worker
+             1. root helper: scan.prepare ──► user cf-scan, signature directory, unit
+                cf-scan: systemctl start cf-scan-update.service ──► freshclam ──► database.clamav.net
+             2. website user: systemd-run ──► podman run (gVisor, no network) ──► clamscan /scan
+```
+
+- The image `scan` has ClamAV from Alpine Linux (`clamav-scanner` and `freshclam`). It has no
+  signatures. The image does not have the RAR module, because the licence of that module is
+  not a free software licence.
+- The service user `cf-scan` keeps the signatures of the server in
+  `/var/lib/cf-scan/signatures`. Its home directory has the mode `0711`, and the signature
+  directory has the mode `0755`. Thus each website user can read the signatures, and only
+  `cf-scan` can change them. The root helper does not follow a symbolic link there.
+- The unit `cf-scan-update.container` of `cf-scan` runs `freshclam` one time, and then stops.
+  It has no `[Install]` section. The agent starts it before a scan, at most one time in each
+  hour. When the update fails and the server has signatures, the scan uses them. With no
+  signatures, the scan fails.
+- The root helper puts the image in the shared image store. The website user then starts the
+  image with no pull.
+- The scan runs as the Unix user of the website, in a gVisor container with no network. The
+  directory of the website is at `/scan`, read-only. The signatures are at `/var/lib/clamav`,
+  read-only. Thus the scan cannot change the website, and a file that attacks ClamAV gets only
+  the rights of its own website.
+- `systemd-run` puts the container in a unit with these limits: 2 GiB of memory, one CPU, and
+  1 hour. ClamAV uses approximately 1 GB of memory for the signatures. The limits are the
+  limits of the scan, not of the website.
+- The job has the key `malware-scan`, so the agent does the scans of a server one at a time.
+- ClamAV scans the first 25 MB of each file, and 100 MB of the content of an archive.
+- The agent reads the summary of `clamscan`. The exit status 1 (malware) and 2 (a file that
+  ClamAV cannot read) are not errors of the job. Output with no summary is an error. Only the
+  last summary line starts the summary, because a file name can have a line break. The result
+  has at most 500 files.
+- The panel keeps the last 20 scans of each website in the table `malware_scans`. The schedule
+  `weekly` scans each website in one hour of the week. The hour comes from the ID of the
+  website, so the scans of a server start at different times. When a scan started in the last
+  24 hours, the panel does not start the scheduled scan. A website with no scan for 8 days
+  gets one at once. The command `cloudfactory:malware-scans` runs each hour.
+- A scan changes no file. The user deletes a file that the scan found with the file manager.
+  The panel then marks the file as deleted in the last scan.
+- When a scan finds malware, the users of the customer and the administrators get the email
+  `malware.found`.
+
 ## SFTP for the websites
 
 One SFTP container, `cf-sftp`, on each server serves all websites. It listens on port 2200 (the

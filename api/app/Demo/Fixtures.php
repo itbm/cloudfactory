@@ -87,6 +87,7 @@ class Fixtures
         '/websites/{id}/files?path=%2F',
         '/websites/{id}/files?path=%2Fpublic',
         '/websites/{id}/logs?limit=50&summary=1',
+        '/websites/{id}/malware-scans',
         '/websites/{id}/previews',
         '/websites/{id}/security',
         '/websites/{id}/security/events',
