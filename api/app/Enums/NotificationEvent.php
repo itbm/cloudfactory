@@ -17,6 +17,8 @@ enum NotificationEvent: string
     case UsageAlert = 'usage.alert';
     case ServerOffline = 'server.offline';
     case DeployNeedsAttention = 'deploy.attention';
+    case UptimeDown = 'uptime.down';
+    case UptimeUp = 'uptime.up';
     case PasswordReset = 'password.reset';
 
     public function label(): string
@@ -31,6 +33,8 @@ enum NotificationEvent: string
             self::UsageAlert => 'Usage alerts',
             self::ServerOffline => 'Servers that are offline',
             self::DeployNeedsAttention => 'Deploys that need attention',
+            self::UptimeDown => 'Websites that are down',
+            self::UptimeUp => 'Websites that are up again',
             self::PasswordReset => 'Password reset',
         };
     }
@@ -47,6 +51,8 @@ enum NotificationEvent: string
             self::UsageAlert => 'A website, a database server or a mailbox uses almost all of its limit.',
             self::ServerOffline => 'A server did not report to the panel for 5 minutes.',
             self::DeployNeedsAttention => 'A deploy ran a database migration, and then the website failed its health check. The panel did not go back to the previous release.',
+            self::UptimeDown => 'An uptime check of a website failed a number of times in a row.',
+            self::UptimeUp => 'A website that was down answers its uptime check again.',
             self::PasswordReset => 'Someone asked for a link to set a new password for your user.',
         };
     }
@@ -102,10 +108,14 @@ enum NotificationEvent: string
         return $this->requiredVariables();
     }
 
-    /** A new user receives each event that their role can receive, until they turn it off. */
-    public function defaultOn(): bool
+    /**
+     * A new user receives each event that their role can receive, until they turn it off. An
+     * administrator can see the uptime checks of all customers, so the uptime emails are off
+     * for an administrator until they turn them on.
+     */
+    public function defaultOn(Role $role): bool
     {
-        return true;
+        return ! ($role === Role::Administrator && in_array($this, [self::UptimeDown, self::UptimeUp], true));
     }
 
     /**
@@ -128,6 +138,8 @@ enum NotificationEvent: string
             self::UsageAlert => ['account' => 'Acme Ltd', 'resource' => 'Disk', 'website' => 'shop.example.com', 'subject' => 'website shop.example.com', 'used' => '9.1 GB', 'limit' => '10 GB', 'percent' => '91', 'level' => 'warning'],
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],
             self::DeployNeedsAttention => ['website' => 'api.example.com', 'branch' => 'main', 'commit' => '4f9a1c2', 'message' => 'Add the invoice table', 'error' => 'the health check failed after the switch: 9 of 30 checks failed.', 'time' => '15 Nov 2026 14:20 UTC', 'websiteId' => '01jbq3z5k8n6t4w2x9y7r5p3q9'],
+            self::UptimeDown => ['website' => 'shop.example.com', 'url' => 'https://shop.example.com/', 'error' => 'HTTP status 503.', 'since' => '15 Nov 2026 03:12 UTC'],
+            self::UptimeUp => ['website' => 'shop.example.com', 'url' => 'https://shop.example.com/', 'downtime' => '14 minutes', 'since' => '15 Nov 2026 03:12 UTC', 'until' => '15 Nov 2026 03:26 UTC'],
             self::PasswordReset => ['resetUrl' => 'https://panel.example.com/reset-password#token=4f1c…', 'minutes' => '60', 'ip' => '203.0.113.7'],
         };
     }
@@ -157,6 +169,8 @@ enum NotificationEvent: string
             self::UsageAlert => '{{account}} uses {{percent}}% of its {{resource}} limit',
             self::ServerOffline => 'The server {{server}} is offline',
             self::DeployNeedsAttention => 'Examine {{website}}: the health check failed after a migration',
+            self::UptimeDown => '{{website}} is down',
+            self::UptimeUp => '{{website}} is up again',
             self::PasswordReset => 'Set a new password for {{brand}}',
         };
     }
@@ -173,6 +187,8 @@ enum NotificationEvent: string
             self::UsageAlert => "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit.\nFor: {{subject}}\n\nWhen it uses all of the limit, changes can fail. A full mailbox refuses new mail. Remove data that you do not need, or ask for a larger limit:\n{{panelUrl}}/alerts",
             self::ServerOffline => "Hello {{name}},\n\nThe server {{server}} did not report to the panel since {{lastSeen}}. The panel keeps its jobs until it reports again.\n\nMake sure that the server is on and that the agent service runs:\n{{panelUrl}}/servers",
             self::DeployNeedsAttention => "Hello {{name}},\n\nA deploy of {{website}} ran the migration command. After the switch, the website failed its health check:\n\n{{error}}\n\nBranch: {{branch}}\nCommit: {{commit}} {{message}}\nTime: {{time}}\n\nThe website serves the new release. The panel did not go back to the previous release, because the previous release possibly does not operate with the changed database.\n\nExamine the logs of the website, and push a correction. To go back, first restore the database from a backup, and then go back to an earlier release:\n{{panelUrl}}/websites/{{websiteId}}/deploys",
+            self::UptimeDown => "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
+            self::UptimeUp => "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
             self::PasswordReset => "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app or remove your passkeys.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
         };
     }
