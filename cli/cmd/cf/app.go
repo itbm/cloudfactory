@@ -71,15 +71,20 @@ Usage:
   cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
   cf cron delete WEBSITE CRON_ID
   cf deploys show WEBSITE                              The Git repository, the deploy key, the webhook and the releases.
-  cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR] [--trigger manual|webhook]
-                             [--build COMMAND]... [--no-build]
+  cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR]
+                             [--trigger manual|webhook|schedule] [--check-minutes N]
+                             [--build COMMAND]... [--no-build] [--migration COMMAND | --no-migration]
                                                        Also changes the settings. For a private repository, add the deploy key
-                                                       that the command shows to the repository.
+                                                       that the command shows to the repository. The trigger schedule checks
+                                                       the branch each N minutes (default 5). The migration command runs
+                                                       before the switch. After a migration, the panel does not go back
+                                                       when the health check fails: it sends an email.
   cf deploys secret set WEBSITE NAME                   An environment variable of the build commands. The value is read
                                                        from CF_SECRET or stdin.
   cf deploys secret remove WEBSITE NAME
   cf deploys start WEBSITE [--forget-host-key]         Deploy the branch now. The website changes to the new release with no stop.
                                                        --forget-host-key: after the Git server got a new SSH host key.
+  cf deploys webhook WEBSITE                           Make a new webhook address and secret. The old ones stop at once.
   cf deploys activate WEBSITE RELEASE_ID               Go back to a release that is on the server.
   cf deploys disconnect WEBSITE
   cf database-servers list [--customer ID] [--server SERVER] [--engine ENGINE]

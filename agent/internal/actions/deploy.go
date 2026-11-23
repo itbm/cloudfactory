@@ -98,6 +98,11 @@ func checkDeploy(req *agentv1.DeployRequest) error {
 			return err
 		}
 	}
+	if c := req.GetMigrationCommand(); c != "" {
+		if err := validate.CommandLine(c); err != nil {
+			return err
+		}
+	}
 	if len(req.GetSecrets()) > validate.MaxDeploySecrets {
 		return fmt.Errorf("a deploy can have %d secrets", validate.MaxDeploySecrets)
 	}
@@ -106,13 +111,21 @@ func checkDeploy(req *agentv1.DeployRequest) error {
 			return err
 		}
 	}
-	if key := req.GetDeployKey(); key != "" && (len(key) > maxDeployKey || !strings.HasPrefix(key, "-----BEGIN OPENSSH PRIVATE KEY-----")) {
-		return errors.New("the deploy key is not a private SSH key")
+	if err := checkDeployKey(req.GetDeployKey()); err != nil {
+		return err
 	}
 	for _, id := range req.GetKeepReleases() {
 		if err := validate.ID(id); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// checkDeployKey accepts an empty key or a private SSH key in the OpenSSH format.
+func checkDeployKey(key string) error {
+	if key != "" && (len(key) > maxDeployKey || !strings.HasPrefix(key, "-----BEGIN OPENSSH PRIVATE KEY-----")) {
+		return errors.New("the deploy key is not a private SSH key")
 	}
 	return nil
 }
@@ -149,13 +162,17 @@ func (d *Deps) build(ctx context.Context, w *agentv1.Website, releaseID string, 
 // buildIn runs a script in a build container of the website (build), with the working
 // directory workdir in the container.
 func (d *Deps) buildIn(ctx context.Context, w *agentv1.Website, workdir string, options []string, script string, args ...string) (string, error) {
+	return d.buildFor(ctx, orDefault(d.BuildLimit, 20*time.Minute), w, workdir, options, script, args...)
+}
+
+// buildFor runs a script in a build container of the website (build) with a time limit.
+func (d *Deps) buildFor(ctx context.Context, limit time.Duration, w *agentv1.Website, workdir string, options []string, script string, args ...string) (string, error) {
 	user := w.GetUnixUser()
 	uid, err := d.Host.LookupUID(user)
 	if err != nil {
 		return "", err
 	}
 	u := d.unit(w, 0, "")
-	limit := orDefault(d.BuildLimit, 20*time.Minute)
 	// systemd stops the unit, and thus the build container, at the time limit. The unit does
 	// not stop when the agent stops systemd-run (adversarial review, finding G5-02).
 	argv := []string{"env", "XDG_RUNTIME_DIR=/run/user/" + strconv.Itoa(uid), "systemd-run", "--user", "--wait", "--collect", "--pipe", "--quiet",
@@ -203,12 +220,39 @@ func (d *Deps) deployFiles(unixUser string) string {
 	return filepath.Join(d.Host.Home(unixUser), ".cf-deploy")
 }
 
-// writeDeployFile writes a file that only the website user can read. The content goes on the
-// standard input, so that it is not in the process list.
+// writeDeployFile writes a file of a deploy that only the website user can read.
 func (d *Deps) writeDeployFile(ctx context.Context, unixUser, name, content string) (string, error) {
-	dir := d.deployFiles(unixUser)
+	return d.writeUserFile(ctx, unixUser, d.deployFiles(unixUser), name, content)
+}
+
+// writeUserFile writes a file that only the website user can read, in a directory of the
+// website user. The content goes on the standard input, so that it is not in the process list.
+func (d *Deps) writeUserFile(ctx context.Context, unixUser, dir, name, content string) (string, error) {
 	_, err := d.asUser(ctx, unixUser, content, "sh", "-c", `umask 077 && mkdir -p "$1" && cat > "$1/$2"`, "sh", dir, name)
 	return filepath.Join(dir, name), err
+}
+
+// sshOptions gives the options of a build container that connects to a Git host with the
+// deploy key: the key, the list of known hosts of the website and the SSH command of Git.
+func (d *Deps) sshOptions(ctx context.Context, unixUser, keyFile string, forget bool) ([]string, error) {
+	hosts := d.knownHosts(unixUser)
+	if forget {
+		if _, err := d.asUser(ctx, unixUser, "", "rm", "-rf", "--", hosts); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := d.asUser(ctx, unixUser, "", "mkdir", "-p", "-m", "0700", "--", hosts); err != nil {
+		return nil, err
+	}
+	return []string{"--volume=" + keyFile + ":" + deployKeyPath + ":ro,Z", "--volume=" + hosts + ":" + knownHostsDir + ":Z", "--env=GIT_SSH_COMMAND=" + gitSSH}, nil
+}
+
+// hostKeyError gives a clear error when SSH refused the key of the Git host.
+func hostKeyError(err error) error {
+	if strings.Contains(err.Error(), "HOST IDENTIFICATION HAS CHANGED") || strings.Contains(err.Error(), "Host key verification failed") {
+		return errors.New("the agent cannot get the code: the SSH key of the Git host is not the key of the first deploy. If the Git host has a new key, start the deploy again and select to forget the key of the Git host")
+	}
+	return nil
 }
 
 // Deploy gets the code of a repository into a new release, builds it and starts the website
@@ -221,7 +265,14 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 	user := w.GetUnixUser()
 	app := d.Host.AppDir(user)
 	release := filepath.Join(app, ReleasesDir, id)
-	inner, err := d.SetRuntime(&agentv1.WebsiteRequest{JobId: req.GetJobId(), Website: w, HealthCheck: req.GetHealthCheck()})
+	// healthError is the error of a failed health check after the switch, when the deploy
+	// has a migration command. The website then keeps the new release (FR-1009).
+	var healthError string
+	var keep func(error)
+	if req.GetMigrationCommand() != "" {
+		keep = func(err error) { healthError = err.Error() }
+	}
+	inner, err := d.runtimeChange(&agentv1.WebsiteRequest{JobId: req.GetJobId(), Website: w, HealthCheck: req.GetHealthCheck()}, keep)
 	if err != nil {
 		return jobs.Job{}, err
 	}
@@ -231,6 +282,30 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 		if _, err := d.asUser(ctx, user, "", "rm", "-rf", "--", d.deployFiles(user)); err != nil {
 			slog.Warn("remove the files of the deploy", "website", w.GetId(), "err", err)
 		}
+	}
+	// The build commands and the migration command get the environment variables of the
+	// website and the secrets of the deploy. A secret replaces a variable with the same name.
+	// The agent writes the file once, and removes it after the migration step.
+	var envOptions []string
+	envFor := func(ctx context.Context) ([]string, error) {
+		if envOptions != nil {
+			return envOptions, nil
+		}
+		env := maps.Clone(w.GetEnvironment())
+		if env == nil {
+			env = map[string]string{}
+		}
+		maps.Copy(env, req.GetSecrets())
+		envOptions = []string{}
+		if len(env) > 0 {
+			file, err := d.writeDeployFile(ctx, user, id+".env", envFile(env))
+			if err != nil {
+				envOptions = nil
+				return nil, err
+			}
+			envOptions = []string{"--env-file=" + file}
+		}
+		return envOptions, nil
 	}
 	steps := []jobs.Step{
 		{Name: "Get the code", Do: func(ctx context.Context) error {
@@ -261,23 +336,16 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 				if err != nil {
 					return err
 				}
-				hosts := d.knownHosts(user)
-				if req.GetForgetHostKey() {
-					if _, err := d.asUser(ctx, user, "", "rm", "-rf", "--", hosts); err != nil {
-						return err
-					}
-				}
-				if _, err := d.asUser(ctx, user, "", "mkdir", "-p", "-m", "0700", "--", hosts); err != nil {
+				if options, err = d.sshOptions(ctx, user, file, req.GetForgetHostKey()); err != nil {
 					return err
 				}
-				options = append(options, "--volume="+file+":"+deployKeyPath+":ro,Z", "--volume="+hosts+":"+knownHostsDir+":Z", "--env=GIT_SSH_COMMAND="+gitSSH)
 			}
 			// Git never asks for a name or a password: the job has no terminal.
 			options = append(options, "--env=GIT_TERMINAL_PROMPT=0")
 			out, err := d.build(ctx, w, id, options, fetchScript, req.GetBranch(), req.GetRepository())
 			if err != nil {
-				if strings.Contains(err.Error(), "HOST IDENTIFICATION HAS CHANGED") || strings.Contains(err.Error(), "Host key verification failed") {
-					return errors.New("the agent cannot get the code: the SSH key of the Git host is not the key of the first deploy. If the Git host has a new key, start the deploy again and select to forget the key of the Git host")
+				if keyErr := hostKeyError(err); keyErr != nil {
+					return keyErr
 				}
 				return commandError("the agent cannot get the code", err)
 			}
@@ -298,30 +366,34 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 			return nil
 		}},
 		{Name: "Build", Do: func(ctx context.Context) error {
-			defer cleanup(context.WithoutCancel(ctx))
 			if len(req.GetBuildCommands()) == 0 {
 				return nil
 			}
-			var options []string
-			// The build commands get the environment variables of the website and the secrets
-			// of the deploy. A secret replaces a variable with the same name.
-			env := maps.Clone(w.GetEnvironment())
-			if env == nil {
-				env = map[string]string{}
-			}
-			maps.Copy(env, req.GetSecrets())
-			if len(env) > 0 {
-				file, err := d.writeDeployFile(ctx, user, id+".env", envFile(env))
-				if err != nil {
-					return err
-				}
-				options = append(options, "--env-file="+file)
+			options, err := envFor(ctx)
+			if err != nil {
+				return err
 			}
 			// The output of the commands goes to the standard error, so that the end of it is
 			// in the error of a command that fails.
 			script := "set -e\nexec 1>&2\n" + strings.Join(req.GetBuildCommands(), "\n")
 			if _, err := d.build(ctx, w, id, options, script); err != nil {
 				return commandError("a build command failed", err)
+			}
+			return nil
+		}},
+		{Name: "Migrate the database", Do: func(ctx context.Context) error {
+			defer cleanup(context.WithoutCancel(ctx))
+			if req.GetMigrationCommand() == "" {
+				return nil
+			}
+			options, err := envFor(ctx)
+			if err != nil {
+				return err
+			}
+			// The old container serves the website while the command runs. The command runs in
+			// the release, and it can connect to the database servers of the customer.
+			if _, err := d.build(ctx, w, id, options, "set -e\nexec 1>&2\n"+req.GetMigrationCommand()); err != nil {
+				return commandError("the migration command failed", err)
 			}
 			return nil
 		}},
@@ -334,7 +406,8 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 		return nil
 	}})
 	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Long: true, Steps: steps, Result: func() map[string]any {
-		return map[string]any{"releaseId": id, "commit": commit, "message": message, "removed": removed, "documentRoot": w.GetDocumentRoot()}
+		return map[string]any{"releaseId": id, "commit": commit, "message": message, "removed": removed, "documentRoot": w.GetDocumentRoot(),
+			"migrated": req.GetMigrationCommand() != "", "healthError": healthError}
 	}, OnFailure: func(ctx context.Context) {
 		if inner.OnFailure != nil {
 			inner.OnFailure(ctx)

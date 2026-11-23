@@ -134,10 +134,62 @@ describe("the deploys of a website", () => {
     await waitFor(() => expect(api.changes.at(-1)?.path).toBe(`/websites/${id}/deploy/releases`));
   });
 
+  it("shows the migration command, and a release that went back after the health check", async () => {
+    await open("api.acme.example.com", "deploys");
+    expect(await screen.findByText("php artisan migrate --force")).toBeTruthy();
+    expect(screen.getByText("Went back")).toBeTruthy();
+    expect(screen.getByText("the health check failed after the switch: 9 of 30 checks failed.")).toBeTruthy();
+    expect(screen.getByLabelText("Webhook secret").textContent).not.toBe("");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows an alert when the live release failed its health check after a migration", async () => {
+    const api = await signedIn("owner");
+    const id = website("api.acme.example.com").id;
+    const healthError = "the health check failed after the switch: 9 of 30 checks failed.";
+    api.change<Deploy>(`/websites/${id}/deploy`, (d) => { d.releases.find((r) => r.live)!.healthError = healthError; });
+    render(<MemoryRouter initialEntries={[`/websites/${id}/deploys`]}><App /></MemoryRouter>);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("The live release failed its health check after a migration.");
+    expect(within(alert).getByText(healthError)).toBeTruthy();
+    expect(screen.getByText("Check failed")).toBeTruthy();
+  });
+
+  it("changes the trigger to a schedule with a migration command", async () => {
+    const { api, id } = await open("api.acme.example.com", "deploys");
+    let deploy = {} as Deploy;
+    api.change<Deploy>(`/websites/${id}/deploy`, (d) => { deploy = structuredClone(d); });
+    api.on(`PUT /websites/${id}/deploy`, () => ({ ...deploy, source: { ...deploy.source!, trigger: "schedule", checkMinutes: 15, migrationCommand: null, webhookUrl: null } }));
+    await screen.findByText("git@github.com:acme-example/api.git");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Schedule/ }));
+    fireEvent.change(screen.getByLabelText("Check the branch every"), { target: { value: "15" } });
+    fireEvent.change(screen.getByLabelText("Migration command"), { target: { value: "  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/The panel checks the branch every 15 minutes/)).toBeTruthy();
+    expect(api.changes.at(-1)?.body).toMatchObject({ trigger: "schedule", checkMinutes: 15, migrationCommand: null });
+    expect(screen.queryByLabelText("Webhook secret")).toBeNull();
+  });
+
+  it("makes a new webhook address and secret", async () => {
+    const { api, id } = await open("api.acme.example.com", "deploys");
+    let deploy = {} as Deploy;
+    api.change<Deploy>(`/websites/${id}/deploy`, (d) => { deploy = structuredClone(d); });
+    api.on(`POST /websites/${id}/deploy/webhook`, () => ({ ...deploy, source: { ...deploy.source!, webhookUrl: "https://panel/api/v1/hooks/deploy/new", webhookSecret: "new-secret" } }));
+    await screen.findByText("git@github.com:acme-example/api.git");
+    fireEvent.click(screen.getByRole("button", { name: "New address and secret" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Make new address" }));
+    await waitFor(() => expect(screen.getByLabelText("Webhook secret").textContent).toBe("new-secret"));
+    expect(api.changes.at(-1)?.path).toBe(`/websites/${id}/deploy/webhook`);
+  });
+
   it("connects a repository to a website that has none", async () => {
     const { api, id } = await open("shop.acme.example.com", "deploys");
     const answer: Deploy = {
-      source: { repository: "https://example.com/shop.git", branch: "main", webDirectory: ".", trigger: "manual", buildCommands: ["composer install"], deployKey: "ssh-ed25519 AAAA key", webhookUrl: "https://panel/hook", secrets: [] },
+      source: {
+        repository: "https://example.com/shop.git", branch: "main", webDirectory: ".", trigger: "manual", checkMinutes: 5, checkedAt: null, checkError: null,
+        buildCommands: ["composer install"], migrationCommand: null, deployKey: "ssh-ed25519 AAAA key", webhookUrl: "https://panel/hook", webhookSecret: "s3cret", deployQueued: false, secrets: [],
+      },
       releases: [],
     };
     api.on(`PUT /websites/${id}/deploy`, () => answer);
@@ -146,6 +198,6 @@ describe("the deploys of a website", () => {
     fireEvent.change(screen.getByLabelText("Build commands"), { target: { value: "composer install\n\n" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect repository" }));
     expect(await screen.findByLabelText("Deploy key")).toBeTruthy();
-    expect(api.changes.at(-1)?.body).toEqual({ repository: "https://example.com/shop.git", branch: "main", webDirectory: ".", trigger: "manual", buildCommands: ["composer install"] });
+    expect(api.changes.at(-1)?.body).toEqual({ repository: "https://example.com/shop.git", branch: "main", webDirectory: ".", trigger: "manual", checkMinutes: 5, buildCommands: ["composer install"], migrationCommand: null });
   });
 });

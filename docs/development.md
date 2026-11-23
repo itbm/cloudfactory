@@ -89,6 +89,9 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 - a new website or a new domain with a name that starts with `fail.`;
 - a new database with a name that ends with `_fail`;
 - a deploy from a repository with `fail` in its address (the build step fails);
+- a deploy from a repository with `unhealthy` in its address (the health check after the
+  switch fails, and the website goes back to the previous release). With a migration
+  command, the website keeps the new release, and the owner gets an alert;
 - a cron job with `fail` in its command, when you select **Run now**;
 - a change of a DNS zone with a name that starts with `fail.`;
 - the download of an account import with `fail` in the name of its file or in its address.
