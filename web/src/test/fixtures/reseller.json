@@ -982,6 +982,40 @@
         "body": {
             "data": [
                 {
+                    "id": "01m7cqzs80g1zfka000000000e",
+                    "name": "Apache + PHP-FPM · PHP 8.2",
+                    "family": "apache-php-fpm",
+                    "tag": "0.1.9",
+                    "phpVersion": "8.2",
+                    "version": "8.2",
+                    "custom": false,
+                    "supportEndsAt": "2026-12-31T00:00:00+00:00",
+                    "defaults": null,
+                    "pack": {
+                        "id": "01m7cqzs80wzwr170000000002",
+                        "slug": "php-legacy-apache",
+                        "name": "Older PHP for Apache + PHP-FPM",
+                        "version": "0.1.9"
+                    }
+                },
+                {
+                    "id": "01m7cqzs80g1zfka000000000d",
+                    "name": "Apache + PHP-FPM · PHP 8.3",
+                    "family": "apache-php-fpm",
+                    "tag": "0.1.9",
+                    "phpVersion": "8.3",
+                    "version": "8.3",
+                    "custom": false,
+                    "supportEndsAt": "2027-12-31T00:00:00+00:00",
+                    "defaults": null,
+                    "pack": {
+                        "id": "01m7cqzs80wzwr170000000002",
+                        "slug": "php-legacy-apache",
+                        "name": "Older PHP for Apache + PHP-FPM",
+                        "version": "0.1.9"
+                    }
+                },
+                {
                     "id": "01m7cqzs80g1zfka0000000003",
                     "name": "Apache + PHP-FPM · PHP 8.4",
                     "family": "apache-php-fpm",
@@ -1239,6 +1273,7 @@
                     "id": "01m7cqzs80df38970000000004",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000001",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -1266,6 +1301,7 @@
                     "id": "01m7cqzs80df38970000000005",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000002",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -1293,6 +1329,7 @@
                     "id": "01m7cqzs80df38970000000006",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000003",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -1315,6 +1352,71 @@
                     "databases": 1,
                     "maxDatabases": 20,
                     "createdAt": "2026-11-14T10:00:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /database-engines": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "engine": "mariadb",
+                    "name": "MariaDB",
+                    "port": 3306,
+                    "pack": null,
+                    "versions": [],
+                    "users": true,
+                    "moves": true,
+                    "adminer": true,
+                    "anywhere": true
+                },
+                {
+                    "engine": "postgresql",
+                    "name": "PostgreSQL",
+                    "port": 5432,
+                    "pack": null,
+                    "versions": [],
+                    "users": true,
+                    "moves": true,
+                    "adminer": true,
+                    "anywhere": false
+                },
+                {
+                    "engine": "valkey",
+                    "name": "Valkey",
+                    "port": 6379,
+                    "pack": null,
+                    "versions": [],
+                    "users": false,
+                    "moves": true,
+                    "adminer": false,
+                    "anywhere": false
+                },
+                {
+                    "engine": "mysql",
+                    "name": "MySQL",
+                    "port": 3306,
+                    "pack": {
+                        "id": "01m7cqzs80wzwr170000000003",
+                        "slug": "mysql",
+                        "version": "1.0.0",
+                        "publisher": "Example Packs Ltd"
+                    },
+                    "versions": [
+                        {
+                            "version": "8.4",
+                            "supportEndsAt": "2032-04-30"
+                        },
+                        {
+                            "version": "8.0",
+                            "supportEndsAt": "2026-04-30"
+                        }
+                    ],
+                    "users": true,
+                    "moves": false,
+                    "adminer": false,
+                    "anywhere": false
                 }
             ]
         }
@@ -5522,7 +5624,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-                    "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+                    "fingerprint": "357656694a050b4b138da2a458501cd9915f822807509db8121563c96b8c0072",
                     "notBefore": "2025-11-26T10:00:00+00:00",
                     "expiresAt": "2026-11-26T10:00:00+00:00",
                     "trusted": true,
@@ -5588,6 +5690,7 @@
                     "id": "01m7cqzs80df38970000000005",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000002",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -6872,6 +6975,7 @@
                     "id": "01m7cqzs80df38970000000006",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000003",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -8055,6 +8159,7 @@
                     "id": "01m7cqzs80df38970000000004",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000001",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -9188,6 +9293,7 @@
                     "id": "01m7cqzs80df38970000000004",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000001",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -10696,7 +10802,7 @@
             ],
             "state": "valid",
             "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-            "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+            "fingerprint": "357656694a050b4b138da2a458501cd9915f822807509db8121563c96b8c0072",
             "notBefore": "2025-11-26T10:00:00+00:00",
             "expiresAt": "2026-11-26T10:00:00+00:00",
             "trusted": true,
@@ -10712,7 +10818,7 @@
                     "serverName": "web-2"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBtzCCAV6gAwIBAgIIV5XkHtUD64gwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMjcxMTIzMDA0MjM2WjAjMSEwHwYDVQQDDBhjb3Ju\nZXJiYWtlcnkuZXhhbXBsZS5vcmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATG\nTnE+10SKd268CcAFIjSKOyek9vPdC5DPnUqcUp55Iz6u31zGEz5WOsFUtlrxsquc\nWn8ZgN0dYig922t5ALYUo2UwYzBBBgNVHREEOjA4ghhjb3JuZXJiYWtlcnkuZXhh\nbXBsZS5vcmeCHHd3dy5jb3JuZXJiYWtlcnkuZXhhbXBsZS5vcmcwCQYDVR0TBAIw\nADATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNHADBEAiB+g+BhcX4H\nWy+QmKFpVQ2S6fvNR5BRwwvl4L2vjBjAaAIgMkE+S0zV6nMPzcwb5YJcbipXfAoA\nSxp8b0ARuGv5ptc=\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIKMfbONu0oeAwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRwwGgYDVQQDDBNFeGFt\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABFB4pkW85xFwoajdu+eVeuC/+jRe2E6++WDa\nUA+Yl1PQVCOK2B3qtSz2SRlZ2K53r5Erqf2Ez8BRx/gLy2XXQuOjIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIQDo\nL3yTqs2/rElecBLK2yN2kqW+UD9f/DeWW9gCoLgHYgIgXKLQ0nvmizB0y3g2bwEU\n9P+eKxJkv0QbOmao14s8Vpg=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBuTCCAV6gAwIBAgIIHzWTDrWDjeQwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0NjM0WhcNMjcxMTIzMDA0NjM0WjAjMSEwHwYDVQQDDBhjb3Ju\nZXJiYWtlcnkuZXhhbXBsZS5vcmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAT7\n3niMIqC6u3WaoXwK7jVAcx4rlanW5OBi8fB4cOa8ENUuXKWE5REA2qPRou/tFjnh\n3vkd3r/sDf1NxP1Pf/Hjo2UwYzBBBgNVHREEOjA4ghhjb3JuZXJiYWtlcnkuZXhh\nbXBsZS5vcmeCHHd3dy5jb3JuZXJiYWtlcnkuZXhhbXBsZS5vcmcwCQYDVR0TBAIw\nADATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNJADBGAiEA8BYAFiHR\nYVbMPLF/2U9JdXwT+g9EJc+p97IVr+dVaUsCIQDplaIz8FpD8RXNYorvZHzULUnE\nw3jLfjaykmWzD31VSQ==\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIbyCCM0wR0zgwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0NjM0WhcNMzYxMTIwMDA0NjM0WjA6MRwwGgYDVQQDDBNFeGFt\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABM8CT/kyI7z/6hdUBjSILQVMkzzYSyiuEfXB\n+q7sxjMq1JaaAoftxA8JqyGglD2kye3khAf8tFcPQH0f+2BXTFujIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIHAE\n9uyC6R6Om8CNbngbA4rvQWoZlZt3K8IBriaTXwHiAiEAi21f99ELLPy501urbCTW\nuayLRtNp16JSQp2/f3b8MD4=\n-----END CERTIFICATE-----\n",
             "createdAt": "2025-11-26T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }

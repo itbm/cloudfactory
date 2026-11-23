@@ -171,7 +171,7 @@ func TestDatabaseServersCreate(t *testing.T) {
 	if err := a.dispatch(context.Background(), []string{"database-servers", "create", "--engine", "mariadb", "--vcpus", "2"}); err == nil || err.Error() != "give --vcpus, --memory-mb and --disk-gb together" {
 		t.Errorf("err = %v", err)
 	}
-	if err := a.dispatch(context.Background(), []string{"database-servers", "create"}); err == nil || err.Error() != "give --engine mariadb, postgresql or valkey" {
+	if err := a.dispatch(context.Background(), []string{"database-servers", "create"}); err == nil || err.Error() != "give --engine mariadb, postgresql, valkey or the engine of a database pack" {
 		t.Errorf("err = %v", err)
 	}
 	if len(*calls) != n {
@@ -334,5 +334,62 @@ func TestDatabaseServersMove(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("the output has no %q:\n%s", want, out.String())
 		}
+	}
+}
+
+// A database pack adds an engine. A database server of the engine has a version of the pack.
+func TestDatabaseServersOfAPackEngine(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		body, _ := io.ReadAll(r.Body)
+		switch {
+		case r.URL.Path == "/api/v1/database-engines":
+			w.Write([]byte(`{"data":[{"engine":"mariadb","name":"MariaDB","port":3306,"pack":null,"versions":[]},` +
+				`{"engine":"mysql","name":"MySQL","port":3306,"pack":{"id":"PK1","slug":"mysql","version":"1.0.0","publisher":"Example Packs Ltd"},"versions":[{"version":"8.4","supportEndsAt":"2032-04-30"},{"version":"8.0","supportEndsAt":null}]}]}`))
+		case r.URL.Path == "/api/v1/database-servers" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"data":[{"id":"DS1","name":"mysql-1","engine":"mysql","engineVersion":"8.4","customerId":"C1","serverId":"S1","planId":"P1","status":"running","host":"mysql-1.internal","port":3306,"networkHost":"mysql-1.internal","networkPort":3306,` +
+				`"limits":{"vcpus":1,"memoryBytes":536870912,"diskBytes":5368709120},"usage":null,"databases":1,"maxDatabases":5}]}`))
+		case r.URL.Path == "/api/v1/database-servers" && r.Method == http.MethodPost:
+			calls = append(calls, string(body))
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"databaseServer":{"id":"DS2","name":"mysql-2","engine":"mysql","engineVersion":"8.0","host":"mysql-2.internal","port":3306},"job":null}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	a, out := testApp(srv)
+
+	if err := a.dispatch(context.Background(), []string{"database-servers", "engines"}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 || row(lines[0]) != "ENGINE NAME PORT VERSIONS FROM" || row(lines[1]) != "mariadb MariaDB 3306 built-in" || row(lines[2]) != "mysql MySQL 3306 8.4, 8.0 pack mysql 1.0.0" {
+		t.Errorf("output:\n%s", out)
+	}
+
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"database-servers", "list"}); err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Split(strings.TrimSpace(out.String()), "\n"); len(lines) != 2 || !strings.HasPrefix(row(lines[1]), "mysql-1 mysql 8.4 running mysql-1.internal:3306 ") {
+		t.Errorf("output:\n%s", out)
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"database-servers", "get", "mysql-1"}); err != nil {
+		t.Fatal(err)
+	}
+	// A database server of a pack engine has only its network name.
+	if !strings.Contains(out.String(), "Engine:     mysql 8.4\n") || strings.Contains(out.String(), "Also:") {
+		t.Errorf("output:\n%s", out)
+	}
+
+	if err := a.dispatch(context.Background(), []string{"database-servers", "create", "--engine", "mysql", "--version", "8.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0] != `{"engine":"mysql","version":"8.0"}` {
+		t.Errorf("calls = %v", calls)
 	}
 }

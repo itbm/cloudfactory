@@ -195,7 +195,9 @@ func (d *Deps) buildFor(ctx context.Context, limit time.Duration, w *agentv1.Web
 		// A build command, for example a database migration, can connect to the database
 		// servers of the customer, as the website can.
 		for _, e := range quadlet.Engines() {
-			argv = append(argv, "--add-host="+e.Host+":"+u.DatabaseAddress)
+			if e.Host != "" {
+				argv = append(argv, "--add-host="+e.Host+":"+u.DatabaseAddress)
+			}
 		}
 	}
 	argv = append(argv, options...)

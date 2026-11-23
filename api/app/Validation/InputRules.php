@@ -120,8 +120,14 @@ final class InputRules
     /** The hash of a mailbox password: bcrypt, which the panel makes, or SHA-512-crypt, SHA-256-crypt or MD5-crypt from the import of a different panel. The agent gives it to the mail server. The agent never gets the password. */
     public const MAIL_PASSWORD_HASH = '/^(?:^(\\$2[aby]\\$(0[4-9]|[12][0-9]|3[01])\\$[.\\/A-Za-z0-9]{53}|\\$6\\$(rounds=[0-9]{4,9}\\$)?[.\\/A-Za-z0-9]{1,16}\\$[.\\/A-Za-z0-9]{86}|\\$5\\$(rounds=[0-9]{4,9}\\$)?[.\\/A-Za-z0-9]{1,16}\\$[.\\/A-Za-z0-9]{43}|\\$1\\$[.\\/A-Za-z0-9]{1,8}\\$[.\\/A-Za-z0-9]{22})$)/D';
 
+    /** The absolute path of the data directory in the container of a database pack (cf-database/1), for example "/var/lib/mysql". The first directory cannot be one of reservedPackDirs. */
+    public const PACK_DATA_DIR = '/^(?:^(\\/[a-z0-9][a-z0-9._-]{0,63}){1,8}$)/D';
+
     /** The version of the runtime in one image of a pack, for example "1.25". Customers select it. */
     public const PACK_IMAGE_VERSION = '/^(?:^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$)/D';
+
+    /** The TCP port of the engine in the container of a database pack (cf-database/1), for example "3306". The panel and the agent also check that it is from 1024 to 65535. */
+    public const PACK_PORT = '/^(?:^[1-9][0-9]{3,4}$)/D';
 
     /** The name of a pack, for example "golang". It is also the name of the runtime of the pack in the jobs of the agent. */
     public const PACK_SLUG = '/^(?:^[a-z][a-z0-9-]{1,30}$)/D';
@@ -137,6 +143,9 @@ final class InputRules
 
     /** The name of a PHP extension. */
     public const PHP_EXTENSION = '/^(?:^[a-z0-9_]{1,40}$)/D';
+
+    /** The version of PHP in one image of a PHP pack (cf-php/1): the major version and the minor version, for example "8.3". */
+    public const PHP_VERSION = '/^(?:^[0-9]{1,2}\\.[0-9]{1,2}$)/D';
 
     /** The path of a file or a directory in a website. It starts with "/". It has no empty part, no "." part, no ".." part and no "/" at the end. */
     public const RESTORE_PATH = '/^(?=[\\s\\S]{0,4096}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^(\\/|(\\/[^\\/\\x00]+)+)$)/D';
@@ -204,12 +213,15 @@ final class InputRules
         'mailAddress' => self::MAIL_ADDRESS,
         'mailLocalPart' => self::MAIL_LOCAL_PART,
         'mailPasswordHash' => self::MAIL_PASSWORD_HASH,
+        'packDataDir' => self::PACK_DATA_DIR,
         'packImageVersion' => self::PACK_IMAGE_VERSION,
+        'packPort' => self::PACK_PORT,
         'packSlug' => self::PACK_SLUG,
         'packVersion' => self::PACK_VERSION,
         'pathPasswordHash' => self::PATH_PASSWORD_HASH,
         'pathUser' => self::PATH_USER,
         'phpExtension' => self::PHP_EXTENSION,
+        'phpVersion' => self::PHP_VERSION,
         'restorePath' => self::RESTORE_PATH,
         'routePath' => self::ROUTE_PATH,
         'secretName' => self::SECRET_NAME,
@@ -260,12 +272,15 @@ final class InputRules
         'mailAddress' => 'Enter a mail address in lower-case letters, for example sales@example.com.',
         'mailLocalPart' => 'Use 1 to 64 lower-case letters, digits, dots, hyphens and underscores. Start and end with a letter or a digit.',
         'mailPasswordHash' => 'Enter a bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt hash.',
+        'packDataDir' => 'Use an absolute path such as /var/lib/mysql, with lower-case letters, digits and the characters . _ -.',
         'packImageVersion' => 'Use up to 16 letters, digits and the characters . + _ -, for example 1.25.',
+        'packPort' => 'Use a TCP port from 1024 to 65535.',
         'packSlug' => 'Use 2 to 31 lower-case letters, digits and "-". The first character is a letter.',
         'packVersion' => 'Use a version such as 1.2.0.',
         'pathPasswordHash' => 'Enter a bcrypt hash.',
         'pathUser' => 'Use 1 to 32 letters, digits, dots, underscores and hyphens. Start with a letter or a digit.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
+        'phpVersion' => 'Use a PHP version such as 8.3: two numbers with a dot between them.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'routePath' => 'Use a path such as /01jbq3z5k8n6/: a slash, 1 to 40 lower-case letters and digits, and a slash.',
         'secretName' => 'Use 1 to 64 capital letters, digits and underscores. Do not start with a digit.',
@@ -280,11 +295,17 @@ final class InputRules
     /** The types of DNS record that a user can make. */
     public const DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'CAA', 'NS'];
 
+    /** The built-in PHP runtimes. A PHP pack (cf-php/1) adds versions of PHP to one of them. */
+    public const PHP_RUNTIMES = ['frankenphp', 'apache-php-fpm'];
+
     /** Names that the database servers use (CF-01). */
     public const RESERVED_DATABASE_NAMES = ['mysql', 'sys', 'information_schema', 'performance_schema', 'postgres', 'template0', 'template1', 'root', 'mariadb.sys', 'healthcheck'];
 
     /** A database name does not start with one of these (CF-01). */
     public const RESERVED_DATABASE_PREFIXES = ['pg_'];
+
+    /** The first directory of the data directory of a database pack cannot be one of these. The agent mounts a temporary file system at /tmp, and the others belong to the container. */
+    public const RESERVED_PACK_DIRS = ['tmp', 'proc', 'sys', 'dev', 'run', 'cf'];
 
     /** The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names. */
     public const RESERVED_RUNTIME_NAMES = ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'static', 'edge', 'mail', 'dns', 'database', 'mariadb', 'postgresql', 'valkey'];
@@ -309,6 +330,9 @@ final class InputRules
 
     /** The largest number of cron jobs of a website. */
     public const MAX_CRON_JOBS = 20;
+
+    /** The first host port of the database servers of the database packs. Each database pack gets a block of 50 ports from this port, one block for each pack on the panel. */
+    public const MIN_DATABASE_PACK_PORT = 20000;
 
     /** The largest number of secrets of a deploy. */
     public const MAX_DEPLOY_SECRETS = 50;

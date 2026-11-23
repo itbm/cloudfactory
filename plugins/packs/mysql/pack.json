@@ -1,0 +1,23 @@
+{
+  "contract": "cf-pack/2",
+  "kind": "database",
+  "slug": "mysql",
+  "name": "MySQL",
+  "version": "1.0.0",
+  "publisher": "Example Packs Ltd",
+  "description": "MySQL database servers. The image starts from the official MySQL image and adds the program /cf/manage of the contract cf-database/1.",
+  "database": {
+    "contract": "cf-database/1",
+    "port": "3306",
+    "dataDir": "/var/lib/mysql"
+  },
+  "images": [
+    {
+      "version": "8.4",
+      "ref": "ghcr.io/example/cf-mysql:8.4",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000084",
+      "supportEndsAt": "2032-04-30"
+    }
+  ],
+  "x-source": "https://github.com/itbm/cloudfactory/tree/main/plugins/packs/mysql"
+}
