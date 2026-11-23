@@ -28,6 +28,11 @@ return [
 
     'panel_domain' => env('CF_PANEL_DOMAIN', 'panel.cloudfactory.io'),
 
+    // Secondary DNS: the name of the catalog zone (RFC 9432), the list of the zones that a
+    // secondary DNS server can copy. Give each panel its own name when one secondary copies
+    // the zones of more than one panel. No customer can make a zone with this name.
+    'dns_catalog_zone' => env('CF_DNS_CATALOG_ZONE', 'catalog.cloudfactory.invalid'),
+
     // FR-103: passkeys. A passkey works on the panel domain and on the panel domain of each
     // reseller, with HTTPS. In development, "localhost" also accepts these HTTP origins.
     'passkeys' => [

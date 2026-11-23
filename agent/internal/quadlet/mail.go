@@ -39,6 +39,10 @@ const (
 	// MailCertFile and MailKeyFile are the certificate of the mail host name in the container.
 	MailCertFile = "/etc/stalwart-certs/tls.crt"
 	MailKeyFile  = "/etc/stalwart-certs/tls.key"
+	// MailSpamRulesFile is the file of the spam filter rules in the image of the mail server.
+	// The image has a pinned release of the rules: the mail server cannot download them,
+	// because the firewall lets it connect only to the DNS and to other mail servers.
+	MailSpamRulesFile = "/usr/local/share/stalwart/spam-filter-rules.json.gz"
 	// MailContainerUser is the user "stalwart" of the image. The Unix user of the mail server
 	// on the host has this ID in the container. The build of the image checks the ID.
 	MailContainerUser = "2000"

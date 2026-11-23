@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -83,7 +84,7 @@ func mailSettings(hostname string) stalwart.Settings {
 		Hostname: hostname,
 		Ports: stalwart.Ports{SMTP: quadlet.MailSMTPPort, Submissions: quadlet.MailSubmissionsPort,
 			Submission: quadlet.MailSubmissionPort, IMAPS: quadlet.MailIMAPSPort, HTTP: quadlet.MailHTTPPort},
-		CertFile: quadlet.MailCertFile, KeyFile: quadlet.MailKeyFile,
+		CertFile: quadlet.MailCertFile, KeyFile: quadlet.MailKeyFile, SpamRules: quadlet.MailSpamRulesFile,
 	}
 }
 
@@ -501,6 +502,64 @@ func (d *Deps) DeleteMailAlias(req *agentv1.MailAddressRequest) (jobs.Job, error
 	return d.mailStep(req.GetJobId(), "Remove address", func(ctx context.Context, c *stalwart.Client) error {
 		return c.DeleteAddress(ctx, domain, localPart)
 	}), nil
+}
+
+// The limits of the settings of the mail server. The panel has the same limits.
+const (
+	mailMinSpamScore = 1
+	mailMaxSpamScore = 50
+	mailMaxReject    = 100
+	// mailMaxRelaySecret is the maximum length of the user name and of the password of a relay.
+	mailMaxRelaySecret = 500
+)
+
+// mailRelayPorts are the ports that a relay can have. The firewall lets the mail server
+// connect to these ports only.
+var mailRelayPorts = []int{25, 465, 587, 2525}
+
+// SetMailSettings sets the spam filter and the outbound relay of the mail server.
+func (d *Deps) SetMailSettings(req *agentv1.SetMailSettingsRequest) (jobs.Job, error) {
+	filter := stalwart.SpamFilter{Enable: req.GetSpamFilter(), SpamScore: req.GetSpamScore(), RejectScore: req.GetRejectScore()}
+	if filter.SpamScore < mailMinSpamScore || filter.SpamScore > mailMaxSpamScore {
+		return jobs.Job{}, fmt.Errorf("the spam score must be from %d to %d", mailMinSpamScore, mailMaxSpamScore)
+	}
+	if filter.RejectScore != 0 && (filter.RejectScore <= filter.SpamScore || filter.RejectScore > mailMaxReject) {
+		return jobs.Job{}, fmt.Errorf("the reject score must be more than the spam score, and %d or less", mailMaxReject)
+	}
+	var relay *stalwart.Relay
+	if r := req.GetRelay(); r != nil {
+		relay = &stalwart.Relay{Host: r.GetHost(), Port: int(r.GetPort()), Username: r.GetUsername(), Password: r.GetPassword()}
+		if err := validate.Domain(relay.Host); err != nil {
+			return jobs.Job{}, fmt.Errorf("relay host: %w", err)
+		}
+		if !slices.Contains(mailRelayPorts, relay.Port) {
+			return jobs.Job{}, fmt.Errorf("the port of the relay must be 25, 465, 587 or 2525")
+		}
+		if relay.Username == "" && relay.Password != "" {
+			return jobs.Job{}, errors.New("the relay has a password but no user name")
+		}
+		for name, v := range map[string]string{"user name": relay.Username, "password": relay.Password} {
+			if len(v) > mailMaxRelaySecret || strings.ContainsFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+				return jobs.Job{}, fmt.Errorf("the %s of the relay is longer than %d characters, or has a control character", name, mailMaxRelaySecret)
+			}
+		}
+	}
+	return jobs.Job{ID: req.GetJobId(), Key: mailKey, Steps: []jobs.Step{
+		{Name: "Set spam filter", Do: func(ctx context.Context) error {
+			c, err := d.mailClient(ctx)
+			if err != nil {
+				return err
+			}
+			return c.SetSpamFilter(ctx, filter)
+		}},
+		{Name: "Set outbound relay", Do: func(ctx context.Context) error {
+			c, err := d.mailClient(ctx)
+			if err != nil {
+				return err
+			}
+			return c.SetRelay(ctx, relay)
+		}},
+	}}, nil
 }
 
 // mailReport gives the state of the mail server and the size of each mailbox for the status

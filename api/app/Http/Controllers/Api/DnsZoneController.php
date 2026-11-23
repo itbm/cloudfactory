@@ -17,14 +17,18 @@ use App\Services\Branding;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Import;
 use App\Services\Dns\Records;
+use App\Services\Dns\Rollover;
+use App\Services\Dns\Secondaries;
 use App\Services\Dns\ZoneFile;
 use App\Services\Dns\Zones;
 use App\Validation\Input;
+use App\Validation\InputRules;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -70,11 +74,14 @@ class DnsZoneController extends Controller
             ->when($request->query('customerId'), fn ($q, $id) => $q->where('customer_id', $id))
             ->orderBy('name')->get();
 
+        // The customer gives these host names to the registrar of each domain. A customer of a
+        // reseller sees the host names of the reseller (white label). The name servers of the
+        // secondary DNS servers of the panel come after them.
+        $own = $request->user()->isAdministrator() ? $servers->pluck('dns_name')->unique()->values()->all() : Branding::nameServersFor($request->user()->customer);
+
         return response()->json([
             'data' => $zones->map(fn (DnsZone $z) => self::present($z, $servers)),
-            // The customer gives these host names to the registrar of each domain. A customer of
-            // a reseller sees the host names of the reseller (white label).
-            'nameServers' => $request->user()->isAdministrator() ? $servers->pluck('dns_name')->unique()->values()->all() : Branding::nameServersFor($request->user()->customer),
+            'nameServers' => $own === [] ? [] : array_values(array_unique([...$own, ...Secondaries::nameServers()])),
         ]);
     }
 
@@ -187,6 +194,83 @@ class DnsZoneController extends Controller
     }
 
     /**
+     * Starts a change of the DNSSEC key of the zone. Refer to Rollover: the new key goes to the
+     * DNS servers, and some hours later the panel shows its DS record for the registrar.
+     */
+    public function startRollover(Request $request, string $id, Rollover $rollover): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $jobs = $rollover->start($zone);
+        Audit::record($request, 'Started a change of the DNSSEC key', $zone->name, $zone->customer_id);
+
+        return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /** Stops a change of the DNSSEC key before the registry has the new DS record. */
+    public function cancelRollover(Request $request, string $id, Rollover $rollover): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $jobs = $rollover->cancel($zone);
+        Audit::record($request, 'Stopped a change of the DNSSEC key', $zone->name, $zone->customer_id);
+
+        return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /**
+     * Sends the zone to secondary DNS servers of the owner of the zone with zone transfers, or
+     * changes them. Refer to Secondaries::setTransfers. The answer does not give the TSIG
+     * secret: the route "transfers/secret" gives it.
+     */
+    public function transfers(Request $request, string $id, Secondaries $secondaries): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $data = $request->validate([
+            'addresses' => ['required', 'array', 'min:1', 'max:'.InputRules::MAX_DNS_TRANSFER_ADDRESSES],
+            'notify' => ['sometimes', 'boolean'],
+            'nameServers' => ['sometimes', 'array', 'max:'.Secondaries::MAX_ZONE_NAME_SERVERS],
+            'nameServers.*' => ['string', Input::rule('domain')],
+            'tsig' => ['sometimes', 'boolean'],
+            'algorithm' => ['sometimes', Rule::in(InputRules::TSIG_ALGORITHMS)],
+            'secret' => ['sometimes', 'nullable', 'string', 'max:88'],
+            'newSecret' => ['sometimes', 'boolean'],
+        ]);
+        $jobs = $secondaries->setTransfers($zone, [
+            'addresses' => $data['addresses'],
+            'notify' => (bool) ($data['notify'] ?? true),
+            'nameServers' => $data['nameServers'] ?? [],
+            'tsig' => (bool) ($data['tsig'] ?? true),
+            'algorithm' => $data['algorithm'] ?? $zone->transfer_tsig_algorithm ?? 'hmac-sha256',
+            'secret' => $data['secret'] ?? null,
+            'newSecret' => (bool) ($data['newSecret'] ?? false),
+        ]);
+        Audit::record($request, 'Set the zone transfers of a DNS zone', $zone->name.' to '.implode(', ', $zone->transfer_addresses ?? []), $zone->customer_id);
+
+        return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /** Stops the zone transfers to the secondary DNS servers of the owner of the zone. */
+    public function destroyTransfers(Request $request, string $id, Secondaries $secondaries): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $jobs = $secondaries->setTransfers($zone, null);
+        if ($jobs) {
+            Audit::record($request, 'Stopped the zone transfers of a DNS zone', $zone->name, $zone->customer_id);
+        }
+
+        return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /** The TSIG key of the zone transfers with its secret, for the configuration of a secondary DNS server. */
+    public function transfersSecret(Request $request, string $id): JsonResponse
+    {
+        $zone = $this->find($request, $id);
+        abort_if($zone->transfer_tsig_algorithm === null || ! $zone->transfer_addresses, 404, 'The zone transfers of this zone have no TSIG key.');
+        Audit::record($request, 'Viewed the TSIG secret of a DNS zone', $zone->name, $zone->customer_id);
+
+        return response()->json(['name' => $zone->transferKeyName(), 'algorithm' => $zone->transfer_tsig_algorithm, 'secret' => (string) $zone->transfer_tsig_secret]);
+    }
+
+    /**
      * Moves the zone to a different DNS provider, or back to the DNS servers of the panel
      * ("accountId": null). The records stay. Refer to Zones::move.
      */
@@ -227,10 +311,12 @@ class DnsZoneController extends Controller
     }
 
     /** Asks the public DNS again if the name servers of the zone are the name servers of the panel. */
-    public function check(Request $request, string $id): JsonResponse
+    public function check(Request $request, string $id, Rollover $rollover): JsonResponse
     {
         $zone = $this->findActive($request, $id);
         $this->zones->checkDelegation($zone);
+        // The DS records at the registry. A change of the key can go to its next step.
+        $rollover->check($zone);
 
         return response()->json(self::present($zone->fresh(), Zones::servers(), records: true));
     }
@@ -355,7 +441,7 @@ class DnsZoneController extends Controller
             'serial' => $z->serial,
             'recordCount' => $z->records_count ?? $z->records()->count(),
             // The name servers for the registrar: of the panel, or of the external provider.
-            'nameServers' => $account ? ($state['nameServers'] ?? []) : Branding::nameServersFor($z->customer),
+            'nameServers' => $account ? ($state['nameServers'] ?? []) : Zones::panelNameServersFor($z),
             // Null for a zone on the DNS servers of the panel.
             'provider' => $account ? [
                 'accountId' => $account->id,
@@ -386,6 +472,19 @@ class DnsZoneController extends Controller
                 'state' => ! $z->dnssec ? 'off' : ($account ? ($state['dnssec']['state'] ?? 'pending') : 'active'),
                 'ds' => $ds,
                 'dnskey' => $z->dnssec && $z->dnssec_public_key ? Dnssec::dnskey($z->name, $z->dnssec_public_key) : null,
+                // The change of the key, and the DS records at the registry (Rollover). Null
+                // for a zone at an external DNS provider.
+                ...Rollover::present($z),
+            ],
+            // The zone transfers to the secondary DNS servers of the owner. Null for a zone at an
+            // external provider. "primaries" are the addresses that a secondary copies the zone
+            // from: the addresses of the DNS servers of the panel.
+            'transfers' => $account ? null : [
+                'addresses' => array_values($z->transfer_addresses ?? []),
+                'notify' => $z->transfer_notify,
+                'nameServers' => array_values($z->transfer_name_servers ?? []),
+                'tsig' => $z->transfer_tsig_algorithm ? ['name' => $z->transferKeyName(), 'algorithm' => $z->transfer_tsig_algorithm] : null,
+                'primaries' => $servers->flatMap(fn (Server $s) => $s->addresses ?? [])->unique()->values()->all(),
             ],
             // The state of the zone on each name server of the panel: "ok", "pending" or "failed".
             'servers' => ($onPanel ? $servers : collect())->map(fn (Server $s) => [

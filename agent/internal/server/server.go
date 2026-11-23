@@ -214,6 +214,10 @@ func (s *Service) SetDatabaseUser(_ context.Context, r *connect.Request[agentv1.
 	return s.submit(s.Deps.SetDatabaseUser(r.Msg))
 }
 
+func (s *Service) SetDnsSecondaries(_ context.Context, r *connect.Request[agentv1.SetDnsSecondariesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDnsSecondaries(r.Msg))
+}
+
 func (s *Service) SetDnsZones(_ context.Context, r *connect.Request[agentv1.SetDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetDnsZones(r.Msg))
 }
@@ -236,6 +240,10 @@ func (s *Service) SetMailNode(_ context.Context, r *connect.Request[agentv1.SetM
 
 func (s *Service) SetMailServer(_ context.Context, r *connect.Request[agentv1.SetMailServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetMailServer(r.Msg))
+}
+
+func (s *Service) SetMailSettings(_ context.Context, r *connect.Request[agentv1.SetMailSettingsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailSettings(r.Msg))
 }
 
 func (s *Service) SetMailbox(_ context.Context, r *connect.Request[agentv1.SetMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {

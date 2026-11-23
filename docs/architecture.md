@@ -650,6 +650,7 @@ job only for a domain of that customer.
 | TLS certificate | `/etc/cloudfactory/mail/certs` | The edge proxy gets and renews the certificate of the mail host name. The root helper copies it for the mail server, at the start of the agent and one time each day. |
 | Passwords of the mailboxes | The mail server keeps a bcrypt hash | The panel makes the hash and sends only the hash. The panel shows the password one time. The agent never has it. |
 | Autoresponders | The data store of the mail server (JMAP `VacationResponse`) | The mail server is the source. The panel reads and changes an autoresponder through the agent at once, with no job, and keeps no copy. |
+| Spam filter and outbound relay | `mail_settings` of the server in the panel, and the data store of the mail server | An administrator sets them (`PUT /v1/servers/{id}/mail/settings`, or `cf servers mail-settings SERVER`). The panel keeps the password of the relay encrypted, and adds it to the `SetMailSettings` job each time that it sends the job. |
 
 The first start of the mail server is in the recovery mode of Stalwart, which has only the
 management API. The agent sets the listeners, the host name and the certificate, and then
@@ -670,6 +671,28 @@ values are fixed: the thresholds of the usage alerts do not change them. The pan
 the alert of a mailbox that the status report does not have, for example a removed mailbox.
 The users get the usage alert email, and the email page shows the mailboxes that are almost
 full. A full mailbox refuses new mail.
+
+### Spam filter and outbound relay
+
+The spam filter of Stalwart gives each new message a score. A message with the spam score or
+more goes to the junk folder of the mailbox. With a reject score, the mail server refuses a
+message with that score or more. The default settings are the settings of a new mail server:
+the filter is on, the spam score is 5, and the mail server refuses no message for its score.
+
+By default, Stalwart downloads the rules of the filter from GitHub. The firewall stops that
+download, and with no rules the filter gives each message the score 0. Thus the image `mail`
+has a pinned release of the rules (`/usr/local/share/stalwart/spam-filter-rules.json.gz`).
+At each start of the agent, the agent sets the mail server to read the rules from that file.
+A new release of the rules needs a new image.
+
+An outbound relay sends the outgoing mail for the mail server, for example when the provider
+of the server blocks port 25. The agent adds the route `relay` (`x:MtaRoute`) and sets the
+outbound strategy to use it. Mail for a domain of the server stays on the server. The relay
+must have a public address and one of the ports 25, 465, 587 or 2525. Port 465 uses TLS from
+the start, and the other ports use STARTTLS.
+
+A member of a mail cluster has the default settings: the panel does not change the settings
+of a cluster.
 
 ### Encryption of the stored mail (OpenPGP)
 
@@ -859,13 +882,15 @@ customers. It does not resolve other names.
 
 ### The panel sends full zones
 
-The DNS servers do not use zone transfers between them. The panel has the records, and it
-sends each changed zone to each DNS server in a job:
+The DNS servers of the panel do not use zone transfers between them. The panel has the
+records, and it sends each changed zone to each DNS server in a job. A secondary DNS server
+outside the panel can copy the zones (refer to [Secondary DNS servers](#secondary-dns-servers)).
 
 | Job | Work |
 | --- | ---- |
 | `SetDnsZones` | Start the DNS server if necessary, write the zone files, and load the zones. One job has 100 zones at most. |
 | `DeleteDnsZones` | Remove the zones, their files and their keys. |
+| `SetDnsSecondaries` | Start the DNS server if necessary, and write the list of the secondary DNS servers of the panel. |
 
 A zone in a job has its name, its serial and all its records. The root helper does not accept
 a zone file from the worker. It checks each record with the shared input rules and writes the
@@ -976,6 +1001,63 @@ source of the records:
   servers (`handover`) until two days after the public DNS stops showing the name servers of
   the panel. The panel does not remove a zone from the DNS servers during the handover.
 
+### Secondary DNS servers
+
+A secondary DNS server outside the panel can copy zones from the DNS servers of the panel with
+zone transfers (AXFR and IXFR). For example, a secondary DNS service of a different company
+gives more name servers in other networks. The panel never copies a zone from a different
+server. The panel is always the source of the records.
+
+```text
+ panel ──► SetDnsZones, SetDnsSecondaries ──► DNS servers of the panel (Knot DNS, primaries)
+                                                │ NOTIFY after each change, signed with TSIG
+                                                ▼
+                                   secondary ──► AXFR or IXFR, signed with TSIG ──► port 53
+```
+
+There are two types of secondaries:
+
+| Type | Who manages it | Zones | TSIG key |
+| ---- | -------------- | ----- | -------- |
+| A secondary of the panel (`dns_secondaries`) | An administrator | All zones on the DNS servers of the panel, and the catalog zone if the administrator selects it | One key for each secondary. The administrator gives the name, or the panel makes the name `cf-<ULID>`. |
+| The zone transfers of one zone (`dns_zones.transfer_*`) | The owner of the zone | Only that zone | `transfer.<zone>` |
+
+- The list of the secondaries of the panel has a version (the setting
+  `dns.secondaries.version`). Each change of the list gives it a higher version. The panel
+  then sends a `SetDnsSecondaries` job with only the version to each DNS server. When the panel
+  sends the job to the agent, it adds the full list from the database, with the secrets
+  (`Secondaries::forAgent`). Thus the secrets are not in the jobs table, and a job that waits
+  in the queue gets the last list.
+- The panel adds the zone transfers of a zone, with the secret, to the zone in `SetDnsZones` in
+  the same way.
+- The report of each agent has the version of the list on its DNS server (`dnsSecondaries`).
+  When the version is not the version of the panel, the panel sends the list again. It does
+  nothing while a `SetDnsSecondaries` job of the server is in the queue or runs, and it waits
+  10 minutes after a job that failed.
+- The root helper writes the keys to `keys.conf`, which only root and the user `cf-dns` can
+  read. It writes the remotes and the ACLs to `knot.conf`. Knot DNS gives a transfer only to an
+  address of a secondary, and only with the key of that secondary. After each change of a
+  zone, it sends NOTIFY, signed with the key, to each secondary with **Send NOTIFY**.
+- The addresses of the zone transfers of one zone must be public addresses. Thus the owner of
+  a zone cannot let an address in a private network or on the server copy the zone. An
+  administrator can give a private address to a secondary of the panel, for example for a
+  secondary in the same private network.
+- The catalog zone (RFC 9432) lists all zones on the DNS servers of the panel. Its name is in
+  `CF_DNS_CATALOG_ZONE` (default `catalog.cloudfactory.invalid`). A secondary that copies the
+  catalog zone finds each new zone and each removed zone itself. Knot DNS reads the catalog
+  role of a zone only when it makes the zone. Thus the agent restarts the DNS server when the
+  catalog zone starts, stops or gets a new name. For other changes of the list, the agent
+  only loads the configuration again. When `CF_DNS_CATALOG_ZONE` changes, the next report of
+  an agent gives the list a new version, so each DNS server gets the new name.
+- A secondary of the panel with a name server host name is a name server of each zone. Each
+  zone gets an NS record for it, and the panel sends all zones again when this host name
+  changes. The owner of a zone can give the host names of the secondaries of the zone, at most
+  4. The zone gets an NS record for each of them.
+- The domain uses the zone ("here") only when each public name server of the domain is a
+  name server of the panel, of a secondary of the panel or of the zone, and at least one is a
+  DNS server of the panel.
+- A zone at an external DNS provider has no zone transfers. The provider has the zone.
+
 ### DNSSEC
 
 DNSSEC is off for a new zone. When a user turns it on, the panel makes one ECDSA P-256 key
@@ -985,8 +1067,44 @@ each DNS server with the zone, so all servers sign with the same key. The root h
 the key to Knot DNS, and Knot DNS signs the zone with NSEC3 (no more iterations, no salt).
 The panel shows the DS record that the customer gives to the registrar.
 
-The panel does not change the key of a zone on a schedule. To change the key, remove the DS
-record at the registrar, turn DNSSEC off and on, and give the new DS record to the registrar.
+#### Change of the key
+
+A user can change the key of a zone on the DNS servers of the panel. The change is a key
+rollover with double signatures (RFC 6781 and RFC 7583). The panel changes the key only when
+a user asks, because the registrar must get the new DS record. The change has three steps:
+
+| Step | Keys in the zone | The step ends |
+| --- | --- | --- |
+| `publish` | The old key signs the zone. The new key signs only the DNSKEY records. | Each DNS server has the new key. Then the panel waits 3 hours: the TTL of the DNSKEY records, the refresh time of the secondary servers and a margin, each 1 hour. |
+| `submit` | As in `publish`. The DNS servers also publish CDS and CDNSKEY records for the new key. The user gives the new DS record to the registrar. | The public DNS gives the new DS record, or no DS record. |
+| `retire` | Both keys sign each record. | The panel waits the largest of one day, the TTL of the DS records and the largest TTL of the zone, plus 1 hour. The step does not end while the registry has only the old DS record. |
+
+Then the new key replaces the old key, and the DNS servers remove the old key. In each step,
+a resolver that has the old DS record or the new DS record in its cache can check the zone.
+
+- The command `cloudfactory:check-dns` (each 15 minutes) and "Check now" on the page of the
+  zone move a change to the next step.
+- The panel sends the keys to each DNS server with the zone. Each key has a state: `active`
+  (it signs the zone), `ready` (it signs only the DNSKEY records) or `submit` (as `ready`,
+  and the server publishes CDS and CDNSKEY records for it). The root helper gives the keys and
+  their times to Knot DNS with `keymgr`, and Knot DNS signs the zone again.
+- A registry that reads CDS records (RFC 7344 and RFC 8078) can get the new DS record by itself.
+- A user can stop a change in the steps `publish` and `submit`. The panel refuses to stop it
+  when the registry has the new DS record. When a change stops, the new key goes.
+
+#### DS records at the registry
+
+The panel asks the public DNS for the DS records of each zone with DNSSEC. The command
+`cloudfactory:check-dns` asks once each day for each zone, and each 15 minutes for a zone
+with a change of the key. The panel compares each DS record with the keys of the zone and
+keeps the result (`dnssec_parent`):
+
+| State | Meaning |
+| --- | --- |
+| `ok` | A DS record is for a key of the zone. |
+| `none` | The registry has no DS record. Resolvers do not check the signatures. |
+| `other` | No DS record is for a key of the zone. Resolvers that check DNSSEC refuse the answers for the domain. |
+| `unknown` | The lookup failed. |
 
 For a zone at an external DNS provider, the provider makes the key and signs the zone. The
 plugin gives the DS record in the answer to `sync`.

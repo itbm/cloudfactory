@@ -1091,6 +1091,70 @@ different key. Refer to [DNSSEC](#dnssec).
 
 ![The dialog that moves a zone to Cloudflare](screenshots/dns/7-move.png)
 
+#### Secondary DNS servers
+
+A secondary DNS server outside the panel can copy the zones from the DNS servers of the panel
+with zone transfers (AXFR and IXFR). For example, use the secondary DNS service of a different
+company to get name servers in more networks. The panel never copies a zone from a different
+server. To move a zone into the panel, import its zone file.
+
+To let a secondary copy all zones (administrators only):
+
+1. On the **DNS** page, in the card **Secondary DNS servers**, select **Add secondary**.
+2. Type a name and the IP addresses of the secondary. Only these addresses can copy the zones.
+3. If the secondary answers the public, type its host name in **Name server**. Each zone then
+   gets an NS record for it. Give the host name to the registrar of each domain too.
+4. To let the secondary find each new zone itself, select **Also copy the catalog zone**. Each
+   DNS server of the panel restarts one time to make the catalog zone.
+5. Keep **Sign the transfers with a TSIG key** selected. To use the key of the secondary DNS
+   service, type its key name and its secret. With no secret, the panel makes the key.
+6. Select **Add secondary**.
+7. Open the menu of the secondary, and select **Show the TSIG key**. Give the key to the
+   secondary DNS service.
+8. At the secondary DNS service, give the addresses in the card as the primary servers. Give
+   the catalog zone, or each zone, to copy.
+
+With the CLI:
+
+```sh
+cf dns secondaries add "Backup DNS" --address 198.51.100.53 --address 2001:db8::53 \
+  --name-server ns3.backup-dns.example --catalog
+cf dns secondaries secret "Backup DNS"
+cf dns secondaries list
+```
+
+To use the secret of the secondary DNS service, put it in `CF_TSIG_SECRET`, or give it on
+stdin, and add `--own-secret`.
+
+The card shows if each DNS server of the panel has the last list. A DNS server that was
+offline gets the list when its agent starts.
+
+The catalog zone has the name `catalog.cloudfactory.invalid`. When one secondary copies the
+zones of more than one panel, give each panel a different name. Set `CF_DNS_CATALOG_ZONE` in
+`/var/lib/cloudfactory/panel/panel.env` and restart the panel services. Each DNS server gets
+the new name in the next minute. Then give the new name to the secondary.
+
+![The secondary DNS servers of the panel](screenshots/dns/8-secondaries.png)
+
+Before you remove a secondary with a name server, remove its host name at the registrar of
+each domain.
+
+The owner of a zone can also let their own secondary DNS servers copy one zone:
+
+1. On the page of the zone, in the card **Zone transfers**, select **Set up**.
+2. Type the public IP addresses of the secondaries.
+3. If the secondaries answer the public, type their host names. The zone gets an NS record for
+   each of them.
+4. Select **Save**.
+5. Select **Show the secret**, and give the key `transfer.<zone>` to the secondaries.
+
+With the CLI: `cf dns transfers example.com set --address 192.0.2.200`, then
+`cf dns transfers example.com secret`. `cf dns transfers example.com stop` stops the transfers.
+
+![The zone transfers of one zone](screenshots/dns/9-zone-transfers.png)
+
+A zone at an external DNS provider has no zone transfers.
+
 #### DNSSEC
 
 Turn on DNSSEC on the page of the zone, or with `cf dns dnssec example.com on`. The panel
@@ -1103,6 +1167,38 @@ page of the zone shows that the plugin cannot turn on DNSSEC.
 Before you turn off DNSSEC, or remove a zone that has DNSSEC, remove the DS record at the
 registrar and wait one day. If the registrar still has the DS record, resolvers refuse all
 answers for the domain.
+
+The page of the zone shows the DS records that the registry of the domain has. The panel asks
+the public DNS once each day. To ask again now, click "Check" on the page of the zone, or run
+`cf dns check example.com`. "Wrong DS record" tells you that the registry has a DS record for
+a different key. Then the resolvers that check DNSSEC refuse all answers for the domain. Give
+the DS record of the zone to the registrar, and remove the other DS record.
+
+#### Change the DNSSEC key
+
+You can change the key of a zone on the DNS servers of the panel. The zone has correct
+signatures during the change.
+
+1. On the page of the zone, click "Change key". Or run `cf dns dnssec example.com rollover`.
+2. Wait approximately 3 hours. The DNS servers publish the new key.
+3. When the page shows step 2, give the new DS record to the registrar. You can replace the
+   old DS record or add the new DS record.
+4. Wait. The panel checks the registry each 15 minutes. When the registry has the new DS
+   record, both keys sign the zone for at least one day.
+5. Remove the old DS record at the registrar, if the registrar has it.
+
+Then the panel removes the old key. To see the step, run `cf dns get example.com`.
+
+In step 2, the DNS servers also publish CDS and CDNSKEY records for the new key. A registry
+that reads these records gets the new DS record by itself.
+
+To stop a change before the registry has the new DS record, click "Stop the change", or run
+`cf dns dnssec example.com cancel`. The new key goes. Do not stop a change after you removed
+the old DS record at the registrar.
+
+![A change of the DNSSEC key in step 2: the new DS record for the registrar](screenshots/dns/10-dnssec-key-change.png)
+
+A zone at an external DNS provider has the key of the provider. The panel cannot change it.
 
 #### A zone that a DNS server could not load
 
