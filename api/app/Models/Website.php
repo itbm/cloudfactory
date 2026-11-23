@@ -189,6 +189,12 @@ class Website extends Model
         return $this->hasMany(Release::class)->latest();
     }
 
+    /** The command log of the website (FR-802). */
+    public function commands(): HasMany
+    {
+        return $this->hasMany(WebsiteCommand::class);
+    }
+
     public function cronJobs(): HasMany
     {
         return $this->hasMany(CronJob::class)->oldest()->orderBy('id');

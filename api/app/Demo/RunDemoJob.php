@@ -173,6 +173,7 @@ class RunDemoJob implements ShouldQueue
             AgentAction::SetMailbox => ($p['publicKey'] ?? '') !== '' ? ['encryption' => ['fingerprints' => [strtoupper(sha1($p['publicKey']))], 'type' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []]] : [],
             AgentAction::SetMailDomain => ['records' => DemoMailDns::records((string) ($p['domain'] ?? ''), (string) $job->server->mail_hostname)],
             AgentAction::RunCronJob => ['cronJobId' => $p['cronJob']['id'] ?? '', 'exitCode' => 0, 'output' => "Running scheduled tasks.\nDone in 0.4 s.", 'ranAt' => now()->toIso8601String()],
+            AgentAction::RunCommand => DemoCommands::result((string) ($p['command'] ?? '')),
             AgentAction::Deploy => [
                 'releaseId' => $p['releaseId'] ?? '',
                 'commit' => sha1((string) ($p['releaseId'] ?? '')),
