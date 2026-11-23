@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\PluginController;
 use App\Http\Controllers\Api\PreviewController;
 use App\Http\Controllers\Api\RolloutController;
 use App\Http\Controllers\Api\RuntimeController;
+use App\Http\Controllers\Api\SecurityController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
@@ -156,6 +157,10 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/files/extract', [FileController::class, 'extract'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/logs', [LogController::class, 'index'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/usage', [UsageController::class, 'website']);
+            // The protection of a website in the edge proxy: firewall, IP rules, protected paths, sign-in limit.
+            Route::get('websites/{websiteId}/security', [SecurityController::class, 'show']);
+            Route::patch('websites/{websiteId}/security', [SecurityController::class, 'update']);
+            Route::get('websites/{websiteId}/security/events', [SecurityController::class, 'events'])->middleware('throttle:site-tools');
             Route::get('usage-alerts', [UsageController::class, 'alerts']);
 
             Route::get('websites/{websiteId}/cron-jobs', [CronJobController::class, 'index']);

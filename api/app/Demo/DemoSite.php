@@ -4,6 +4,7 @@ namespace App\Demo;
 
 use App\Models\Website;
 use App\Services\AgentCallException;
+use App\Services\WebsiteSecurity;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
@@ -34,6 +35,7 @@ class DemoSite
             'DeleteFile' => self::delete($website, (string) ($p['path'] ?? '')),
             'SetFileMode' => self::setMode($website, (string) ($p['path'] ?? ''), (string) ($p['mode'] ?? ''), (bool) ($p['recursive'] ?? false), (string) ($p['fileMode'] ?? '')),
             'GetLogs' => ['lines' => self::logs($website, (int) ($p['lines'] ?? 200))],
+            'GetFirewallEvents' => ['events' => self::firewallEvents($website, (int) ($p['limit'] ?? 50))],
             default => throw new AgentCallException('unimplemented', ''),
         };
     }
@@ -313,6 +315,57 @@ class DemoSite
         self::save($website, $tree);
 
         return $summary;
+    }
+
+    /**
+     * Sample requests that the firewall of the edge proxy blocked or detected, the newest
+     * first. A website with the firewall off has none. A rule that the website turned off is not
+     * in the events.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function firewallEvents(Website $website, int $limit): array
+    {
+        $security = WebsiteSecurity::of($website);
+        if ($security['firewall'] === 'off') {
+            return [];
+        }
+        // uri, client, rules [id, message, data], score
+        $samples = [
+            ['/products?id=1%27%20OR%201=1--', '198.51.100.40', [[942100, 'SQL Injection Attack Detected via libinjection', "Matched Data: s&1c found within ARGS:id: 1' OR 1=1--"]], 5],
+            ['/search?q=%3Cscript%3Ealert(1)%3C/script%3E', '203.0.113.77', [
+                [941100, 'XSS Attack Detected via libinjection', 'Matched Data: XSS data found within ARGS:q: <script>alert(1)</script>'],
+                [941110, 'XSS Filter - Category 1: Script Tag Vector', 'Matched Data: <script> found within ARGS:q: <script>alert(1)</script>'],
+            ], 10],
+            ['/', '192.0.2.14', [[913100, 'Found User-Agent associated with security scanner', 'Matched Data: sqlmap found within REQUEST_HEADERS:User-Agent: sqlmap/1.8.2']], 5],
+            ['/index.php?file=../../../../etc/passwd', '198.51.100.9', [
+                [930100, 'Path Traversal Attack (/../ or /..;/)', 'Matched Data: /../ found within ARGS:file: ../../../../etc/passwd'],
+                [930120, 'OS File Access Attempt', 'Matched Data: etc/passwd found within ARGS:file: ../../../../etc/passwd'],
+            ], 10],
+            ['/.env', '203.0.113.201', [[930130, 'Restricted File Access Attempt', 'Matched Data: /.env found within REQUEST_FILENAME: /.env']], 5],
+            ['/wp-admin/post.php', '203.0.113.5', [[942100, 'SQL Injection Attack Detected via libinjection', 'Matched Data: 1&1 found within ARGS:content: Our opening hours: 9 to 5. Select the shop and order 1 or more items.']], 5],
+            ['/?cmd=%3C%3Fphp%20system(%27id%27);%20%3F%3E', '192.0.2.88', [[933100, 'PHP Injection Attack: PHP Open Tag Found', "Matched Data: <?php found within ARGS:cmd: <?php system('id'); ?>"]], 5],
+        ];
+        $hour = Carbon::now()->startOfHour();
+        mt_srand(crc32($website->id.$hour->timestamp));
+        $events = [];
+        $at = Carbon::now()->startOfMinute();
+        for ($i = 0; $i < 12 && count($events) < max(1, $limit); $i++) {
+            $at = $at->copy()->subMinutes(mt_rand(3, 95));
+            [$uri, $client, $rules, $score] = $samples[mt_rand(0, count($samples) - 1)];
+            $rules = array_values(array_filter($rules, fn (array $r) => ! in_array($r[0], $security['firewallExclusions'], true)));
+            if ($rules === []) {
+                continue;
+            }
+            $events[] = [
+                'at' => $at->toIso8601ZuluString(), 'clientIp' => $client, 'host' => $security['firewall'] === 'block' ? $website->name : '', 'uri' => $uri,
+                'action' => $security['firewall'] === 'block' ? 'blocked' : 'detected', 'score' => $score,
+                'rules' => array_map(fn (array $r) => ['id' => $r[0], 'message' => $r[1], 'data' => $r[2]], $rules),
+            ];
+        }
+        mt_srand();
+
+        return $events;
     }
 
     /**
