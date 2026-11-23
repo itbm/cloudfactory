@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\SyncDnsZone;
 use App\Models\DnsZone;
+use App\Services\Dns\Rollover;
 use App\Services\Dns\Zones;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -14,13 +15,15 @@ use Illuminate\Support\Carbon;
  * Asks the public DNS for the name servers of the DNS zones. A zone that the public DNS does
  * not send to the panel yet gets a check each time. All other zones get a check one time each
  * day, so that the panel sees when a domain goes to a different DNS provider. A zone that its
- * external DNS provider does not have in the last form goes to the provider again.
+ * external DNS provider does not have in the last form goes to the provider again. The
+ * command also checks the DS records of the zones with DNSSEC at the registry, and moves each
+ * change of a DNSSEC key to its next step (App\Services\Dns\Rollover).
  */
 #[Signature('cloudfactory:check-dns {--all : Check each zone, not only the zones that wait for their name servers}')]
 #[Description('Check in the public DNS that the name servers of each DNS zone are the name servers of the panel')]
 class CheckDnsZones extends Command
 {
-    public function handle(Zones $zones): int
+    public function handle(Zones $zones, Rollover $rollover): int
     {
         $query = DnsZone::where('status', DnsZone::ACTIVE)
             ->when(! $this->option('all'), fn ($q) => $q->where(fn ($q) => $q
@@ -34,6 +37,22 @@ class CheckDnsZones extends Command
             $checked++;
         }
         $this->info("Checked {$checked} DNS ".($checked === 1 ? 'zone' : 'zones').'.');
+
+        // The DS records at the registry of each zone with DNSSEC: each time for a zone with a
+        // change of the key, which can then go to its next step, and one time each day for the
+        // other zones.
+        $due = DnsZone::where('status', DnsZone::ACTIVE)->where('dnssec', true)->whereNull('dns_account_id')->get()
+            ->filter(fn (DnsZone $z) => $this->option('all') || $z->dnssec_rollover !== null || ! isset($z->dnssec_parent['checkedAt'])
+                || Carbon::parse($z->dnssec_parent['checkedAt'])->lt(now()->subDay()))
+            ->sortBy(fn (DnsZone $z) => $z->dnssec_parent['checkedAt'] ?? '')
+            ->take(500);
+        foreach ($due as $zone) {
+            $rollover->check($zone);
+        }
+        $ds = $due->count();
+        if ($ds > 0) {
+            $this->info("Checked the DS records of {$ds} DNS ".($ds === 1 ? 'zone' : 'zones').'.');
+        }
 
         // A zone that its external DNS provider does not have in the last form: the job tried
         // some times and stopped, or the queue lost it. The panel sends it again each hour.

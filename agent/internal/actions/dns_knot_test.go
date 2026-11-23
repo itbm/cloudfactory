@@ -1,16 +1,20 @@
 package actions
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -48,6 +52,13 @@ func testDnssecKey(t *testing.T) (string, int) {
 	return text, sum & 0xffff
 }
 
+// testKey makes a DNSSEC key with a state.
+func testKey(t *testing.T, state string) dnssecKey {
+	t.Helper()
+	key, tag := testDnssecKey(t)
+	return dnssecKey{Key: key, Tag: tag, State: state}
+}
+
 // These tests use a real Knot DNS server on this computer, with no container. They are the
 // proof that Knot accepts the configuration and the zone files of the agent, and that the
 // sequence of the commands is correct. Set CF_TEST_KNOT=1 on a computer that has knotd, knotc,
@@ -75,12 +86,21 @@ func knotServer(t *testing.T) (*Deps, func(args ...string) string) {
 	if err := d.startDns(ctx); err != nil {
 		t.Fatal(err)
 	}
-	server := exec.Command("knotd", "-c", d.dnsLayout().Conf)
-	server.Stderr = os.Stderr
-	if err := server.Start(); err != nil {
+	var server *exec.Cmd
+	start := func() error {
+		server = exec.Command("knotd", "-c", d.dnsLayout().Conf)
+		server.Stderr = os.Stderr
+		return server.Start()
+	}
+	if err := start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { server.Process.Kill(); server.Wait() })
+	d.DnsTest.Restart = func(context.Context) error {
+		server.Process.Signal(os.Interrupt)
+		server.Wait()
+		return start()
+	}
 	d.ReadyTimeout = 10 * time.Second
 	if err := d.waitDns(ctx); err != nil {
 		t.Fatal(err)
@@ -139,11 +159,24 @@ func TestKnotServer(t *testing.T) {
 
 	// DNSSEC on: the server signs the zone with the key of the panel.
 	z.Serial++
-	z.Key, z.KeyTag = testDnssecKey(t)
+	z.Keys = []dnssecKey{testKey(t, keyActive)}
 	set(z)
 	out := dig("example.com", "DNSKEY", "+dnssec", "+multiline")
-	if !strings.Contains(out, "id = "+strconv.Itoa(z.KeyTag)) || !strings.Contains(out, "RRSIG") {
-		t.Errorf("the key with the tag %d:\n%s", z.KeyTag, out)
+	if !strings.Contains(out, "id = "+strconv.Itoa(z.Keys[0].Tag)) || !strings.Contains(out, "RRSIG") {
+		t.Errorf("the key with the tag %d:\n%s", z.Keys[0].Tag, out)
+	}
+	// records gives the records of a type in the answer of a query.
+	records := func(name, rtype string) []string {
+		var out []string
+		for _, line := range strings.Split(dig(name, rtype), "\n") {
+			if f := strings.Fields(line); !strings.HasPrefix(line, ";") && len(f) > 4 && f[3] == rtype {
+				out = append(out, strings.Join(f[4:], " "))
+			}
+		}
+		return out
+	}
+	if cds := records("example.com", "CDS"); len(cds) != 0 {
+		t.Errorf("a CDS record with no change of the key: %v", cds)
 	}
 	if out := dig("example.com", "A", "+dnssec"); !strings.Contains(out, "RRSIG") || !strings.Contains(out, "203.0.113.99") {
 		t.Errorf("a signed answer:\n%s", out)
@@ -162,17 +195,76 @@ func TestKnotServer(t *testing.T) {
 		t.Errorf("keys: %v %v", keys, err)
 	}
 
-	// A new key replaces the key.
+	// A change of the key, in steps. signers gives the key tags of the signatures of an
+	// answer.
+	signers := func(args ...string) []int {
+		tags := []int{}
+		for _, line := range strings.Split(dig(append(args, "+dnssec")...), "\n") {
+			if f := strings.Fields(line); len(f) > 10 && f[3] == "RRSIG" && f[4] == args[1] {
+				tag, _ := strconv.Atoi(f[10])
+				tags = append(tags, tag)
+			}
+		}
+		slices.Sort(tags)
+		return tags
+	}
+	old, next := z.Keys[0], testKey(t, keyReady)
+	both := []int{min(old.Tag, next.Tag), max(old.Tag, next.Tag)}
+	// 1. The new key is in the DNSKEY records and signs them. The old key signs the zone.
 	z.Serial++
-	z.Key, z.KeyTag = testDnssecKey(t)
+	z.Keys = []dnssecKey{old, next}
 	set(z)
-	if out := dig("example.com", "DNSKEY", "+dnssec", "+multiline"); !strings.Contains(out, "id = "+strconv.Itoa(z.KeyTag)) || strings.Count(out, ", id = ") != 1 {
-		t.Errorf("the new key with the tag %d:\n%s", z.KeyTag, out)
+	if got := signers("example.com", "DNSKEY"); !slices.Equal(got, both) {
+		t.Errorf("ready: the DNSKEY records have signatures of %v", got)
+	}
+	if got := signers("example.com", "A"); !slices.Equal(got, []int{old.Tag}) {
+		t.Errorf("ready: the A record has signatures of %v", got)
+	}
+	if cds := records("example.com", "CDS"); len(cds) != 0 {
+		t.Errorf("ready: a CDS record before the step submit: %v", cds)
+	}
+	// 2. The zone has a CDS record and a CDNSKEY record for the new key.
+	z.Serial++
+	z.Keys[1].State = keySubmit
+	set(z)
+	if cds := records("example.com", "CDS"); len(cds) != 1 || !strings.HasPrefix(cds[0], strconv.Itoa(next.Tag)+" 13 2 ") {
+		t.Errorf("submit: the CDS record of the new key: %v", cds)
+	}
+	if cdnskey := records("example.com", "CDNSKEY"); len(cdnskey) != 1 || !strings.HasPrefix(cdnskey[0], "257 3 13 ") {
+		t.Errorf("submit: the CDNSKEY record: %v", cdnskey)
+	}
+	// 3. The registry has the new DS record: both keys sign the zone, and the CDS record goes.
+	z.Serial++
+	z.Keys = []dnssecKey{{Key: next.Key, Tag: next.Tag, State: keyActive}, old}
+	set(z)
+	if got := signers("example.com", "A"); !slices.Equal(got, both) {
+		t.Errorf("both active: the A record has signatures of %v", got)
+	}
+	if cds := records("example.com", "CDS"); len(cds) != 0 {
+		t.Errorf("both active: a CDS record: %v", cds)
+	}
+	// 4. The old key goes.
+	z.Serial++
+	z.Keys = z.Keys[:1]
+	set(z)
+	if got := signers("example.com", "A"); !slices.Equal(got, []int{next.Tag}) {
+		t.Errorf("done: the A record has signatures of %v", got)
+	}
+	if out := dig("example.com", "DNSKEY", "+dnssec", "+multiline"); !strings.Contains(out, "id = "+strconv.Itoa(next.Tag)) || strings.Count(out, ", id = ") != 1 {
+		t.Errorf("done: the new key with the tag %d:\n%s", next.Tag, out)
+	}
+
+	// A new key replaces the key at once, for example after DNSSEC was off.
+	z.Serial++
+	z.Keys = []dnssecKey{testKey(t, keyActive)}
+	set(z)
+	if out := dig("example.com", "DNSKEY", "+dnssec", "+multiline"); !strings.Contains(out, "id = "+strconv.Itoa(z.Keys[0].Tag)) || strings.Count(out, ", id = ") != 1 {
+		t.Errorf("the new key with the tag %d:\n%s", z.Keys[0].Tag, out)
 	}
 
 	// DNSSEC off: the signatures and the keys go.
 	z.Serial++
-	z.Key, z.KeyTag = "", 0
+	z.Keys = nil
 	set(z)
 	if out := dig("example.com", "A", "+dnssec"); strings.Contains(out, "RRSIG") || !strings.Contains(out, "203.0.113.50") {
 		t.Errorf("a zone with no DNSSEC:\n%s", out)
@@ -187,7 +279,7 @@ func TestKnotServer(t *testing.T) {
 	// A second zone, and then the removal of the first one.
 	second := exampleZone()
 	second.Name = "second.example"
-	second.Key, second.KeyTag = testDnssecKey(t)
+	second.Keys = []dnssecKey{testKey(t, keyActive)}
 	set(second)
 	if err := d.removeDnsZones(ctx, []string{"example.com"}); err != nil {
 		t.Fatal(err)
@@ -219,5 +311,245 @@ func TestKnotServerReportsAZoneThatDoesNotLoad(t *testing.T) {
 	}
 	if err := d.loadDnsZones(ctx, []string{z.Name}); err == nil {
 		t.Error("the job must fail when Knot does not load the zone")
+	}
+}
+
+// notice is a NOTIFY message that the DNS server sent to a secondary.
+type notice struct {
+	zone string
+	msg  []byte
+}
+
+// notifyListener takes the NOTIFY messages that the DNS server sends to a secondary on
+// 127.0.0.1, on UDP and on TCP, with the same port. It gives the port.
+func notifyListener(t *testing.T) (int, <-chan notice) {
+	t.Helper()
+	var tcp net.Listener
+	var udp net.PacketConn
+	for i := 0; tcp == nil; i++ {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, err := net.ListenPacket("udp", l.Addr().String())
+		if err != nil {
+			l.Close()
+			if i == 10 {
+				t.Fatal(err)
+			}
+			continue
+		}
+		tcp, udp = l, u
+	}
+	t.Cleanup(func() { tcp.Close(); udp.Close() })
+	notices := make(chan notice, 100)
+	// take keeps a NOTIFY and gives the answer: the same header and question, with the bit
+	// QR. The answer has no TSIG record, so the server logs an error, but it does not wait.
+	take := func(msg []byte) []byte {
+		// The operation code of NOTIFY is 4. The name of the zone is the first question.
+		if len(msg) < 12 || (msg[2]>>3)&0x0f != 4 {
+			return nil
+		}
+		name, end := questionName(msg)
+		if end < 0 || end+4 > len(msg) {
+			return nil
+		}
+		notices <- notice{zone: name, msg: slices.Clone(msg)}
+		answer := slices.Clone(msg[:end+4])
+		answer[2] |= 0x80
+		copy(answer[4:12], []byte{0, 1, 0, 0, 0, 0, 0, 0})
+		return answer
+	}
+	go func() {
+		buf := make([]byte, 65535)
+		for {
+			n, from, err := udp.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			if answer := take(buf[:n]); answer != nil {
+				udp.WriteTo(answer, from)
+			}
+		}
+	}()
+	go func() {
+		for {
+			c, err := tcp.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				c.SetDeadline(time.Now().Add(10 * time.Second))
+				for {
+					var size [2]byte
+					if _, err := io.ReadFull(c, size[:]); err != nil {
+						return
+					}
+					msg := make([]byte, binary.BigEndian.Uint16(size[:]))
+					if _, err := io.ReadFull(c, msg); err != nil {
+						return
+					}
+					if answer := take(msg); answer != nil {
+						c.Write(binary.BigEndian.AppendUint16(nil, uint16(len(answer))))
+						c.Write(answer)
+					}
+				}
+			}()
+		}
+	}()
+	return tcp.Addr().(*net.TCPAddr).Port, notices
+}
+
+// questionName gives the name of the first question of a DNS message, for example
+// "example.com.", and the position after the name. The position is -1 when the message has
+// no correct name.
+func questionName(msg []byte) (string, int) {
+	var labels []string
+	for i := 12; i < len(msg); {
+		n := int(msg[i])
+		if n == 0 {
+			return strings.Join(labels, ".") + ".", i + 1
+		}
+		if n&0xc0 != 0 || i+1+n > len(msg) {
+			return "", -1
+		}
+		labels = append(labels, string(msg[i+1:i+1+n]))
+		i += 1 + n
+	}
+	return "", -1
+}
+
+// waitNotify waits for a NOTIFY of a zone with the SOA record of a serial.
+func waitNotify(t *testing.T, notices <-chan notice, zone string, serial int64) {
+	t.Helper()
+	want := binary.BigEndian.AppendUint32(nil, uint32(serial))
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case n := <-notices:
+			if n.zone == zone && bytes.Contains(n.msg, want) {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("no NOTIFY of %s with the serial %d", zone, serial)
+		}
+	}
+}
+
+// eventually asks a question again until the answer has each text, for at most 10 seconds.
+func eventually(t *testing.T, ask func() string, want ...string) {
+	t.Helper()
+	var out string
+	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+		out = ask()
+		if !slices.ContainsFunc(want, func(w string) bool { return !strings.Contains(out, w) }) {
+			return
+		}
+	}
+	t.Errorf("no %q in:\n%s", want, out)
+}
+
+// The secondaries copy the zones with a TSIG key, find the zones in the catalog zone, and get
+// NOTIFY after each change. A secondary of the owner of a zone copies only that zone.
+func TestKnotServerTransfersTheZonesToTheSecondaries(t *testing.T) {
+	d, dig := knotServer(t)
+	port, notices := notifyListener(t)
+	d.DnsTest.NotifyPort = port
+	ctx := context.Background()
+	set := func(z dnsZone) {
+		t.Helper()
+		if err := d.writeDnsZones(ctx, []dnsZone{z}); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.loadDnsZones(ctx, []string{z.Name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tsig := func(k *dnsTsig) string { return "-y" + k.Algorithm + ":" + k.Name + ":" + k.Secret }
+	z := exampleZone()
+	set(z)
+	signed := exampleZone()
+	signed.Name = "signed.example"
+	signed.Keys = []dnssecKey{testKey(t, keyActive)}
+	set(signed)
+
+	key := &dnsTsig{Name: "cf-anycast", Algorithm: "hmac-sha256", Secret: testSecret}
+	in := dnsSecondariesIn{Catalog: "catalog.cloudfactory.invalid", Version: 1, Secondaries: []dnsSecondary{
+		{ID: secondaryID, Addresses: []string{"127.0.0.1"}, Tsig: key, Notify: true, Catalog: true},
+	}}
+	if err := d.writeDnsSecondaries(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	// A new secondary gets NOTIFY of each zone, so that it copies the zones now.
+	waitNotify(t, notices, "example.com.", z.Serial)
+
+	// The secondary copies each zone with its key. With no key, the server refuses the transfer.
+	if out := dig("example.com", "AXFR", tsig(key)); !strings.Contains(out, "203.0.113.10") || !strings.Contains(out, "x.dev") && !strings.Contains(out, "*.dev") {
+		t.Errorf("a transfer with the key:\n%s", out)
+	}
+	if out := dig("example.com", "AXFR"); strings.Contains(out, "203.0.113.10") {
+		t.Errorf("a transfer with no key:\n%s", out)
+	}
+	if out := dig("example.com", "AXFR", tsig(&dnsTsig{Name: "cf-anycast", Algorithm: "hmac-sha256", Secret: testOtherSecret})); strings.Contains(out, "203.0.113.10") {
+		t.Errorf("a transfer with an incorrect secret:\n%s", out)
+	}
+	if out := dig("signed.example", "AXFR", tsig(key)); !strings.Contains(out, "RRSIG") || !strings.Contains(out, "DNSKEY") {
+		t.Errorf("a transfer of a signed zone:\n%s", out)
+	}
+	// The catalog zone lists the zones (RFC 9432, version 2).
+	eventually(t, func() string { return dig("catalog.cloudfactory.invalid", "AXFR", tsig(key)) }, "example.com.", "signed.example.", `"2"`)
+	if out := dig("catalog.cloudfactory.invalid", "AXFR"); strings.Contains(out, "signed.example.") {
+		t.Errorf("a transfer of the catalog zone with no key:\n%s", out)
+	}
+
+	// A change of a zone sends NOTIFY with the new serial.
+	z.Serial++
+	z.Records[2].Value = "203.0.113.99"
+	set(z)
+	waitNotify(t, notices, "example.com.", z.Serial)
+	if out := dig("example.com", "AXFR", tsig(key)); !strings.Contains(out, "203.0.113.99") {
+		t.Errorf("a transfer after a change:\n%s", out)
+	}
+
+	// The owner of example.com gives a secondary of its own. The panel refuses an address that
+	// is not public, so the test writes the state directly.
+	zoneKey := &dnsTsig{Name: "transfer.example.com", Algorithm: "hmac-sha512", Secret: testOtherSecret}
+	st, _, err := d.readDnsState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	zs := st.Zones["example.com"]
+	zs.Transfers = &dnsTransfers{Addresses: []string{"127.0.0.1"}, Tsig: zoneKey}
+	st.Zones["example.com"] = zs
+	if err := d.writeDnsState(st); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.writeDnsSecondaries(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	if out := dig("example.com", "AXFR", tsig(zoneKey)); !strings.Contains(out, "203.0.113.99") {
+		t.Errorf("a transfer to the secondary of the owner:\n%s", out)
+	}
+	if out := dig("signed.example", "AXFR", tsig(zoneKey)); strings.Contains(out, "DNSKEY") {
+		t.Errorf("the key of example.com copies a different zone:\n%s", out)
+	}
+	if out := dig("example.com", "AXFR", tsig(key)); !strings.Contains(out, "203.0.113.99") {
+		t.Errorf("a transfer to the secondary of the panel:\n%s", out)
+	}
+
+	// With no secondaries of the panel, only the secondary of the owner copies its zone, and
+	// there is no catalog zone.
+	if err := d.writeDnsSecondaries(ctx, dnsSecondariesIn{Version: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if out := dig("example.com", "AXFR", tsig(key)); strings.Contains(out, "203.0.113.99") {
+		t.Errorf("a transfer to a removed secondary:\n%s", out)
+	}
+	if out := dig("example.com", "AXFR", tsig(zoneKey)); !strings.Contains(out, "203.0.113.99") {
+		t.Errorf("a transfer to the secondary of the owner:\n%s", out)
+	}
+	if out := dig("catalog.cloudfactory.invalid", "SOA"); !strings.Contains(out, "status: REFUSED") {
+		t.Errorf("the catalog zone with no secondaries:\n%s", out)
 	}
 }

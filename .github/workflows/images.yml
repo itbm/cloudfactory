@@ -216,6 +216,8 @@ jobs:
             docker logs smoke
             docker inspect -f '{{.State.Running}}' smoke | grep -q true
             [ "$code" != 000 ]
+            # The rules of the spam filter are in the image, and the mail server can read them.
+            docker exec smoke gzip -t /usr/local/share/stalwart/spam-filter-rules.json.gz
             exit 0
           fi
           if [ "$IMAGE" = mail-keep ]; then

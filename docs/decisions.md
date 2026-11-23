@@ -135,11 +135,29 @@ The DNS server is Knot DNS in one container on each server with the role `dns`.
   transfers (AXFR) or notifications between them. Thus there is no primary server that must
   be in operation, no transfer key to keep, and no open port between the servers. The cost
   is one job for each DNS server and each change.
+- Secondary DNS is only outbound: a DNS server outside the panel can copy the zones from the
+  DNS servers of the panel, but the panel never copies a zone from a different server. The
+  panel keeps the records, checks each record with the shared input rules, and gives each
+  record to the plugins of the external DNS providers. A zone that a different server sends
+  would skip these checks, and the panel would not be the only source of the records. To
+  move a zone into the panel, import its zone file.
+- Each DNS server of the panel is a primary server for the secondaries. A secondary can copy
+  a zone from each DNS server, so the transfers continue when one DNS server is offline.
 - The root helper writes the zone files from records that it checks. It does not accept the
   text of a zone file.
 - The panel makes the DNSSEC key of a zone and gives it to each DNS server. With a key that
   each server made itself, the servers would give different signatures and the registrar
   would need one DS record for each server.
+- The panel changes the DNSSEC key of a zone only when a user asks, not on a schedule. Each
+  change needs the new DS record at the registrar, and many registries do not read CDS
+  records. A change on a schedule would wait for a user in the step `submit`, so a schedule
+  gives no advantage.
+- A change of the key uses double signatures in its last step (RFC 6781), and the panel does
+  not remove the old key until the registry has the new DS record. The old DS record and the
+  new DS record are both correct during the change, so the time when the user changes the
+  record at the registrar is not important.
+- The panel reads the DS records from the public DNS, not from the API of a registrar. This
+  check operates for all registrars, and it shows what the resolvers see.
 
 ## Who checks the registry for new image tags
 

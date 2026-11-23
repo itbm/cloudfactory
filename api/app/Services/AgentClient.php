@@ -9,6 +9,7 @@ use App\Models\GitSource;
 use App\Models\Server;
 use App\Models\Website;
 use App\Services\Certificates\Certificates;
+use App\Services\Dns\Secondaries;
 use App\Services\Dns\Zones;
 use App\Services\Packs\Packs;
 use Illuminate\Http\Client\ConnectionException;
@@ -48,7 +49,10 @@ class AgentClient
                 // The secrets of a mail cluster are not in the job.
                 ...MailClusters::secretsFor($job),
                 ...Mail::keyFileFor($job),
+                ...MailSettings::passwordFor($job),
                 ...Zones::keysFor($job),
+                // The secondary DNS servers and their TSIG secrets are not in the job either.
+                ...Secondaries::forAgent($job),
                 // The credentials of the object storage and the password of the repository are not
                 // in the job. The panel adds the current values each time that it sends the job.
                 // Second audit, finding F08: a server with its own key gets that key only.

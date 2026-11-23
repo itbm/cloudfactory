@@ -24,6 +24,14 @@ RUN setcap -r /usr/local/bin/stalwart \
 # stalwart of the base image. The Unix user of the mail server on the host owns the data
 # files, and has this ID in the container. A base image with a different ID stops the build.
 RUN test "$(id -u stalwart):$(id -g stalwart)" = 2000:2000
+# The rules of the spam filter. By default, Stalwart downloads them from GitHub. The firewall
+# of the host lets the mail server connect only to the DNS and to other mail servers, so the
+# agent sets the mail server to read this file (quadlet.MailSpamRulesFile). A new release of
+# the rules needs a new image: change the version and the checksum together.
+RUN install -d -m 0755 /usr/local/share/stalwart
+ADD --checksum=sha256:604cc4386b1574e95185d37cb9c194ac20d360cca3865960b6ed0edf70475562 --chmod=0644 \
+    https://github.com/stalwartlabs/spam-filter/releases/download/v3.0.4/spam-filter-rules.json.gz \
+    /usr/local/share/stalwart/spam-filter-rules.json.gz
 USER stalwart
 EXPOSE 2025 2465 2587 2993 8080
 LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \

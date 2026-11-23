@@ -9,10 +9,11 @@
                 "customerId": "01m7cqzs80h56kh10000000002",
                 "status": "active",
                 "serial": 1794564000,
-                "recordCount": 6,
+                "recordCount": 7,
                 "nameServers": [
                     "ns1.northwind.example.com",
-                    "ns2.northwind.example.com"
+                    "ns2.northwind.example.com",
+                    "ns3.backup-dns.example"
                 ],
                 "provider": null,
                 "delegation": {
@@ -27,7 +28,21 @@
                     "enabled": false,
                     "state": "off",
                     "ds": null,
-                    "dnskey": null
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
+                },
+                "transfers": {
+                    "addresses": [],
+                    "notify": false,
+                    "nameServers": [],
+                    "tsig": null,
+                    "primaries": [
+                        "203.0.113.10",
+                        "2001:db8:10::1",
+                        "203.0.113.20",
+                        "2001:db8:20::1"
+                    ]
                 },
                 "servers": [
                     {
@@ -48,10 +63,11 @@
                 "customerId": "01m7cqzs80h56kh10000000003",
                 "status": "failed",
                 "serial": 1794564000,
-                "recordCount": 6,
+                "recordCount": 7,
                 "nameServers": [
                     "ns1.northwind.example.com",
-                    "ns2.northwind.example.com"
+                    "ns2.northwind.example.com",
+                    "ns3.backup-dns.example"
                 ],
                 "provider": null,
                 "delegation": {
@@ -66,7 +82,21 @@
                     "enabled": false,
                     "state": "off",
                     "ds": null,
-                    "dnskey": null
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
+                },
+                "transfers": {
+                    "addresses": [],
+                    "notify": false,
+                    "nameServers": [],
+                    "tsig": null,
+                    "primaries": [
+                        "203.0.113.10",
+                        "2001:db8:10::1",
+                        "203.0.113.20",
+                        "2001:db8:20::1"
+                    ]
                 },
                 "servers": [
                     {
@@ -87,10 +117,11 @@
                 "customerId": "01m7cqzs80h56kh10000000001",
                 "status": "active",
                 "serial": 1794574800,
-                "recordCount": 6,
+                "recordCount": 7,
                 "nameServers": [
                     "ns1.northwind.example.com",
-                    "ns2.northwind.example.com"
+                    "ns2.northwind.example.com",
+                    "ns3.backup-dns.example"
                 ],
                 "provider": null,
                 "delegation": {
@@ -105,7 +136,21 @@
                     "enabled": false,
                     "state": "off",
                     "ds": null,
-                    "dnskey": null
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
+                },
+                "transfers": {
+                    "addresses": [],
+                    "notify": false,
+                    "nameServers": [],
+                    "tsig": null,
+                    "primaries": [
+                        "203.0.113.10",
+                        "2001:db8:10::1",
+                        "203.0.113.20",
+                        "2001:db8:20::1"
+                    ]
                 },
                 "servers": [
                     {
@@ -161,8 +206,11 @@
                     "enabled": false,
                     "state": "off",
                     "ds": null,
-                    "dnskey": null
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
                 },
+                "transfers": null,
                 "servers": [
                     {
                         "nameServer": "ns1.northwind.example.com",
@@ -179,7 +227,8 @@
         ],
         "nameServers": [
             "ns1.northwind.example.com",
-            "ns2.northwind.example.com"
+            "ns2.northwind.example.com",
+            "ns3.backup-dns.example"
         ]
     }
 }

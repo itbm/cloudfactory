@@ -9,10 +9,11 @@
                 "customerId": "01m7cqzs80h56kh10000000004",
                 "status": "active",
                 "serial": 1794567600,
-                "recordCount": 4,
+                "recordCount": 5,
                 "nameServers": [
                     "ns1.panel.example",
-                    "ns2.panel.example"
+                    "ns2.panel.example",
+                    "ns3.backup-dns.example"
                 ],
                 "provider": null,
                 "delegation": {
@@ -27,7 +28,21 @@
                     "enabled": false,
                     "state": "off",
                     "ds": null,
-                    "dnskey": null
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
+                },
+                "transfers": {
+                    "addresses": [],
+                    "notify": false,
+                    "nameServers": [],
+                    "tsig": null,
+                    "primaries": [
+                        "203.0.113.10",
+                        "2001:db8:10::1",
+                        "203.0.113.20",
+                        "2001:db8:20::1"
+                    ]
                 },
                 "servers": [
                     {
@@ -48,10 +63,12 @@
                 "customerId": "01m7cqzs80h56kh10000000004",
                 "status": "active",
                 "serial": 1794592800,
-                "recordCount": 24,
+                "recordCount": 26,
                 "nameServers": [
                     "ns1.panel.example",
-                    "ns2.panel.example"
+                    "ns2.panel.example",
+                    "ns3.backup-dns.example",
+                    "ns.acme-backup.example"
                 ],
                 "provider": null,
                 "delegation": {
@@ -66,13 +83,59 @@
                     "enabled": true,
                     "state": "active",
                     "ds": {
-                        "keyTag": 31959,
+                        "keyTag": 27181,
                         "algorithm": 13,
                         "digestType": 2,
-                        "digest": "574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492",
-                        "record": "acme.example.com. IN DS 31959 13 2 574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492"
+                        "digest": "E0362DE52769F2ACD8201FD631DECA081713CAC8B276808CD1A172BA086BA0D5",
+                        "record": "acme.example.com. IN DS 27181 13 2 E0362DE52769F2ACD8201FD631DECA081713CAC8B276808CD1A172BA086BA0D5"
                     },
-                    "dnskey": "acme.example.com. IN DNSKEY 257 3 13 xouWXR6lNIfgHzR5q3HGtUwwehAnRz/iqKeC/jSDkjBzfc28BJl+OM9IjTvgOWainGwzDWQOe+M9mZn3Axgwrg=="
+                    "dnskey": "acme.example.com. IN DNSKEY 257 3 13 xouWXR6lNIfgHzR5q3HGtUwwehAnRz/iqKeC/jSDkjBzfc28BJl+OM9IjTvgOWainGwzDWQOe+M9mZn3Axgwrg==",
+                    "rollover": {
+                        "step": "submit",
+                        "startedAt": "2026-11-14T05:00:00+00:00",
+                        "until": null,
+                        "newDs": {
+                            "keyTag": 27181,
+                            "algorithm": 13,
+                            "digestType": 2,
+                            "digest": "E0362DE52769F2ACD8201FD631DECA081713CAC8B276808CD1A172BA086BA0D5",
+                            "record": "acme.example.com. IN DS 27181 13 2 E0362DE52769F2ACD8201FD631DECA081713CAC8B276808CD1A172BA086BA0D5"
+                        },
+                        "oldDs": {
+                            "keyTag": 31959,
+                            "algorithm": 13,
+                            "digestType": 2,
+                            "digest": "574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492",
+                            "record": "acme.example.com. IN DS 31959 13 2 574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492"
+                        }
+                    },
+                    "parent": {
+                        "state": "ok",
+                        "keyTags": [
+                            31959
+                        ],
+                        "otherKeyTags": [],
+                        "checkedAt": "2026-11-14T09:51:00+00:00"
+                    }
+                },
+                "transfers": {
+                    "addresses": [
+                        "192.0.2.200"
+                    ],
+                    "notify": true,
+                    "nameServers": [
+                        "ns.acme-backup.example"
+                    ],
+                    "tsig": {
+                        "name": "transfer.acme.example.com",
+                        "algorithm": "hmac-sha256"
+                    },
+                    "primaries": [
+                        "203.0.113.10",
+                        "2001:db8:10::1",
+                        "203.0.113.20",
+                        "2001:db8:20::1"
+                    ]
                 },
                 "servers": [
                     {
@@ -137,8 +200,11 @@
                     "enabled": false,
                     "state": "off",
                     "ds": null,
-                    "dnskey": null
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
                 },
+                "transfers": null,
                 "servers": [],
                 "websites": 0,
                 "createdAt": "2026-10-24T10:00:00+00:00"
@@ -146,7 +212,8 @@
         ],
         "nameServers": [
             "ns1.panel.example",
-            "ns2.panel.example"
+            "ns2.panel.example",
+            "ns3.backup-dns.example"
         ]
     }
 }

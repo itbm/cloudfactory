@@ -457,6 +457,39 @@ export type DnsZoneStatus = "active" | "updating" | "failed" | "removing";
  */
 export type DnsDelegation = "here" | "elsewhere" | "none" | "unknown";
 
+/** A DS record: the digest of a DNSSEC key, for the registry of the domain. */
+export interface DsRecord { keyTag: number; algorithm: number; digestType: number; digest: string; record: string }
+
+/**
+ * The steps of a change of the DNSSEC key (a rollover with double signatures).
+ * publish: the DNS servers publish the new key. submit: the customer gives the new DS record to
+ * the registrar. retire: both keys sign the zone, then the old key goes.
+ */
+export type DnssecRolloverStep = "publish" | "submit" | "retire";
+
+export interface DnssecRollover {
+  step: DnssecRolloverStep;
+  startedAt?: string;
+  /** The time when the step can end. Undefined in the step "submit", and in the step "publish" until each DNS server has the new key. */
+  until?: string;
+  newDs: DsRecord;
+  oldDs: DsRecord;
+}
+
+/**
+ * ok: a DS record at the registry is for a key of the zone. none: the registry has no DS record,
+ * and resolvers do not check the signatures. other: no DS record is for a key of the zone, and
+ * resolvers that check DNSSEC refuse the answers. unknown: the lookup failed.
+ */
+export interface DnssecParent {
+  state: "ok" | "none" | "other" | "unknown";
+  /** The key tags of the keys of the zone that the registry has a DS record for. */
+  keyTags: number[];
+  /** The key tags of the other DS records at the registry. */
+  otherKeyTags: number[];
+  checkedAt?: string;
+}
+
 export interface DnsZone {
   id: string;
   name: string;
@@ -470,19 +503,71 @@ export interface DnsZone {
     enabled: boolean;
     /** pending: the external DNS provider makes the key. The DS record comes after that. */
     state: "off" | "pending" | "active";
-    /** The DS record that the customer gives to the registrar of the domain. */
-    ds?: { keyTag: number; algorithm: number; digestType: number; digest: string; record: string };
+    /** The DS record that the customer gives to the registrar of the domain. During a change of the key, the DS record of the new key. */
+    ds?: DsRecord;
     dnskey?: string;
+    /** A change of the key on the DNS servers of the panel. Undefined when the key does not change. */
+    rollover?: DnssecRollover;
+    /** The DS records of the zone at the registry, from the public DNS. Undefined until the panel checks, and for a zone at an external DNS provider. */
+    parent?: DnssecParent;
   };
   /** The state of the zone on each name server of the panel. */
   servers: { nameServer: string; state: "ok" | "pending" | "failed" | "removed" }[];
   /** The external DNS provider of the zone. Undefined for a zone on the DNS servers of the panel. */
   provider?: DnsZoneProvider;
+  /** The zone transfers to the secondary DNS servers of the owner. Undefined for a zone at an external DNS provider. */
+  transfers?: DnsTransfers;
   /** The number of websites of the customer with a domain in the zone. */
   websites: number;
   createdAt: string;
   /** Undefined until the panel has read the records of the zone. */
   records?: DnsRecord[];
+}
+
+export type TsigAlgorithm = "hmac-sha256" | "hmac-sha512";
+
+/** A TSIG key that signs zone transfers. */
+export interface TsigKey {
+  name: string;
+  algorithm: TsigAlgorithm;
+  /** The secret in base64. Only the "secret" routes of the API give it. */
+  secret?: string;
+}
+
+/** The zone transfers of one zone to the secondary DNS servers of its owner. */
+export interface DnsTransfers {
+  /** Empty when the zone has no transfers. */
+  addresses: string[];
+  notify: boolean;
+  /** The host names of the secondaries. The zone has an NS record for each one. */
+  nameServers: string[];
+  tsig?: TsigKey;
+  /** The addresses of the DNS servers of the panel. The secondaries copy the zone from these. */
+  primaries: string[];
+}
+
+/** A secondary DNS server of the panel. It copies all zones. */
+export interface DnsSecondary {
+  id: string;
+  name: string;
+  addresses: string[];
+  /** The host name of the secondary. Each zone has an NS record for it. */
+  nameServer?: string;
+  tsig?: TsigKey;
+  notify: boolean;
+  /** True when the secondary also copies the catalog zone. */
+  catalog: boolean;
+  createdAt: string;
+}
+
+/** The secondary DNS servers of the panel. Only an administrator has them. */
+export interface DnsSecondaries {
+  data: DnsSecondary[];
+  catalogZone: string;
+  /** The DNS servers of the panel, which the secondaries copy the zones from. */
+  primaries: { nameServer: string; addresses: string[] }[];
+  /** The state of the list on each DNS server of the panel. */
+  servers: { server: string; state: "ok" | "pending" | "failed" }[];
 }
 
 /** The state of a zone at its external DNS provider. */
@@ -703,6 +788,28 @@ export interface ServerMail {
   domains: number;
   /** Set when the server is a member of this mail cluster. The cluster controls its mail server. */
   clusterId?: string | null;
+  /** The spam filter and the outbound relay. A new mail server has the default settings. */
+  settings: MailSettings;
+}
+
+/** The spam filter and the outbound relay of a mail server. An administrator sets them. */
+export interface MailSettings {
+  /** True: the mail server gives each new message a spam score. */
+  spamFilter: boolean;
+  /** A message with this score or more goes to the junk folder. */
+  spamScore: number;
+  /** The mail server refuses a message with this score or more. Null: no refusal for the score. */
+  rejectScore: number | null;
+  /** Null: the mail server sends each message to the mail server of the recipient (port 25). */
+  relay: { host: string; port: number; username: string | null; hasPassword: boolean } | null;
+}
+
+/** The values that change the settings. Leave out the password of the relay to keep it. */
+export interface MailSettingsInput {
+  spamFilter: boolean;
+  spamScore: number;
+  rejectScore: number | null;
+  relay: { host: string; port: number; username: string | null; password?: string | null } | null;
 }
 
 /** The step of a member in the setup of its mail cluster. */
@@ -1205,6 +1312,8 @@ export interface State {
   dnsAccounts: DnsAccount[];
   /** The external DNS providers that the plugins that are on offer. */
   dnsProviders: DnsProvider[];
+  /** The secondary DNS servers of the panel. Only an administrator has them. */
+  dnsSecondaries?: DnsSecondaries;
   /** The mesh. Only an administrator has it. */
   mesh?: Mesh;
   /** The private networks of the customers that the user can see. */
