@@ -53,7 +53,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `agent/internal/actions/observe.go`
 
-- Usage history and usage alerts: the agent reports the traffic of each website (from the metrics of the edge proxy) and of each server. The panel keeps buckets of 5 minutes for 8 days and of 1 hour for 400 days, and shows graphs of CPU, memory, disk and traffic for each website, server and database server (**Usage** tab, server page). A plan can have a bandwidth limit for each month. An alert opens at the warning threshold of a limit (80% by default) and becomes critical at the critical threshold (95%). The page **Usage alerts** shows the alerts of each role, and an administrator sets the thresholds. The events `UsageAlertRaised` and `UsageAlertResolved` and the email notifier deliver them. The panel does not stop a website at a limit because of an alert
+- Usage history and usage alerts: the agent reports the traffic of each website (from the metrics of the edge proxy) and of each server. The panel keeps buckets of 5 minutes for 8 days and of 1 hour for 400 days, and shows graphs of CPU, memory, disk and traffic for each website, server and database server (**Usage** tab, server page). A plan can have a bandwidth limit for each month. An alert opens at the warning threshold of a limit (80% by default) and becomes critical at the critical threshold (95%). The page **Usage alerts** shows the alerts of each role, and an administrator sets the thresholds. The events `UsageAlertRaised` and `UsageAlertResolved` and the email notifier deliver them. A mailbox gets an alert at 90% of its size limit, and a critical alert at 98% (FR-603). The panel does not stop a website at a limit because of an alert
 
   Where: `agent/internal/caddy/traffic.go`, `api/app/Services/UsageRecorder.php`, `api/app/Http/Controllers/Api/UsageController.php`, `web/src/components/UsageCharts.tsx`, `web/src/pages/AlertsPage.tsx`
 
@@ -81,7 +81,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `api/app/Services/DatabaseServers.php`, `api/app/Http/Controllers/Api/DatabaseServerController.php`, `agent/internal/actions/dbserver.go`, `agent/internal/actions/dbdisk.go`, `web/src/features/DatabaseServersPanel.tsx`, `cli/cmd/cf/dbservers.go`
 
-- Email: an administrator turns on a mail server (Stalwart) for a server. A customer adds mail domains with their DNS records, mailboxes with a size limit, aliases and forwarders. The plan gives the number and the total size of the mailboxes. Each mail server has a webmail (Bulwark). A mailbox can encrypt its stored mail with OpenPGP keys that the panel makes. An administrator makes mail clusters of 3 or 5 servers
+- Email: an administrator turns on a mail server (Stalwart) for a server. A customer adds mail domains with their DNS records, mailboxes with a size limit, aliases and forwarders. The email page shows the mailboxes that are 90% full or more. The plan gives the number and the total size of the mailboxes. Each mail server has a webmail (Bulwark). A mailbox can encrypt its stored mail with OpenPGP keys that the panel makes. An administrator makes mail clusters of 3 or 5 servers
 
   Where: `api/app/Http/Controllers/Api/MailDomainController.php`, `api/app/Services/Mail.php`, `agent/internal/actions/mail.go`, `agent/internal/stalwart`, `images/mail`, `web/src/pages/EmailPage.tsx`, `cli/cmd/cf/mail.go`
 

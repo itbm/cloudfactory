@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DatabaseServer;
+use App\Models\Mailbox;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\UsageAlert;
@@ -171,7 +172,7 @@ class UsageController extends Controller
     {
         $data = $request->validate([
             'state' => ['sometimes', Rule::in(['open', 'resolved', 'all'])],
-            'subjectType' => ['sometimes', Rule::in([UsageAlert::WEBSITE, UsageAlert::SERVER, UsageAlert::DATABASE_SERVER])],
+            'subjectType' => ['sometimes', Rule::in([UsageAlert::WEBSITE, UsageAlert::SERVER, UsageAlert::DATABASE_SERVER, UsageAlert::MAILBOX])],
             'subjectId' => ['sometimes', 'string', 'max:26'],
         ]);
         $ids = $request->user()->visibleCustomerIds();
@@ -229,6 +230,12 @@ class UsageController extends Controller
                 }
             }
         }
+        // The name of a mailbox is its address.
+        if (! empty($by[UsageAlert::MAILBOX])) {
+            foreach (Mailbox::with('domain')->whereIn('id', array_unique($by[UsageAlert::MAILBOX]))->get() as $mailbox) {
+                $names[UsageAlert::MAILBOX.'|'.$mailbox->id] = $mailbox->address();
+            }
+        }
 
         return $names;
     }
@@ -242,7 +249,7 @@ class UsageController extends Controller
             'id' => $a->id,
             'subjectType' => $a->subject_type,
             'subjectId' => $a->subject_id,
-            // Null when the website, the server or the database server was removed.
+            // Null when the website, the server, the database server or the mailbox was removed.
             'subjectName' => $names["{$a->subject_type}|{$a->subject_id}"] ?? null,
             'customerId' => $a->customer_id,
             'serverId' => $a->server_id,

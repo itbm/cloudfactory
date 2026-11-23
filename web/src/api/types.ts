@@ -1631,8 +1631,9 @@ export interface PluginPageSession {
 // Usage history and usage alerts. The panel reads the history when the user opens a graph.
 
 export type UsageRange = "24h" | "7d" | "30d" | "90d" | "1y";
-export type UsageSubject = "website" | "server" | "database_server";
-export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes";
+export type UsageSubject = "website" | "server" | "database_server" | "mailbox";
+/** "storage" is the size of a mailbox (FR-603). */
+export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes" | "storage";
 
 /** One point of a graph. A value is null when no report is in the point. */
 export interface UsagePoint {

@@ -631,6 +631,13 @@ The status report of the agent has the state of the mail server and the size of 
 of each mailbox. The plan of a customer gives the number of its mailboxes and the total size
 of these mailboxes.
 
+When a mailbox uses 90% of its size limit, the panel opens a usage alert (FR-603). At 98%, the
+alert becomes critical. When the mailbox uses less than 85%, the panel closes the alert. These
+values are fixed: the thresholds of the usage alerts do not change them. The panel also closes
+the alert of a mailbox that the status report does not have, for example a removed mailbox.
+The users get the usage alert email, and the email page shows the mailboxes that are almost
+full. A full mailbox refuses new mail.
+
 ### Encryption of the stored mail (OpenPGP)
 
 A mailbox can have an OpenPGP public key. The mail server then encrypts each new message with

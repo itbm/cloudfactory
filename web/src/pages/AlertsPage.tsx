@@ -8,8 +8,9 @@ import { Topbar } from "../components/Layout";
 import { ALERT_ADVICE, RESOURCE_LABEL } from "../components/UsageCharts";
 import { Card, Empty, Field, FormError, PageHeader, TableWrap, Tabs } from "../components/ui";
 import { longDate, relativeTime } from "../lib/format";
+import { MAILBOX_CRITICAL_PERCENT, MAILBOX_WARNING_PERCENT } from "../lib/labels";
 
-const SUBJECT_LABEL: Record<UsageAlert["subjectType"], string> = { website: "Website", server: "Server", database_server: "Database server" };
+const SUBJECT_LABEL: Record<UsageAlert["subjectType"], string> = { website: "Website", server: "Server", database_server: "Database server", mailbox: "Mailbox" };
 
 function Level({ alert }: { alert: UsageAlert }) {
   const critical = alert.level === "critical";
@@ -27,7 +28,8 @@ function Subject({ alert }: { alert: UsageAlert }) {
   if (!alert.subjectName) return <span className="muted">{name}</span>;
   const href = alert.subjectType === "website" ? `/websites/${alert.subjectId}/usage`
     : alert.subjectType === "server" ? (admin ? `/servers/${alert.subjectId}` : null)
-      : "/databases";
+      : alert.subjectType === "mailbox" ? `/email?mailbox=${encodeURIComponent(name)}`
+        : "/databases";
   return (
     <>
       {href ? <Link to={href}>{name}</Link> : name}
@@ -120,7 +122,7 @@ export function AlertsPage() {
       <main id="main" className="content content-wide">
         <PageHeader
           title="Usage alerts"
-          description={`An alert opens when a website${role === "administrator" ? ", a database server or a server" : " or a database server"} uses ${warningPercent}% of a limit, and becomes critical at ${criticalPercent}%. CPU and memory use the average of the last 30 minutes.`}
+          description={`An alert opens when a website${role === "administrator" ? ", a database server or a server" : " or a database server"} uses ${warningPercent}% of a limit, and becomes critical at ${criticalPercent}%. CPU and memory use the average of the last 30 minutes. A mailbox alert opens when a mailbox is ${MAILBOX_WARNING_PERCENT}% full, and becomes critical at ${MAILBOX_CRITICAL_PERCENT}%.`}
         />
         <Tabs label="Alerts" current={tab} onSelect={(t) => setTab(t as "open" | "resolved")} items={[{ id: "open", label: `Open (${open.length})` }, { id: "resolved", label: "Closed" }]} />
         <div className="stack">
@@ -136,7 +138,7 @@ export function AlertsPage() {
           </Card>
           {role === "administrator" && <ThresholdsCard />}
           <p className="muted small">
-            The panel does not stop a website because of an alert. When the panel can send email, the users who keep the usage email on also get an email when an alert opens or becomes critical.
+            The panel does not stop a website because of an alert. A full mailbox refuses new mail. When the panel can send email, the users who keep the usage email on also get an email when an alert opens or becomes critical.
           </p>
         </div>
       </main>
