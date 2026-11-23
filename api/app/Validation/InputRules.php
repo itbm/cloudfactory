@@ -117,6 +117,12 @@ final class InputRules
     /** The version of a pack, for example "1.2.0". */
     public const PACK_VERSION = '/^(?:^[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}([-+][0-9A-Za-z.-]{1,30})?$)/D';
 
+    /** The bcrypt hash of the password of a user of a password-protected path. The panel makes it, and the agent gives it to the edge proxy. The agent never gets the password. */
+    public const PATH_PASSWORD_HASH = '/^(?:^\\$2[aby]\\$1[0-4]\\$[.\\/A-Za-z0-9]{53}$)/D';
+
+    /** The user name of a password-protected path of a website. The edge proxy asks for it with HTTP basic authentication. */
+    public const PATH_USER = '/^(?:^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$)/D';
+
     /** The name of a PHP extension. */
     public const PHP_EXTENSION = '/^(?:^[a-z0-9_]{1,40}$)/D';
 
@@ -131,6 +137,9 @@ final class InputRules
 
     /** The value of a deploy secret. It is on one line. */
     public const SECRET_VALUE = '/^(?=[\\s\\S]{0,4096}\\z)(?:^[^\\x00\\n\\r]+$)/D';
+
+    /** A path of the protection of a website in the edge proxy, for example "/wp-login.php" or "/admin/". A path that ends with "/" is the directory and all paths in it. The path has no empty part, no "." part and no ".." part. It has no "%" and no "*": the edge proxy compares the decoded path of a request. */
+    public const SECURITY_PATH = '/^(?=[\\s\\S]{0,200}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^\\/([A-Za-z0-9._~@:+,=-]+(\\/[A-Za-z0-9._~@:+,=-]+)*\\/?)?$)/D';
 
     /** A SHA-256 hash in lower-case hexadecimal. */
     public const SHA256 = '/^(?:^[0-9a-f]{64}$)/D';
@@ -197,11 +206,14 @@ final class InputRules
         'packImageVersion' => self::PACK_IMAGE_VERSION,
         'packSlug' => self::PACK_SLUG,
         'packVersion' => self::PACK_VERSION,
+        'pathPasswordHash' => self::PATH_PASSWORD_HASH,
+        'pathUser' => self::PATH_USER,
         'phpExtension' => self::PHP_EXTENSION,
         'restorePath' => self::RESTORE_PATH,
         'routePath' => self::ROUTE_PATH,
         'secretName' => self::SECRET_NAME,
         'secretValue' => self::SECRET_VALUE,
+        'securityPath' => self::SECURITY_PATH,
         'sha256' => self::SHA256,
         'sshKey' => self::SSH_KEY,
         'unixUser' => self::UNIX_USER,
@@ -251,11 +263,14 @@ final class InputRules
         'packImageVersion' => 'Use up to 16 letters, digits and the characters . + _ -, for example 1.25.',
         'packSlug' => 'Use 2 to 31 lower-case letters, digits and "-". The first character is a letter.',
         'packVersion' => 'Use a version such as 1.2.0.',
+        'pathPasswordHash' => 'Enter a bcrypt hash.',
+        'pathUser' => 'Use 1 to 32 letters, digits, dots, underscores and hyphens. Start with a letter or a digit.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'routePath' => 'Use a path such as /01jbq3z5k8n6/: a slash, 1 to 40 lower-case letters and digits, and a slash.',
         'secretName' => 'Use 1 to 64 capital letters, digits and underscores. Do not start with a digit.',
         'secretValue' => 'Enter a value of 1 to 4096 characters on one line.',
+        'securityPath' => 'Enter a path that starts with /, for example /wp-login.php or /admin/. Use letters, digits and . _ ~ @ : + , = -. Do not use "//", "." or ".." parts.',
         'sha256' => 'Enter 64 hexadecimal digits in lower case.',
         'sshKey' => 'Enter one public SSH key on one line, for example: ssh-ed25519 AAAA... name. Do not put options before the key.',
         'unixUser' => 'Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits.',
@@ -318,6 +333,21 @@ final class InputRules
     /** The largest number of environment variables of a website. */
     public const MAX_ENVIRONMENT_VARIABLES = 50;
 
+    /** The largest number of firewall rules that a website can turn off. */
+    public const MAX_FIREWALL_EXCLUSIONS = 50;
+
+    /** The largest ID of a firewall rule. */
+    public const MAX_FIREWALL_RULE_ID = 999999;
+
+    /** The largest number of paths that the firewall of a website does not examine. */
+    public const MAX_FIREWALL_SKIP_PATHS = 20;
+
+    /** The largest number of IP addresses and ranges in the allow list or in the block list of a website. */
+    public const MAX_IP_RULES = 200;
+
+    /** The smallest sign-in limit of a website that is not 0. */
+    public const MIN_LOW_SIGN_IN_LIMIT = 3;
+
     /** The largest number of images in one pack. */
     public const MAX_PACK_IMAGES = 10;
 
@@ -326,6 +356,18 @@ final class InputRules
 
     /** The largest number of packs on a panel. */
     public const MAX_PACKS = 50;
+
+    /** The largest number of users of one password-protected path. */
+    public const MAX_PATH_USERS = 10;
+
+    /** The largest number of password-protected paths of a website. */
+    public const MAX_PROTECTED_PATHS = 20;
+
+    /** The largest sign-in limit of a website: POST requests in one minute from one IP address. */
+    public const MAX_SIGN_IN_LIMIT = 600;
+
+    /** The largest number of sign-in paths of a website. */
+    public const MAX_SIGN_IN_PATHS = 20;
 
     /** The largest number of plugins or themes in one update of a WordPress site. */
     public const MAX_WORDPRESS_UPDATES = 200;

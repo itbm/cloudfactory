@@ -815,7 +815,7 @@ func (d *Deps) RunWpCli(req *agentv1.RunWpCliRequest) (jobs.Job, error) {
 			argv := append([]string{"-u", site.UnixUser, "--", "env", "XDG_RUNTIME_DIR=/run/user/" + strconv.Itoa(uid), "sh", "-c", wpCliScript,
 				"sh", strconv.Itoa(int(wpCliLimit.Seconds())), container, documentRoot(site.Website)}, req.GetArgs()...)
 			out, err := d.Run.Run(ctx, "runuser", argv...)
-			m := cronExit.FindStringSubmatch(out)
+			m := containerExit.FindStringSubmatch(out)
 			if m == nil {
 				if err != nil {
 					return commandError("the command did not start", err)

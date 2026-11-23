@@ -58,6 +58,7 @@ enum AgentAction: string
     case UpdateWordPress = 'UpdateWordPress';
     case RestoreWordPress = 'RestoreWordPress';
     case RunWpCli = 'RunWpCli';
+    case SetWebsiteSecurity = 'SetWebsiteSecurity';
     case SetCertificates = 'SetCertificates';
     // The import of an account from a different panel (docs/imports.md).
     case FetchImport = 'FetchImport';
@@ -126,6 +127,7 @@ enum AgentAction: string
             self::UpdateWordPress => ['Check WordPress', 'Save a restore point', 'Update WordPress', 'Update plugins', 'Update themes', 'Health check'],
             self::RestoreWordPress => ['Put back the restore point', 'Check WordPress'],
             self::RunWpCli => ['Run the command', 'Check WordPress'],
+            self::SetWebsiteSecurity => ['Set edge proxy rules'],
             self::SetCertificates => ['Load certificates', 'Check certificates'],
             // A download for a server that only copies a part has no second step.
             self::FetchImport => ['Download archive', 'Read archive'],

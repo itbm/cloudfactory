@@ -178,6 +178,9 @@ const (
 	AgentServiceRestoreWordPressProcedure = "/cloudfactory.agent.v1.AgentService/RestoreWordPress"
 	// AgentServiceRunWpCliProcedure is the fully-qualified name of the AgentService's RunWpCli RPC.
 	AgentServiceRunWpCliProcedure = "/cloudfactory.agent.v1.AgentService/RunWpCli"
+	// AgentServiceSetWebsiteSecurityProcedure is the fully-qualified name of the AgentService's
+	// SetWebsiteSecurity RPC.
+	AgentServiceSetWebsiteSecurityProcedure = "/cloudfactory.agent.v1.AgentService/SetWebsiteSecurity"
 	// AgentServiceSetCertificatesProcedure is the fully-qualified name of the AgentService's
 	// SetCertificates RPC.
 	AgentServiceSetCertificatesProcedure = "/cloudfactory.agent.v1.AgentService/SetCertificates"
@@ -212,6 +215,9 @@ const (
 	AgentServiceDeleteFileProcedure = "/cloudfactory.agent.v1.AgentService/DeleteFile"
 	// AgentServiceGetLogsProcedure is the fully-qualified name of the AgentService's GetLogs RPC.
 	AgentServiceGetLogsProcedure = "/cloudfactory.agent.v1.AgentService/GetLogs"
+	// AgentServiceGetFirewallEventsProcedure is the fully-qualified name of the AgentService's
+	// GetFirewallEvents RPC.
+	AgentServiceGetFirewallEventsProcedure = "/cloudfactory.agent.v1.AgentService/GetFirewallEvents"
 	// AgentServiceCheckBranchesProcedure is the fully-qualified name of the AgentService's
 	// CheckBranches RPC.
 	AgentServiceCheckBranchesProcedure = "/cloudfactory.agent.v1.AgentService/CheckBranches"
@@ -286,6 +292,10 @@ type AgentServiceClient interface {
 	RestoreWordPress(context.Context, *connect.Request[v1.RestoreWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Runs one WP-CLI command in the container of a website, as the website user, with no shell.
 	RunWpCli(context.Context, *connect.Request[v1.RunWpCliRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
+	// the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
+	// value with the website and changes only the edge route. The container does not restart.
+	SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Sets the certificates from the panel on the edge proxy of the server: the certificates
 	// that a customer uploaded, and the certificates that the panel got from an ACME CA with
 	// DNS validation. The list is complete. A certificate that the edge proxy has and that is not
@@ -314,6 +324,9 @@ type AgentServiceClient interface {
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// The last requests of a website that the firewall of the edge proxy blocked or detected.
+	// This method does not make a job.
+	GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error)
 	// Gives the last commit of the branch of each Git source, for the deploys on a schedule
 	// (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
 	// container of each website, as for the step "Get the code" of a deploy.
@@ -631,6 +644,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("RunWpCli")),
 			connect.WithClientOptions(opts...),
 		),
+		setWebsiteSecurity: connect.NewClient[v1.SetWebsiteSecurityRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetWebsiteSecurityProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetWebsiteSecurity")),
+			connect.WithClientOptions(opts...),
+		),
 		setCertificates: connect.NewClient[v1.SetCertificatesRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceSetCertificatesProcedure,
@@ -715,6 +734,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		getFirewallEvents: connect.NewClient[v1.GetFirewallEventsRequest, v1.FirewallEvents](
+			httpClient,
+			baseURL+AgentServiceGetFirewallEventsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetFirewallEvents")),
+			connect.WithClientOptions(opts...),
+		),
 		checkBranches: connect.NewClient[v1.CheckBranchesRequest, v1.BranchHeads](
 			httpClient,
 			baseURL+AgentServiceCheckBranchesProcedure,
@@ -776,6 +801,7 @@ type agentServiceClient struct {
 	updateWordPress       *connect.Client[v1.UpdateWordPressRequest, v1.JobAccepted]
 	restoreWordPress      *connect.Client[v1.RestoreWordPressRequest, v1.JobAccepted]
 	runWpCli              *connect.Client[v1.RunWpCliRequest, v1.JobAccepted]
+	setWebsiteSecurity    *connect.Client[v1.SetWebsiteSecurityRequest, v1.JobAccepted]
 	setCertificates       *connect.Client[v1.SetCertificatesRequest, v1.JobAccepted]
 	fetchImport           *connect.Client[v1.FetchImportRequest, v1.JobAccepted]
 	importFiles           *connect.Client[v1.ImportFilesRequest, v1.JobAccepted]
@@ -790,6 +816,7 @@ type agentServiceClient struct {
 	moveFile              *connect.Client[v1.MoveFileRequest, v1.FileEntry]
 	deleteFile            *connect.Client[v1.FileRequest, v1.FileDeleted]
 	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
+	getFirewallEvents     *connect.Client[v1.GetFirewallEventsRequest, v1.FirewallEvents]
 	checkBranches         *connect.Client[v1.CheckBranchesRequest, v1.BranchHeads]
 }
 
@@ -1043,6 +1070,11 @@ func (c *agentServiceClient) RunWpCli(ctx context.Context, req *connect.Request[
 	return c.runWpCli.CallUnary(ctx, req)
 }
 
+// SetWebsiteSecurity calls cloudfactory.agent.v1.AgentService.SetWebsiteSecurity.
+func (c *agentServiceClient) SetWebsiteSecurity(ctx context.Context, req *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setWebsiteSecurity.CallUnary(ctx, req)
+}
+
 // SetCertificates calls cloudfactory.agent.v1.AgentService.SetCertificates.
 func (c *agentServiceClient) SetCertificates(ctx context.Context, req *connect.Request[v1.SetCertificatesRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.setCertificates.CallUnary(ctx, req)
@@ -1111,6 +1143,11 @@ func (c *agentServiceClient) DeleteFile(ctx context.Context, req *connect.Reques
 // GetLogs calls cloudfactory.agent.v1.AgentService.GetLogs.
 func (c *agentServiceClient) GetLogs(ctx context.Context, req *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
 	return c.getLogs.CallUnary(ctx, req)
+}
+
+// GetFirewallEvents calls cloudfactory.agent.v1.AgentService.GetFirewallEvents.
+func (c *agentServiceClient) GetFirewallEvents(ctx context.Context, req *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error) {
+	return c.getFirewallEvents.CallUnary(ctx, req)
 }
 
 // CheckBranches calls cloudfactory.agent.v1.AgentService.CheckBranches.
@@ -1187,6 +1224,10 @@ type AgentServiceHandler interface {
 	RestoreWordPress(context.Context, *connect.Request[v1.RestoreWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Runs one WP-CLI command in the container of a website, as the website user, with no shell.
 	RunWpCli(context.Context, *connect.Request[v1.RunWpCliRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
+	// the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
+	// value with the website and changes only the edge route. The container does not restart.
+	SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Sets the certificates from the panel on the edge proxy of the server: the certificates
 	// that a customer uploaded, and the certificates that the panel got from an ACME CA with
 	// DNS validation. The list is complete. A certificate that the edge proxy has and that is not
@@ -1215,6 +1256,9 @@ type AgentServiceHandler interface {
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// The last requests of a website that the firewall of the edge proxy blocked or detected.
+	// This method does not make a job.
+	GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error)
 	// Gives the last commit of the branch of each Git source, for the deploys on a schedule
 	// (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
 	// container of each website, as for the step "Get the code" of a deploy.
@@ -1528,6 +1572,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("RunWpCli")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetWebsiteSecurityHandler := connect.NewUnaryHandler(
+		AgentServiceSetWebsiteSecurityProcedure,
+		svc.SetWebsiteSecurity,
+		connect.WithSchema(agentServiceMethods.ByName("SetWebsiteSecurity")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceSetCertificatesHandler := connect.NewUnaryHandler(
 		AgentServiceSetCertificatesProcedure,
 		svc.SetCertificates,
@@ -1610,6 +1660,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		AgentServiceGetLogsProcedure,
 		svc.GetLogs,
 		connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceGetFirewallEventsHandler := connect.NewUnaryHandler(
+		AgentServiceGetFirewallEventsProcedure,
+		svc.GetFirewallEvents,
+		connect.WithSchema(agentServiceMethods.ByName("GetFirewallEvents")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentServiceCheckBranchesHandler := connect.NewUnaryHandler(
@@ -1720,6 +1776,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceRestoreWordPressHandler.ServeHTTP(w, r)
 		case AgentServiceRunWpCliProcedure:
 			agentServiceRunWpCliHandler.ServeHTTP(w, r)
+		case AgentServiceSetWebsiteSecurityProcedure:
+			agentServiceSetWebsiteSecurityHandler.ServeHTTP(w, r)
 		case AgentServiceSetCertificatesProcedure:
 			agentServiceSetCertificatesHandler.ServeHTTP(w, r)
 		case AgentServiceFetchImportProcedure:
@@ -1748,6 +1806,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceDeleteFileHandler.ServeHTTP(w, r)
 		case AgentServiceGetLogsProcedure:
 			agentServiceGetLogsHandler.ServeHTTP(w, r)
+		case AgentServiceGetFirewallEventsProcedure:
+			agentServiceGetFirewallEventsHandler.ServeHTTP(w, r)
 		case AgentServiceCheckBranchesProcedure:
 			agentServiceCheckBranchesHandler.ServeHTTP(w, r)
 		default:
@@ -1959,6 +2019,10 @@ func (UnimplementedAgentServiceHandler) RunWpCli(context.Context, *connect.Reque
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RunWpCli is not implemented"))
 }
 
+func (UnimplementedAgentServiceHandler) SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetWebsiteSecurity is not implemented"))
+}
+
 func (UnimplementedAgentServiceHandler) SetCertificates(context.Context, *connect.Request[v1.SetCertificatesRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetCertificates is not implemented"))
 }
@@ -2013,6 +2077,10 @@ func (UnimplementedAgentServiceHandler) DeleteFile(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetLogs is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetFirewallEvents is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error) {
