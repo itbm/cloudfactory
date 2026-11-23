@@ -1673,13 +1673,13 @@
                         "enabled": true,
                         "state": "active",
                         "ds": {
-                            "keyTag": 37293,
+                            "keyTag": 1478,
                             "algorithm": 13,
                             "digestType": 2,
-                            "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                            "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                            "digest": "BCF140C484CAD7CB13FE9C91BCA185AC9A45798DCBA8E75F40A81511D0A152DD",
+                            "record": "acme.example.com. IN DS 1478 13 2 BCF140C484CAD7CB13FE9C91BCA185AC9A45798DCBA8E75F40A81511D0A152DD"
                         },
-                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 2KpHMohNgT8g/wGWgPn4Q639//H8Ekqxth3X8iYShaItzkClg/HZ8W3PyKcHey7jNEMmUGiQPoYDwZ9LPE/zzw=="
                     },
                     "servers": [
                         {
@@ -2175,7 +2175,7 @@
                     "usedBytes": 3576692736,
                     "encryption": {
                         "fingerprints": [
-                            "DE7384E41EC8FD096EB5D5D921B98642CC731725"
+                            "DF6DCF5C7A6C4C0AFC9D138A2DAB1CA9C8D99D51"
                         ],
                         "keyType": "OpenPGP v4: X25519",
                         "expiresAt": null,
@@ -2319,6 +2319,79 @@
             "message": "Only administrators can do this."
         }
     },
+    "GET /exports": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m78a2rr0jga0080000000001",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "customerName": "Acme Ltd",
+                    "state": "ready",
+                    "files": true,
+                    "databases": true,
+                    "parts": {
+                        "complete": 13,
+                        "total": 13
+                    },
+                    "receivedBytes": 7015,
+                    "sizeBytes": 66048,
+                    "warnings": [
+                        {
+                            "item": "websites/api.acme.example.com/databases/apiacme_97c4_queue",
+                            "message": "The export does not have the data of Valkey databases."
+                        },
+                        {
+                            "item": "websites/shop.acme.example.com/databases/shopacme_9e69_cache",
+                            "message": "The export does not have the data of Valkey databases."
+                        },
+                        {
+                            "item": "mail",
+                            "message": "The export does not have the messages of the mailboxes or their passwords."
+                        }
+                    ],
+                    "error": null,
+                    "createdBy": "Olu Owner",
+                    "createdAt": "2026-11-12T16:40:00+00:00",
+                    "finishedAt": "2026-11-12T16:43:00+00:00",
+                    "expiresAt": "2026-11-19T16:43:00+00:00"
+                },
+                {
+                    "id": "01m7cqzs80jga0080000000002",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "customerName": "Acme Ltd",
+                    "state": "failed",
+                    "files": true,
+                    "databases": true,
+                    "parts": {
+                        "complete": 0,
+                        "total": 0
+                    },
+                    "receivedBytes": 0,
+                    "sizeBytes": null,
+                    "warnings": [
+                        {
+                            "item": "websites/api.acme.example.com/databases/apiacme_97c4_queue",
+                            "message": "The export does not have the data of Valkey databases."
+                        },
+                        {
+                            "item": "websites/shop.acme.example.com/databases/shopacme_9e69_cache",
+                            "message": "The export does not have the data of Valkey databases."
+                        },
+                        {
+                            "item": "mail",
+                            "message": "The export does not have the messages of the mailboxes or their passwords."
+                        }
+                    ],
+                    "error": "Export shop.acme.example.com failed: database acme_shop: mariadb-dump: Got error: 2013: \"Lost connection to server during query\" when dumping table `orders` at row: 18234",
+                    "createdBy": "Olu Owner",
+                    "createdAt": "2026-11-09T09:12:00+00:00",
+                    "finishedAt": "2026-11-09T09:18:00+00:00",
+                    "expiresAt": "2026-11-16T09:18:00+00:00"
+                }
+            ]
+        }
+    },
     "GET /certificates": {
         "status": 200,
         "body": {
@@ -2333,7 +2406,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Cloudfactory demonstration (Demo CA R1)",
-                    "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+                    "fingerprint": "3ba1d020cabb9f68b0c5469c057d3d0e37abf15671da10cb81fe15c09a50a0b3",
                     "notBefore": "2026-10-20T10:00:00+00:00",
                     "expiresAt": "2027-01-18T10:00:00+00:00",
                     "trusted": true,
@@ -3570,7 +3643,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE+wkADnPQ8lcnv9GJb+XEhigVVckxuE+LX/phCGQr4J cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/16H7ykJdTkG5pMRXURFTceWP4rPcblfCfP2PsKTbVQSmNGHN",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -5925,7 +5998,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE+wkADnPQ8lcnv9GJb+XEhigVVckxuE+LX/phCGQr4J cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/G6mt5KmRycsDBSMMYLLgnRniZtanaanOr6V5GyXkL5c3djlK",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -8492,13 +8565,13 @@
                 "enabled": true,
                 "state": "active",
                 "ds": {
-                    "keyTag": 37293,
+                    "keyTag": 1478,
                     "algorithm": 13,
                     "digestType": 2,
-                    "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                    "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                    "digest": "BCF140C484CAD7CB13FE9C91BCA185AC9A45798DCBA8E75F40A81511D0A152DD",
+                    "record": "acme.example.com. IN DS 1478 13 2 BCF140C484CAD7CB13FE9C91BCA185AC9A45798DCBA8E75F40A81511D0A152DD"
                 },
-                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 2KpHMohNgT8g/wGWgPn4Q639//H8Ekqxth3X8iYShaItzkClg/HZ8W3PyKcHey7jNEMmUGiQPoYDwZ9LPE/zzw=="
             },
             "servers": [
                 {
@@ -8859,7 +8932,7 @@
             ],
             "state": "valid",
             "issuer": "Cloudfactory demonstration (Demo CA R1)",
-            "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+            "fingerprint": "3ba1d020cabb9f68b0c5469c057d3d0e37abf15671da10cb81fe15c09a50a0b3",
             "notBefore": "2026-10-20T10:00:00+00:00",
             "expiresAt": "2027-01-18T10:00:00+00:00",
             "trusted": true,
@@ -8911,7 +8984,7 @@
                     "serverName": "web-1"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBnTCCAUSgAwIBAgIIaH6rI22SZbYwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMjcwMjIxMDA0MjM2WjAbMRkwFwYDVQQDDBBhY21l\nLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEujYWvqJbFJvJ\n82Zi2kVTvGf88+K1y13ztghLRagfO9ndP0SCLiiUV1gM7MNVSYtnizd32M5woGAR\nCtoGSXLpiaNTMFEwLwYDVR0RBCgwJoIQYWNtZS5leGFtcGxlLmNvbYISKi5hY21l\nLmV4YW1wbGUuY29tMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYI\nKoZIzj0EAwIDRwAwRAIgFHdMizcWY/33ZwOvTZ9qV2FkKQGuSJe9eEiHxXQBJ4wC\nIC/NHgJ+yuBccO9V+KRBCkNqXSbApBhSeiBiH+beY9V8\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIG5rhSOwAyPgwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABA93jFkA8GzewXoiFUy9szI3IbsrCwYE2znC\nv8gPkiJ1Z+Fym0MqOPOAtYZDTZAKZXqo/bc2Ly5D9+KJPu2Iz6ejIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIFFp\nPyd3aVIGzgelzXMigFHSrErmr/1tmQVScSWr1cfgAiEAgoc794eJNBDtCt+SbEPT\nuH/jIsp3jepxljVbLpzHJ/Y=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBnjCCAUSgAwIBAgIIRaop2aNbopMwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0ODA4WhcNMjcwMjIxMDA0ODA4WjAbMRkwFwYDVQQDDBBhY21l\nLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAArZdVco2Toa\nWM1H3UOZld7wDwLzT0i8HDJ8NDPNn+7uNhgJFuSxEMhyL7U9KU5sO6ZA1J9qeaHv\n09pEcJ52fqNTMFEwLwYDVR0RBCgwJoIQYWNtZS5leGFtcGxlLmNvbYISKi5hY21l\nLmV4YW1wbGUuY29tMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYI\nKoZIzj0EAwIDSAAwRQIgOZDZ4kpKzuq8sPrglzyRQI7kTtC0rlSV7PeQC9C0A2sC\nIQCj3qqWO1IQUtR1hA3GzHsqm0+UGFWpi4+l7IqB79qq3Q==\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjDCCATOgAwIBAgIITiNtblOpLXMwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0ODA4WhcNMzYxMTIwMDA0ODA4WjA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABNRYqWHnSFKQ2JOJEhGxWxwwBiDLN5RqGyJ8\nYETFY7T/0Zxu6vJEPDb2jMdjcsVY1t39Shmea3hoFufjcjGH0I+jIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0cAMEQCIGHo\n6LoB/RS77NwFcYwLYfgznDiSOqD0juAgf56mmM8vAiBiMmcfaAMnIkpU9es8E3/K\n7P2C9dbfsgnPgfI7qPH9ew==\n-----END CERTIFICATE-----\n",
             "createdAt": "2026-10-20T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }
