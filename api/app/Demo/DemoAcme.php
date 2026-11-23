@@ -186,6 +186,7 @@ class DemoAcme extends Acme
             $x509->setExtension('id-ce-keyUsage', ['keyCertSign', 'cRLSign'], true);
         }
 
-        return $x509->saveX509($x509->sign($signer, $x509))."\n";
+        // phpseclib ends the lines with CR LF. OpenSSL ends them with LF.
+        return str_replace("\r\n", "\n", $x509->saveX509($x509->sign($signer, $x509)))."\n";
     }
 }
