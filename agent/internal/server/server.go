@@ -201,6 +201,10 @@ func (s *Service) SetPacks(_ context.Context, r *connect.Request[agentv1.SetPack
 	return s.submit(s.Deps.SetPacks(r.Msg))
 }
 
+func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agentv1.SetWebsiteSecurityRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetWebsiteSecurity(r.Msg))
+}
+
 func (s *Service) SetCertificates(_ context.Context, r *connect.Request[agentv1.SetCertificatesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetCertificates(r.Msg))
 }
@@ -346,6 +350,14 @@ func (s *Service) GetLogs(ctx context.Context, r *connect.Request[agentv1.GetLog
 		return nil, fileError(err)
 	}
 	return connect.NewResponse(&agentv1.Logs{Lines: lines}), nil
+}
+
+func (s *Service) GetFirewallEvents(ctx context.Context, r *connect.Request[agentv1.GetFirewallEventsRequest]) (*connect.Response[agentv1.FirewallEvents], error) {
+	events, err := s.Deps.FirewallEvents(ctx, r.Msg.GetWebsiteId(), int(r.Msg.GetLimit()))
+	if err != nil {
+		return nil, fileError(err)
+	}
+	return connect.NewResponse(&agentv1.FirewallEvents{Events: events}), nil
 }
 
 // mailError gives the error of a request for the mail server its code for the panel.

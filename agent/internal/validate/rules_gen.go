@@ -449,6 +449,27 @@ var rulePackVersion = rule{
 // The version of a pack, for example "1.2.0".
 func PackVersion(s string) error { return rulePackVersion.check(s) }
 
+var rulePathPasswordHash = rule{
+	what:    "password hash",
+	pattern: regexp.MustCompile(`^\$2[aby]\$1[0-4]\$[./A-Za-z0-9]{53}$`),
+}
+
+// PathPasswordHash checks a value with the rule "pathPasswordHash" of schema/input-rules.json.
+//
+// The bcrypt hash of the password of a user of a password-protected path. The panel makes it, and the agent gives it to the edge proxy. The agent never gets the password.
+func PathPasswordHash(s string) error { return rulePathPasswordHash.check(s) }
+
+var rulePathUser = rule{
+	what:    "user name",
+	pattern: regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$`),
+	echo:    true,
+}
+
+// PathUser checks a value with the rule "pathUser" of schema/input-rules.json.
+//
+// The user name of a password-protected path of a website. The edge proxy asks for it with HTTP basic authentication.
+func PathUser(s string) error { return rulePathUser.check(s) }
+
 var ruleExtension = rule{
 	what:    "PHP extension",
 	pattern: regexp.MustCompile(`^[a-z0-9_]{1,40}$`),
@@ -505,6 +526,19 @@ var ruleSecretValue = rule{
 //
 // The value of a deploy secret. It is on one line.
 func SecretValue(s string) error { return ruleSecretValue.check(s) }
+
+var ruleSecurityPath = rule{
+	what:      "path",
+	pattern:   regexp.MustCompile(`^/([A-Za-z0-9._~@:+,=-]+(/[A-Za-z0-9._~@:+,=-]+)*/?)?$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`/\.\.?(/|$)`)},
+	maxLength: 200,
+	echo:      true,
+}
+
+// SecurityPath checks a value with the rule "securityPath" of schema/input-rules.json.
+//
+// A path of the protection of a website in the edge proxy, for example "/wp-login.php" or "/admin/". A path that ends with "/" is the directory and all paths in it. The path has no empty part, no "." part and no ".." part. It has no "%" and no "*": the edge proxy compares the decoded path of a request.
+func SecurityPath(s string) error { return ruleSecurityPath.check(s) }
 
 var ruleSHA256 = rule{
 	what:    "SHA-256 hash",
@@ -591,11 +625,14 @@ var rules = map[string]*rule{
 	"packImageVersion":     &rulePackImageVersion,
 	"packSlug":             &rulePackSlug,
 	"packVersion":          &rulePackVersion,
+	"pathPasswordHash":     &rulePathPasswordHash,
+	"pathUser":             &rulePathUser,
 	"phpExtension":         &ruleExtension,
 	"restorePath":          &ruleRestorePath,
 	"routePath":            &ruleRoutePath,
 	"secretName":           &ruleSecretName,
 	"secretValue":          &ruleSecretValue,
+	"securityPath":         &ruleSecurityPath,
 	"sha256":               &ruleSHA256,
 	"sshKey":               &ruleSSHKey,
 	"unixUser":             &ruleUnixUser,
@@ -653,6 +690,21 @@ const MaxDnsZonesPerJob = 100
 // MaxEnvironmentVariables: The largest number of environment variables of a website.
 const MaxEnvironmentVariables = 50
 
+// MaxFirewallExclusions: The largest number of firewall rules that a website can turn off.
+const MaxFirewallExclusions = 50
+
+// MaxFirewallRuleId: The largest ID of a firewall rule.
+const MaxFirewallRuleId = 999999
+
+// MaxFirewallSkipPaths: The largest number of paths that the firewall of a website does not examine.
+const MaxFirewallSkipPaths = 20
+
+// MaxIpRules: The largest number of IP addresses and ranges in the allow list or in the block list of a website.
+const MaxIpRules = 200
+
+// MinLowSignInLimit: The smallest sign-in limit of a website that is not 0.
+const MinLowSignInLimit = 3
+
 // MaxPackImages: The largest number of images in one pack.
 const MaxPackImages = 10
 
@@ -661,3 +713,15 @@ const MaxPackManifestBytes = 32768
 
 // MaxPacks: The largest number of packs on a panel.
 const MaxPacks = 50
+
+// MaxPathUsers: The largest number of users of one password-protected path.
+const MaxPathUsers = 10
+
+// MaxProtectedPaths: The largest number of password-protected paths of a website.
+const MaxProtectedPaths = 20
+
+// MaxSignInLimit: The largest sign-in limit of a website: POST requests in one minute from one IP address.
+const MaxSignInLimit = 600
+
+// MaxSignInPaths: The largest number of sign-in paths of a website.
+const MaxSignInPaths = 20

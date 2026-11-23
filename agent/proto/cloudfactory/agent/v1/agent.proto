@@ -67,6 +67,10 @@ service AgentService {
   // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
   // each pack only with a signature of its publisher, and loads the runtimes of the packs.
   rpc SetPacks(SetPacksRequest) returns (JobAccepted);
+  // Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
+  // the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
+  // value with the website and changes only the edge route. The container does not restart.
+  rpc SetWebsiteSecurity(SetWebsiteSecurityRequest) returns (JobAccepted);
   // Sets the certificates from the panel on the edge proxy of the server: the certificates
   // that a customer uploaded, and the certificates that the panel got from an ACME CA with
   // DNS validation. The list is complete. A certificate that the edge proxy has and that is not
@@ -97,6 +101,9 @@ service AgentService {
   rpc MoveFile(MoveFileRequest) returns (FileEntry);
   rpc DeleteFile(FileRequest) returns (FileDeleted);
   rpc GetLogs(GetLogsRequest) returns (Logs);
+  // The last requests of a website that the firewall of the edge proxy blocked or detected.
+  // This method does not make a job.
+  rpc GetFirewallEvents(GetFirewallEventsRequest) returns (FirewallEvents);
 
   // The autoresponder of a mailbox. These methods do not make a job: they give the result at
   // once. The mail server keeps the autoresponder (JMAP VacationResponse), and the webmail
@@ -176,6 +183,45 @@ message Website {
   // panel adds the variables of a website to the job each time that it sends it. A plugin that
   // the panel runs (runtime "custom") gets its token this way too (docs/plugins.md).
   map<string, string> environment = 18;
+  // The protection of the website in the edge proxy. The panel adds the current value each
+  // time that it sends a job with the website, as for the environment variables. No value
+  // means no protection.
+  WebsiteSecurity security = 19;
+}
+
+// The protection of a website in the edge proxy (docs/architecture.md#protection-of-a-website).
+// The edge proxy applies the parts in this order: the IP address rules, the sign-in limit, the
+// password-protected paths and the firewall. Each path starts with "/". A path that ends with
+// "/" is the directory and all paths in it. A different path is one exact path.
+message WebsiteSecurity {
+  // "off", "detect" or "block". The firewall is Coraza with the OWASP Core Rule Set. "detect"
+  // records the requests that the firewall would block, and blocks nothing. Empty means "off".
+  string firewall = 1;
+  // The IDs of the rules of the firewall that do not apply to the website, for example 942100.
+  repeated int32 firewall_exclusions = 2;
+  // The paths that the firewall does not examine.
+  repeated string firewall_skip_paths = 3;
+  // IP addresses and ranges, for example "203.0.113.0/24". When the allow list has values,
+  // only these addresses can open the website. The edge proxy refuses the block list first.
+  repeated string allow = 4;
+  repeated string block = 5;
+  // Paths that ask for a user name and a password (HTTP basic authentication).
+  repeated ProtectedPath protected_paths = 6;
+  // The largest number of POST requests in one minute from one IP address to the sign-in
+  // paths. The edge proxy answers more requests with status 429. 0 means no limit.
+  int32 sign_in_limit = 7;
+  repeated string sign_in_paths = 8;
+}
+
+message ProtectedPath {
+  string path = 1;
+  repeated PathUser users = 2;
+}
+
+message PathUser {
+  string name = 1;
+  // The bcrypt hash of the password. The panel makes it. The agent never gets the password.
+  string password_hash = 2;
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor
@@ -412,6 +458,14 @@ message SetWebsitePowerRequest {
   string unix_user = 3;
   // "start", "stop" or "restart".
   string power = 4;
+}
+
+message SetWebsiteSecurityRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // The panel adds the current value each time that it sends the job.
+  WebsiteSecurity security = 4;
 }
 
 message SetLimitsRequest {
@@ -1033,6 +1087,40 @@ message LogLine {
 
 message Logs {
   repeated LogLine lines = 1;
+}
+
+message GetFirewallEventsRequest {
+  string website_id = 1;
+  // The maximum number of events. 0 means 50.
+  int32 limit = 2;
+}
+
+// One request that the firewall blocked or detected.
+message FirewallEvent {
+  // RFC 3339.
+  string at = 1;
+  string client_ip = 2;
+  // The host, the path and the query of the request. The agent cuts a long value.
+  string host = 3;
+  string uri = 4;
+  // "blocked" or "detected". "detected" is a request that the firewall did not block
+  // because its mode is "detect", or because the rules gave too low a score.
+  string action = 5;
+  // The total anomaly score of the request, or 0 when the agent does not know it.
+  int32 score = 6;
+  repeated FirewallRule rules = 7;
+}
+
+message FirewallRule {
+  int32 id = 1;
+  string message = 2;
+  // The part of the request that the rule found. The agent cuts a long value.
+  string data = 3;
+}
+
+message FirewallEvents {
+  // The newest event first.
+  repeated FirewallEvent events = 1;
 }
 
 // Downloads the backup archive of an import to this server. The result has "sha256" and
