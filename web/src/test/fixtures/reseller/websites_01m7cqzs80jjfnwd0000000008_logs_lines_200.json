@@ -1,0 +1,233 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000008/logs?lines=200",
+    "status": 200,
+    "body": {
+        "lines": [
+            {
+                "at": "2026-11-14T09:48:02Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649682,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.285,\"size\":5522,\"remote_ip\":\"203.0.113.212\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:20Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649700,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.097,\"size\":19393,\"remote_ip\":\"203.0.113.32\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:31Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649711,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.041,\"size\":2903,\"remote_ip\":\"203.0.113.71\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:41Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649721,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.05,\"size\":31520,\"remote_ip\":\"203.0.113.180\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:16Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649756,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.213,\"size\":10005,\"remote_ip\":\"203.0.113.22\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:43Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649783,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.266,\"size\":10817,\"remote_ip\":\"203.0.113.38\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:45Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649785,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.232,\"size\":1549,\"remote_ip\":\"203.0.113.231\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:22Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649822,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.042,\"size\":23309,\"remote_ip\":\"203.0.113.226\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:50Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649850,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.154,\"size\":40173,\"remote_ip\":\"203.0.113.205\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:53Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649853,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.375,\"size\":36646,\"remote_ip\":\"203.0.113.90\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:13Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649873,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.016,\"size\":28689,\"remote_ip\":\"203.0.113.71\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:51Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649911,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.373,\"size\":24397,\"remote_ip\":\"203.0.113.13\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:03Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649923,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.197,\"size\":20158,\"remote_ip\":\"203.0.113.86\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:03Z",
+                "stream": "error",
+                "text": "PHP Fatal error:  Uncaught RuntimeException: The stock service did not answer in /app/src/stock.php:31"
+            },
+            {
+                "at": "2026-11-14T09:52:36Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649956,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/\",\"status\":200,\"duration\":0.327,\"size\":31245,\"remote_ip\":\"203.0.113.201\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:01Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649981,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.301,\"size\":24828,\"remote_ip\":\"203.0.113.141\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:25Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650005,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.018,\"size\":4768,\"remote_ip\":\"203.0.113.116\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:51Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650031,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.068,\"size\":25416,\"remote_ip\":\"203.0.113.155\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:18Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650058,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.2,\"size\":10191,\"remote_ip\":\"203.0.113.159\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:21Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650061,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.048,\"size\":21100,\"remote_ip\":\"203.0.113.137\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:01Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650101,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.034,\"size\":30089,\"remote_ip\":\"203.0.113.223\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:22Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650122,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.221,\"size\":46638,\"remote_ip\":\"203.0.113.135\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:48Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650148,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.099,\"size\":35499,\"remote_ip\":\"203.0.113.139\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:13Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650173,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.216,\"size\":36159,\"remote_ip\":\"203.0.113.186\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:18Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650178,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.016,\"size\":34466,\"remote_ip\":\"203.0.113.99\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:41Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650201,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.026,\"size\":40640,\"remote_ip\":\"203.0.113.148\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:50Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650210,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.037,\"size\":18758,\"remote_ip\":\"203.0.113.132\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:56Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650216,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/\",\"status\":200,\"duration\":0.013,\"size\":6146,\"remote_ip\":\"203.0.113.153\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:05Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650225,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.163,\"size\":19863,\"remote_ip\":\"203.0.113.63\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:09Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650229,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.297,\"size\":45626,\"remote_ip\":\"203.0.113.162\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:21Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650241,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.168,\"size\":47078,\"remote_ip\":\"203.0.113.35\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:53Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650273,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.234,\"size\":46342,\"remote_ip\":\"203.0.113.30\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:55Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650275,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.116,\"size\":27929,\"remote_ip\":\"203.0.113.105\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:55Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:58:28Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650308,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.033,\"size\":43631,\"remote_ip\":\"203.0.113.244\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:28Z",
+                "stream": "error",
+                "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
+            },
+            {
+                "at": "2026-11-14T09:58:41Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650321,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.047,\"size\":37251,\"remote_ip\":\"203.0.113.92\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:43Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650323,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.397,\"size\":7492,\"remote_ip\":\"203.0.113.147\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:43Z",
+                "stream": "error",
+                "text": "PHP Fatal error:  Uncaught RuntimeException: The stock service did not answer in /app/src/stock.php:31"
+            },
+            {
+                "at": "2026-11-14T09:58:52Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650332,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.381,\"size\":29309,\"remote_ip\":\"203.0.113.248\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:05Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650345,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.318,\"size\":1188,\"remote_ip\":\"203.0.113.121\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:20Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650360,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.381,\"size\":35675,\"remote_ip\":\"203.0.113.72\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:20Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:59:25Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650365,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.301,\"size\":10669,\"remote_ip\":\"203.0.113.73\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:57Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650397,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.085,\"size\":16073,\"remote_ip\":\"203.0.113.176\"}"
+            }
+        ]
+    }
+}

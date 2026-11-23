@@ -1,0 +1,7 @@
+{
+    "request": "GET /mail-clusters",
+    "status": 200,
+    "body": {
+        "data": []
+    }
+}

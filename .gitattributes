@@ -1,0 +1,4 @@
+# Generated files: GitHub collapses them in the diff of a pull request.
+agent/internal/validate/rules_gen.go linguist-generated=true
+api/app/Validation/InputRules.php linguist-generated=true
+web/src/test/fixtures/** linguist-generated=true

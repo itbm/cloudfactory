@@ -1,0 +1,19 @@
+{
+    "request": "GET /mail-server",
+    "status": 200,
+    "body": {
+        "configured": true,
+        "enabled": true,
+        "host": "smtp.northwind.example.com",
+        "port": 465,
+        "encryption": "tls",
+        "username": "noreply@northwind.example.com",
+        "hasPassword": true,
+        "fromAddress": "noreply@northwind.example.com",
+        "fromName": "Northwind Agency",
+        "replyTo": "support@northwind.example.com",
+        "testedAt": "2026-10-25T10:00:00+00:00",
+        "testError": null,
+        "panelFallback": true
+    }
+}

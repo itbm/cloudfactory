@@ -1,0 +1,221 @@
+{
+    "request": "GET /jobs?perPage=50",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs802ghns6000000000j",
+                "title": "WP-CLI: wp user update 2 --user_pass=***",
+                "ref": "acme.example.com",
+                "action": "RunWpCli",
+                "state": "succeeded",
+                "steps": [
+                    "Run the command",
+                    "Check WordPress"
+                ],
+                "step": 2,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T09:20:00+00:00",
+                "finishedAt": "2026-11-14T09:20:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000a",
+                "title": "Create database",
+                "ref": "shop.acme.example.com",
+                "action": "CreateDatabase",
+                "state": "succeeded",
+                "steps": [
+                    "Create database",
+                    "Create user",
+                    "Allow the website container only"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T09:15:00+00:00",
+                "finishedAt": "2026-11-14T09:16:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000009",
+                "title": "Create database",
+                "ref": "shop.acme.example.com",
+                "action": "CreateDatabase",
+                "state": "failed",
+                "steps": [
+                    "Create database",
+                    "Create user",
+                    "Allow the website container only"
+                ],
+                "step": 0,
+                "error": "The step \"Create database\" failed on the server. Your provider can see the details.",
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T09:10:00+00:00",
+                "finishedAt": "2026-11-14T09:11:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000h",
+                "title": "WP-CLI: wp cache flush",
+                "ref": "acme.example.com",
+                "action": "RunWpCli",
+                "state": "succeeded",
+                "steps": [
+                    "Run the command",
+                    "Check WordPress"
+                ],
+                "step": 2,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T08:25:00+00:00",
+                "finishedAt": "2026-11-14T08:25:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000007",
+                "title": "Create database",
+                "ref": "api.acme.example.com",
+                "action": "CreateDatabase",
+                "state": "succeeded",
+                "steps": [
+                    "Create database",
+                    "Create user",
+                    "Allow the website container only"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000003",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T08:25:00+00:00",
+                "finishedAt": "2026-11-14T08:26:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000c",
+                "title": "Add TXT record to acme.example.com",
+                "ref": "acme.example.com",
+                "action": "SetDnsZones",
+                "state": "succeeded",
+                "steps": [
+                    "Start DNS server",
+                    "Write zones",
+                    "Load zones"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": "01m7cqzs800neg3e0000000001",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T07:40:00+00:00",
+                "finishedAt": "2026-11-14T07:41:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000d",
+                "title": "Add TXT record to acme.example.com",
+                "ref": "acme.example.com",
+                "action": "SetDnsZones",
+                "state": "succeeded",
+                "steps": [
+                    "Start DNS server",
+                    "Write zones",
+                    "Load zones"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": "01m7cqzs800neg3e0000000001",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-14T07:40:00+00:00",
+                "finishedAt": "2026-11-14T07:41:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000g",
+                "title": "WP-CLI: wp plugin list",
+                "ref": "acme.example.com",
+                "action": "RunWpCli",
+                "state": "succeeded",
+                "steps": [
+                    "Run the command",
+                    "Check WordPress"
+                ],
+                "step": 2,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T07:00:00+00:00",
+                "finishedAt": "2026-11-14T07:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000005",
+                "title": "Back up",
+                "ref": "acme.example.com",
+                "action": "Backup",
+                "state": "succeeded",
+                "steps": [
+                    "Snapshot files",
+                    "Dump databases",
+                    "Upload to object storage",
+                    "Apply retention"
+                ],
+                "step": 4,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T05:00:00+00:00",
+                "finishedAt": "2026-11-14T05:01:00+00:00"
+            }
+        ],
+        "links": {
+            "first": "http://localhost/api/v1/jobs?page=1",
+            "last": "http://localhost/api/v1/jobs?page=1",
+            "prev": null,
+            "next": null
+        },
+        "meta": {
+            "current_page": 1,
+            "from": 1,
+            "last_page": 1,
+            "links": [
+                {
+                    "url": null,
+                    "label": "&laquo; Previous",
+                    "page": null,
+                    "active": false
+                },
+                {
+                    "url": "http://localhost/api/v1/jobs?page=1",
+                    "label": "1",
+                    "page": 1,
+                    "active": true
+                },
+                {
+                    "url": null,
+                    "label": "Next &raquo;",
+                    "page": null,
+                    "active": false
+                }
+            ],
+            "path": "http://localhost/api/v1/jobs",
+            "per_page": 50,
+            "to": 9,
+            "total": 9
+        }
+    }
+}
