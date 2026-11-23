@@ -1,0 +1,18 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000001/cron-jobs",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs808gd1y70000000001",
+                "schedule": "*/5 * * * *",
+                "command": "wp cron event run --due-now",
+                "enabled": true,
+                "lastRunAt": "2026-11-14T09:57:00+00:00",
+                "lastResult": "ok",
+                "lastExitCode": 0,
+                "lastOutput": "Executed the cron event 'wp_scheduled_delete' in 0.012s.\nSuccess: Executed a total of 1 cron event."
+            }
+        ]
+    }
+}

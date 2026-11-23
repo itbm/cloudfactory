@@ -108,6 +108,10 @@ jobs:
         with:
           go-version: '1.27.4'
           cache-dependency-path: agent/go.sum
+      - uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6 # v1.7.0
+        if: matrix.image == 'valkey'
+        with:
+          setup_only: true
       # Audit batch 2, findings 1 and 2: start the image with the limits of its unit, and send a
       # request. A file capability or a missing configuration file stops the container.
       - name: Start the image with no capabilities
@@ -177,6 +181,8 @@ jobs:
             }
             wait_ready
             export CF_TEST_VALKEY=127.0.0.1:16379 CF_TEST_VALKEY_PASSWORD=smoke-password
+            # The Go code of the agent protocol is not in Git.
+            (cd agent && buf generate)
             (cd agent && go test ./internal/actions -run '^TestValkeyServer$' -count=1 -v)
             # Valkey writes the append-only file each second. After a restart, it has the users
             # and the data.

@@ -1,0 +1,8 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000004/deploy",
+    "status": 200,
+    "body": {
+        "source": null,
+        "releases": []
+    }
+}

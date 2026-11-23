@@ -1,0 +1,29 @@
+{
+    "request": "GET /me",
+    "status": 200,
+    "body": {
+        "id": 4,
+        "name": "Olu Owner",
+        "email": "owner@example.com",
+        "role": "owner",
+        "customerId": "01m7cqzs80h56kh10000000004",
+        "totpEnabled": false,
+        "mustChangePassword": false,
+        "totpSetupRequired": false,
+        "securityNotices": [],
+        "brand": {
+            "name": "Cloudfactory",
+            "colour": "#1d5fd6",
+            "logo": null,
+            "supportEmail": null,
+            "source": "panel",
+            "builtIn": true,
+            "panelDomain": "panel.cloudfactory.io",
+            "nameServers": [
+                "ns1.panel.example",
+                "ns2.panel.example"
+            ],
+            "mailHost": null
+        }
+    }
+}

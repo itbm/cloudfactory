@@ -1,0 +1,81 @@
+{
+    "request": "GET /dns-zones/01m7cqzs800neg3e0000000002",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs800neg3e0000000002",
+        "name": "acme-outlet.example.com",
+        "customerId": "01m7cqzs80h56kh10000000004",
+        "status": "active",
+        "serial": 1794567600,
+        "recordCount": 4,
+        "nameServers": [
+            "ns1.panel.example",
+            "ns2.panel.example"
+        ],
+        "provider": null,
+        "delegation": {
+            "state": "elsewhere",
+            "nameServers": [
+                "ns1.registrar.example",
+                "ns2.registrar.example"
+            ],
+            "checkedAt": "2026-11-14T09:51:00+00:00"
+        },
+        "dnssec": {
+            "enabled": false,
+            "state": "off",
+            "ds": null,
+            "dnskey": null
+        },
+        "servers": [
+            {
+                "nameServer": "ns1.panel.example",
+                "state": "ok"
+            },
+            {
+                "nameServer": "ns2.panel.example",
+                "state": "ok"
+            }
+        ],
+        "websites": 1,
+        "createdAt": "2026-11-14T10:00:00+00:00",
+        "records": [
+            {
+                "id": "01m7cqzs8007vyeq000000000k",
+                "name": "@",
+                "type": "A",
+                "value": "203.0.113.10",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000m",
+                "name": "@",
+                "type": "AAAA",
+                "value": "2001:db8:10::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000h",
+                "name": "@",
+                "type": "NS",
+                "value": "ns1.panel.example",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000j",
+                "name": "@",
+                "type": "NS",
+                "value": "ns2.panel.example",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            }
+        ]
+    }
+}

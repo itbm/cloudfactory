@@ -1,0 +1,46 @@
+{
+    "request": "GET /networks",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80cvkd1b0000000001",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "name": "default",
+                "isDefault": true,
+                "websiteIds": [
+                    "01m7cqzs80jjfnwd0000000001",
+                    "01m7cqzs80jjfnwd0000000002",
+                    "01m7cqzs80jjfnwd0000000003",
+                    "01m7cqzs80jjfnwd0000000004",
+                    "01m7cqzs80jjfnwd0000000005",
+                    "01m7cqzs80jjfnwd000000000b",
+                    "01m7cqzs80jjfnwd000000000c",
+                    "01m7cqzs80jjfnwd000000000d",
+                    "01m7cqzs80jjfnwd000000000f"
+                ],
+                "databaseServerIds": [
+                    "01m7cqzs80df38970000000001",
+                    "01m7cqzs80df38970000000002",
+                    "01m7cqzs80df38970000000003",
+                    "01m7cqzs80df38970000000008",
+                    "01m7cqzs80df38970000000009"
+                ],
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80cvkd1b0000000006",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "name": "reports",
+                "isDefault": false,
+                "websiteIds": [
+                    "01m7cqzs80jjfnwd0000000004"
+                ],
+                "databaseServerIds": [
+                    "01m7cqzs80df38970000000008"
+                ],
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

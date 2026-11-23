@@ -1,0 +1,92 @@
+{
+    "request": "GET /database-servers",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80df38970000000004",
+                "name": "mariadb-1",
+                "engine": "mariadb",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000003",
+                "status": "running",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "networkHost": "mariadb-1.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 21474836480
+                },
+                "usage": {
+                    "memoryBytes": 179306496,
+                    "diskBytes": 213909504,
+                    "diskSizeBytes": 21474836480
+                },
+                "databases": 1,
+                "maxDatabases": 50,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80df38970000000005",
+                "name": "mariadb-1",
+                "engine": "mariadb",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000001",
+                "status": "running",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "networkHost": "mariadb-1.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 1,
+                    "memoryBytes": 536870912,
+                    "diskBytes": 2147483648
+                },
+                "usage": {
+                    "memoryBytes": 200278016,
+                    "diskBytes": 297795584,
+                    "diskSizeBytes": 2147483648
+                },
+                "databases": 1,
+                "maxDatabases": 5,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80df38970000000006",
+                "name": "mariadb-1",
+                "engine": "mariadb",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "status": "running",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "networkHost": "mariadb-1.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 1073741824,
+                    "diskBytes": 10737418240
+                },
+                "usage": {
+                    "memoryBytes": 341835776,
+                    "diskBytes": 864026624,
+                    "diskSizeBytes": 10737418240
+                },
+                "databases": 1,
+                "maxDatabases": 20,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

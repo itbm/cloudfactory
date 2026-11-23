@@ -1,0 +1,44 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000006/snapshots",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806s2hhx000000000n",
+                "kind": "scheduled",
+                "sizeBytes": 1947205632,
+                "databases": [
+                    "mariadb:northwin_8223_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "mailboxes": [],
+                "createdAt": "2026-11-14T03:05:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000p",
+                "kind": "scheduled",
+                "sizeBytes": 1944059904,
+                "databases": [
+                    "mariadb:northwin_8223_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "mailboxes": [],
+                "createdAt": "2026-11-13T03:05:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000q",
+                "kind": "scheduled",
+                "sizeBytes": 1940914176,
+                "databases": [
+                    "mariadb:northwin_8223_wp"
+                ],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "mailboxes": [],
+                "createdAt": "2026-11-12T03:05:00+00:00"
+            }
+        ]
+    }
+}

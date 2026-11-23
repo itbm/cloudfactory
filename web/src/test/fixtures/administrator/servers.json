@@ -1,0 +1,374 @@
+{
+    "request": "GET /servers",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs807rnxfq0000000004",
+                "name": "mail-1",
+                "location": "London",
+                "roles": [
+                    "email"
+                ],
+                "state": "healthy",
+                "agentVersion": "0.1.9",
+                "agentUpdateAvailable": false,
+                "agentAddress": "mail-1.panel.example:7443",
+                "connectionError": null,
+                "panel": false,
+                "os": "Debian 13",
+                "kernel": "6.12.48",
+                "arch": "x86-64",
+                "podmanVersion": "5.4.2",
+                "gvisorVersion": "release-20261019.0",
+                "gvisorPlatform": "systrap",
+                "databaseEngines": [],
+                "databaseInstances": true,
+                "databaseServers": 0,
+                "dnsName": null,
+                "dns": false,
+                "addresses": [],
+                "bareMetal": false,
+                "updatePolicy": "security",
+                "maintenanceWindow": "02:00-05:00",
+                "pendingUpdates": [],
+                "lastUpdateAt": "2026-11-09T10:00:00+00:00",
+                "rebootRequired": false,
+                "services": [
+                    {
+                        "name": "edge",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "cf-mail",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "firewall",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "podman",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    }
+                ],
+                "sftpPort": 2222,
+                "usage": {
+                    "cpuPercent": 6,
+                    "memoryPercent": 31,
+                    "diskPercent": 18
+                },
+                "mail": {
+                    "hostname": "mail-1.panel.example",
+                    "status": "running",
+                    "domains": 4,
+                    "clusterId": null,
+                    "settings": {
+                        "spamFilter": true,
+                        "spamScore": 5,
+                        "rejectScore": 15,
+                        "relay": {
+                            "host": "smtp.relay.example.net",
+                            "port": 587,
+                            "username": "mail-1",
+                            "hasPassword": true
+                        }
+                    }
+                },
+                "websites": 0,
+                "lastSeenAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs807rnxfq0000000001",
+                "name": "web-1",
+                "location": "London",
+                "roles": [
+                    "web",
+                    "database",
+                    "dns"
+                ],
+                "state": "healthy",
+                "agentVersion": "0.1.9",
+                "agentUpdateAvailable": false,
+                "agentAddress": "web-1.panel.example:7443",
+                "connectionError": null,
+                "panel": true,
+                "os": "Debian 13",
+                "kernel": "6.12.48",
+                "arch": "x86-64",
+                "podmanVersion": "5.4.2",
+                "gvisorVersion": "release-20261019.0",
+                "gvisorPlatform": "systrap",
+                "databaseEngines": [
+                    "mariadb",
+                    "postgresql",
+                    "valkey",
+                    "mysql"
+                ],
+                "databaseInstances": true,
+                "databaseServers": 6,
+                "dnsName": "ns1.panel.example",
+                "dns": true,
+                "addresses": [
+                    "203.0.113.10",
+                    "2001:db8:10::1"
+                ],
+                "bareMetal": false,
+                "updatePolicy": "security",
+                "maintenanceWindow": "02:00-05:00",
+                "pendingUpdates": [],
+                "lastUpdateAt": "2026-11-11T10:00:00+00:00",
+                "rebootRequired": false,
+                "services": [
+                    {
+                        "name": "edge",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "cf-sftp",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "firewall",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "podman",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "cf-dns",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "disk-quotas",
+                        "state": "stopped",
+                        "optional": true,
+                        "detail": "User quotas are off on the file system of the websites. Websites with a disk limit and no disk image: 5 of 5. This server does not apply the disk limit of these websites. Only a new website gets a disk image. Refer to \"Disk quotas\" in the installation guide."
+                    }
+                ],
+                "sftpPort": 2222,
+                "usage": {
+                    "cpuPercent": 23,
+                    "memoryPercent": 58,
+                    "diskPercent": 41
+                },
+                "mail": null,
+                "websites": 8,
+                "lastSeenAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs807rnxfq0000000002",
+                "name": "web-2",
+                "location": "Amsterdam",
+                "roles": [
+                    "web",
+                    "database",
+                    "dns"
+                ],
+                "state": "healthy",
+                "agentVersion": "0.1.9",
+                "agentUpdateAvailable": false,
+                "agentAddress": "web-2.panel.example:7443",
+                "connectionError": null,
+                "panel": false,
+                "os": "Ubuntu 26.04 LTS",
+                "kernel": "6.17.0-8",
+                "arch": "arm64",
+                "podmanVersion": "5.6.0",
+                "gvisorVersion": "release-20261019.0",
+                "gvisorPlatform": "systrap",
+                "databaseEngines": [
+                    "mariadb",
+                    "postgresql",
+                    "valkey",
+                    "mysql"
+                ],
+                "databaseInstances": true,
+                "databaseServers": 3,
+                "dnsName": "ns2.panel.example",
+                "dns": true,
+                "addresses": [
+                    "203.0.113.20",
+                    "2001:db8:20::1"
+                ],
+                "bareMetal": false,
+                "updatePolicy": "manual",
+                "maintenanceWindow": "02:00-05:00",
+                "pendingUpdates": [
+                    {
+                        "name": "openssl",
+                        "from": "3.5.1-1",
+                        "to": "3.5.1-2",
+                        "security": true
+                    },
+                    {
+                        "name": "libc6",
+                        "from": "2.42-1",
+                        "to": "2.42-2",
+                        "security": true
+                    },
+                    {
+                        "name": "curl",
+                        "from": "8.15.0-1",
+                        "to": "8.15.0-2",
+                        "security": false
+                    },
+                    {
+                        "name": "podman",
+                        "from": "5.6.0",
+                        "to": "5.6.1",
+                        "security": false,
+                        "containerTool": true
+                    }
+                ],
+                "lastUpdateAt": "2026-11-02T10:00:00+00:00",
+                "rebootRequired": true,
+                "services": [
+                    {
+                        "name": "edge",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "cf-sftp",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "firewall",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "podman",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "cf-dns",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "disk-quotas",
+                        "state": "running",
+                        "optional": true,
+                        "detail": null
+                    }
+                ],
+                "sftpPort": 2222,
+                "usage": {
+                    "cpuPercent": 9,
+                    "memoryPercent": 34,
+                    "diskPercent": 22
+                },
+                "mail": null,
+                "websites": 6,
+                "lastSeenAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs807rnxfq0000000003",
+                "name": "web-3",
+                "location": "Frankfurt",
+                "roles": [
+                    "web"
+                ],
+                "state": "degraded",
+                "agentVersion": "0.1.8",
+                "agentUpdateAvailable": true,
+                "agentAddress": "web-3.panel.example:7443",
+                "connectionError": null,
+                "panel": false,
+                "os": "Debian 13",
+                "kernel": "6.12.48",
+                "arch": "x86-64",
+                "podmanVersion": "5.4.2",
+                "gvisorVersion": "release-20261019.0",
+                "gvisorPlatform": "systrap",
+                "databaseEngines": [
+                    "mariadb",
+                    "postgresql",
+                    "valkey"
+                ],
+                "databaseInstances": true,
+                "databaseServers": 0,
+                "dnsName": null,
+                "dns": false,
+                "addresses": [
+                    "203.0.113.30"
+                ],
+                "bareMetal": false,
+                "updatePolicy": "security",
+                "maintenanceWindow": "02:00-05:00",
+                "pendingUpdates": [],
+                "lastUpdateAt": null,
+                "rebootRequired": false,
+                "services": [
+                    {
+                        "name": "edge",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "firewall",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "podman",
+                        "state": "running",
+                        "optional": false,
+                        "detail": null
+                    },
+                    {
+                        "name": "cf-sftp",
+                        "state": "failed",
+                        "optional": false,
+                        "detail": "The container stopped with exit code 125: the port 2222 is in use."
+                    },
+                    {
+                        "name": "disk-quotas",
+                        "state": "running",
+                        "optional": true,
+                        "detail": null
+                    }
+                ],
+                "sftpPort": 2222,
+                "usage": {
+                    "cpuPercent": 4,
+                    "memoryPercent": 19,
+                    "diskPercent": 12
+                },
+                "mail": null,
+                "websites": 1,
+                "lastSeenAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}
