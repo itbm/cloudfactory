@@ -35,11 +35,12 @@ func testAutoresponder(ctx context.Context, t *testing.T, c *Client, domain stri
 		t.Fatalf("a domain that the server does not have: %v", err)
 	}
 	// The filter rules of the user: the autoresponder stops them when it is on.
-	account, err := c.mailboxAccount(ctx, domain, "info")
+	account, err := c.MailAccount(ctx, domain, "info")
 	if err != nil {
 		t.Fatal(err)
 	}
-	blob, err := c.upload(ctx, account, "require \"fileinto\";\nif header :contains \"subject\" \"offer\" { fileinto \"Junk\"; }\n")
+	script := "require \"fileinto\";\nif header :contains \"subject\" \"offer\" { fileinto \"Junk\"; }\n"
+	blob, err := c.upload(ctx, account, "application/sieve", strings.NewReader(script), int64(len(script)))
 	if err != nil {
 		t.Fatal(err)
 	}

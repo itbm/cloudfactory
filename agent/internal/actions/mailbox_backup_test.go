@@ -113,13 +113,17 @@ func (f *fakeStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		result = map[string]any{"list": list}
 	case "Email/import":
-		email := args["emails"].(map[string]any)["m"].(map[string]any)
-		id := fmt.Sprintf("e%d", len(f.messages)+10)
-		blob := email["blobId"].(string)
-		email["id"], email["size"] = id, len(f.blobs[blob])
-		email["messageId"] = []string{strings.TrimSuffix(strings.TrimPrefix(strings.Split(f.blobs[blob], "\r\n")[1], "Message-ID: <"), ">")}
-		f.messages[id] = email
-		result = map[string]any{"created": map[string]any{"m": map[string]any{"id": id}}}
+		created := map[string]any{}
+		for key, v := range args["emails"].(map[string]any) {
+			email := v.(map[string]any)
+			id := fmt.Sprintf("e%d", len(f.messages)+10)
+			blob := email["blobId"].(string)
+			email["id"], email["size"] = id, len(f.blobs[blob])
+			email["messageId"] = []string{strings.TrimSuffix(strings.TrimPrefix(strings.Split(f.blobs[blob], "\r\n")[1], "Message-ID: <"), ">")}
+			f.messages[id] = email
+			created[key] = map[string]any{"id": id}
+		}
+		result = map[string]any{"created": created}
 	default:
 		result = map[string]any{"type": "unknownMethod"}
 		method = "error"

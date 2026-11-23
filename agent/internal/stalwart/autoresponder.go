@@ -10,10 +10,6 @@ import (
 	"time"
 )
 
-// ErrNoMailbox is the error of an autoresponder for an address that has no mailbox on the
-// mail server.
-var ErrNoMailbox = errors.New("the mail server does not have this mailbox")
-
 // ErrRefused is the error of an autoresponder that the mail server did not accept, for
 // example a text that is too long.
 var ErrRefused = errors.New("the mail server refused the autoresponder")
@@ -36,25 +32,9 @@ type Autoresponder struct {
 	FilterScript string
 }
 
-// mailboxAccount gives the JMAP account of a mailbox.
-func (c *Client) mailboxAccount(ctx context.Context, domain, localPart string) (string, error) {
-	domainID, err := c.domainID(ctx, domain)
-	if err != nil {
-		return "", err
-	}
-	if domainID == "" {
-		return "", fmt.Errorf("%w: %s@%s", ErrNoMailbox, localPart, domain)
-	}
-	account, err := c.accountID(ctx, domainID, localPart)
-	if err == nil && account == "" {
-		err = fmt.Errorf("%w: %s@%s", ErrNoMailbox, localPart, domain)
-	}
-	return account, err
-}
-
 // GetAutoresponder gives the autoresponder of a mailbox.
 func (c *Client) GetAutoresponder(ctx context.Context, domain, localPart string) (Autoresponder, error) {
-	account, err := c.mailboxAccount(ctx, domain, localPart)
+	account, err := c.MailAccount(ctx, domain, localPart)
 	if err != nil {
 		return Autoresponder{}, err
 	}
@@ -110,7 +90,7 @@ func (c *Client) autoresponder(ctx context.Context, account string) (Autorespond
 // When the autoresponder is on, the mail server makes its Sieve script active. The other
 // active script of the mailbox stops, and does not start again when the autoresponder is off.
 func (c *Client) SetAutoresponder(ctx context.Context, domain, localPart string, a Autoresponder) (Autoresponder, error) {
-	account, err := c.mailboxAccount(ctx, domain, localPart)
+	account, err := c.MailAccount(ctx, domain, localPart)
 	if err != nil {
 		return Autoresponder{}, err
 	}

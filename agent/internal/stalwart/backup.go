@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -41,18 +40,8 @@ var ErrMailboxFull = errors.New("the mailbox is full. Make the mailbox larger, o
 type MailboxIndexFile struct {
 	Format   string          `json:"format"`
 	Address  string          `json:"address"`
-	Folders  []BackupFolder  `json:"folders"`
+	Folders  []Folder        `json:"folders"`
 	Messages []BackupMessage `json:"messages"`
-}
-
-// BackupFolder is a folder of a mailbox (a JMAP Mailbox).
-type BackupFolder struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	ParentID   string `json:"parentId,omitempty"`
-	Role       string `json:"role,omitempty"`
-	SortOrder  int    `json:"sortOrder,omitempty"`
-	Subscribed bool   `json:"subscribed,omitempty"`
 }
 
 // BackupMessage is the facts of a message (a JMAP Email). The content is in File.
@@ -98,11 +87,11 @@ const page = 500
 // ExportMailbox writes a backup of a mailbox to w. A message that arrives during the export
 // can be missing from the backup.
 func (c *Client) ExportMailbox(ctx context.Context, domain, localPart string, w io.Writer) (Export, error) {
-	account, err := c.mailboxAccount(ctx, domain, localPart)
+	account, err := c.MailAccount(ctx, domain, localPart)
 	if err != nil {
 		return Export{}, err
 	}
-	folders, err := c.folders(ctx, account)
+	folders, err := c.Folders(ctx, account)
 	if err != nil {
 		return Export{}, err
 	}
@@ -110,7 +99,7 @@ func (c *Client) ExportMailbox(ctx context.Context, domain, localPart string, w 
 	if err != nil {
 		return Export{}, err
 	}
-	index := MailboxIndexFile{Format: MailboxFormat, Address: localPart + "@" + domain, Folders: folders, Messages: make([]BackupMessage, 0, len(messages))}
+	index := MailboxIndexFile{Format: MailboxFormat, Address: localPart + "@" + domain, Folders: parentsFirst(folders), Messages: make([]BackupMessage, 0, len(messages))}
 	for _, m := range messages {
 		index.Messages = append(index.Messages, m.BackupMessage)
 	}
@@ -150,7 +139,7 @@ func writeFile(tw *tar.Writer, name string, at time.Time, content []byte) error 
 // exportMessage writes the file of one message. It gives 0 for a message that the mail server
 // does not have now.
 func (c *Client) exportMessage(ctx context.Context, tw *tar.Writer, account string, m listedMessage) (int64, error) {
-	body, err := c.openBlob(ctx, account, m.blobID)
+	body, err := c.openBlob(ctx, account, m.blobID, "message.eml")
 	if errors.Is(err, errNoBlob) {
 		return 0, nil
 	}
@@ -172,39 +161,14 @@ func (c *Client) exportMessage(ctx context.Context, tw *tar.Writer, account stri
 	return n, nil
 }
 
-// folders gives the folders of an account, with each parent before its children.
-func (c *Client) folders(ctx context.Context, account string) ([]BackupFolder, error) {
-	result, err := c.call(ctx, "Mailbox/get", object{"accountId": account, "ids": nil, "properties": []string{"id", "name", "parentId", "role", "sortOrder", "isSubscribed"}})
-	if err != nil {
-		return nil, err
-	}
-	list, _ := result["list"].([]any)
-	all := make([]BackupFolder, 0, len(list))
-	for _, item := range list {
-		o, _ := item.(object)
-		f := BackupFolder{}
-		f.ID, _ = o["id"].(string)
-		f.Name, _ = o["name"].(string)
-		f.ParentID, _ = o["parentId"].(string)
-		f.Role, _ = o["role"].(string)
-		order, _ := o["sortOrder"].(float64)
-		f.SortOrder = int(order)
-		f.Subscribed, _ = o["isSubscribed"].(bool)
-		if f.ID != "" {
-			all = append(all, f)
-		}
-	}
-	return parentsFirst(all), nil
-}
-
 // parentsFirst sorts folders by depth, then by ID. A folder whose parent is missing goes to
 // the top level.
-func parentsFirst(all []BackupFolder) []BackupFolder {
-	byID := map[string]BackupFolder{}
+func parentsFirst(all []Folder) []Folder {
+	byID := map[string]Folder{}
 	for _, f := range all {
 		byID[f.ID] = f
 	}
-	depth := func(f BackupFolder) int {
+	depth := func(f Folder) int {
 		n := 0
 		for seen := map[string]bool{f.ID: true}; f.ParentID != ""; n++ {
 			parent, ok := byID[f.ParentID]
@@ -216,14 +180,14 @@ func parentsFirst(all []BackupFolder) []BackupFolder {
 		}
 		return n
 	}
-	out := make([]BackupFolder, 0, len(all))
+	out := make([]Folder, 0, len(all))
 	for _, f := range all {
 		if _, ok := byID[f.ParentID]; !ok {
 			f.ParentID = ""
 		}
 		out = append(out, f)
 	}
-	slices.SortStableFunc(out, func(a, b BackupFolder) int {
+	slices.SortStableFunc(out, func(a, b Folder) int {
 		if d := depth(a) - depth(b); d != 0 {
 			return d
 		}
@@ -245,7 +209,7 @@ func (c *Client) messages(ctx context.Context, account string) ([]listedMessage,
 	}
 	out := make([]listedMessage, 0, len(ids))
 	for chunk := range slices.Chunk(ids, page) {
-		result, err := c.call(ctx, "Email/get", object{"accountId": account, "ids": chunk, "properties": []string{"id", "blobId", "mailboxIds", "keywords", "receivedAt", "size", "messageId"}})
+		result, err := c.mailCall(ctx, "Email/get", object{"accountId": account, "ids": chunk, "properties": []string{"id", "blobId", "mailboxIds", "keywords", "receivedAt", "size", "messageId"}})
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +261,7 @@ func (c *Client) emailIDs(ctx context.Context, account string) ([]string, error)
 	seen := map[string]bool{}
 	var ids []string
 	for position := 0; ; {
-		result, err := c.call(ctx, "Email/query", object{"accountId": account, "sort": []any{object{"property": "receivedAt", "isAscending": true}}, "position": position, "limit": page})
+		result, err := c.mailCall(ctx, "Email/query", object{"accountId": account, "sort": []any{object{"property": "receivedAt", "isAscending": true}}, "position": position, "limit": page})
 		if err != nil {
 			return nil, err
 		}
@@ -313,66 +277,6 @@ func (c *Client) emailIDs(ctx context.Context, account string) ([]string, error)
 		}
 		position += len(list)
 	}
-}
-
-var errNoBlob = errors.New("the mail server does not have the blob")
-
-// openBlob gives the content of a blob of an account. The caller closes it.
-func (c *Client) openBlob(ctx context.Context, account, blobID string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.URL, "/")+"/jmap/download/"+url.PathEscape(account)+"/"+url.PathEscape(blobID)+"/message.eml", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.SetBasicAuth(AdminUser, c.Password)
-	resp, err := c.blobClient().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("mail server: %w", err)
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		resp.Body.Close()
-		return nil, errNoBlob
-	}
-	if resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
-		resp.Body.Close()
-		return nil, fmt.Errorf("mail server: download: status %d: %s", resp.StatusCode, short(raw))
-	}
-	return resp.Body, nil
-}
-
-// blobClient is the HTTP client for the content of messages. A large message can take more
-// time than a method call, so it has no time limit of its own: the job has one.
-func (c *Client) blobClient() *http.Client {
-	if c.HTTP == nil {
-		return &http.Client{}
-	}
-	client := *c.HTTP
-	client.Timeout = 0
-	return &client
-}
-
-// uploadMessage puts a message in an account and gives its blob ID.
-func (c *Client) uploadMessage(ctx context.Context, account string, content io.Reader, size int64) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.URL, "/")+"/jmap/upload/"+url.PathEscape(account)+"/", content)
-	if err != nil {
-		return "", err
-	}
-	req.ContentLength = size
-	req.Header.Set("Content-Type", "message/rfc822")
-	req.SetBasicAuth(AdminUser, c.Password)
-	resp, err := c.blobClient().Do(req)
-	if err != nil {
-		return "", fmt.Errorf("mail server: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	var out struct {
-		BlobID string `json:"blobId"`
-	}
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated || json.Unmarshal(raw, &out) != nil || out.BlobID == "" {
-		return "", fmt.Errorf("mail server: upload: status %d: %s", resp.StatusCode, short(raw))
-	}
-	return out.BlobID, nil
 }
 
 // maxUpload gives the largest blob that the mail server accepts (maxSizeUpload).
@@ -411,7 +315,7 @@ const maxIndex = 512 << 20
 // A second restore of the same backup adds nothing. A restore that stops can thus start
 // again.
 func (c *Client) ImportMailbox(ctx context.Context, domain, localPart string, r io.Reader) (Import, error) {
-	account, err := c.mailboxAccount(ctx, domain, localPart)
+	account, err := c.MailAccount(ctx, domain, localPart)
 	if err != nil {
 		return Import{}, err
 	}
@@ -494,33 +398,25 @@ func (c *Client) ImportMailbox(ctx context.Context, domain, localPart string, r 
 
 // importMessage adds one message to an account.
 func (c *Client) importMessage(ctx context.Context, account string, content io.Reader, size int64, m BackupMessage, folders map[string]string) error {
-	blobID, err := c.uploadMessage(ctx, account, io.LimitReader(content, size), size)
+	blobID, err := c.Upload(ctx, account, io.LimitReader(content, size), size)
 	if err != nil {
 		return err
 	}
-	in := object{}
+	in := []string{}
 	for _, f := range m.Folders {
 		if id := folders[f]; id != "" {
-			in[id] = true
+			in = append(in, id)
 		}
 	}
 	if len(in) == 0 {
-		in[folders[inboxKey]] = true
+		in = append(in, folders[inboxKey])
 	}
-	keywords := object{}
-	for _, k := range m.Keywords {
-		keywords[k] = true
-	}
-	email := object{"blobId": blobID, "mailboxIds": in, "keywords": keywords}
-	if m.ReceivedAt != "" {
-		email["receivedAt"] = m.ReceivedAt
-	}
-	result, err := c.call(ctx, "Email/import", object{"accountId": account, "emails": object{"m": email}})
+	received, _ := time.Parse(time.RFC3339, m.ReceivedAt)
+	refused, err := c.ImportEmails(ctx, account, []Email{{BlobID: blobID, Folders: in, Keywords: m.Keywords, Received: received}})
 	if err != nil {
 		return err
 	}
-	if failed, _ := result["notCreated"].(object); failed["m"] != nil {
-		e := setError("Email/import", failed["m"])
+	if e := refused[0]; e != nil {
 		if e.Type == "overQuota" {
 			return ErrMailboxFull
 		}
@@ -537,8 +433,8 @@ const inboxKey = "\x00inbox"
 // folders that the mailbox does not have, with no role. A folder with a role (for example
 // "sent") is the folder of the mailbox with that role. Other folders agree by their path of
 // names.
-func (c *Client) restoreFolders(ctx context.Context, account string, backup []BackupFolder) (map[string]string, error) {
-	current, err := c.folders(ctx, account)
+func (c *Client) restoreFolders(ctx context.Context, account string, backup []Folder) (map[string]string, error) {
+	current, err := c.Folders(ctx, account)
 	if err != nil {
 		return nil, err
 	}
@@ -563,20 +459,12 @@ func (c *Client) restoreFolders(ctx context.Context, account string, backup []Ba
 			out[f.ID] = id
 			continue
 		}
-		create := object{"name": f.Name, "parentId": nil, "isSubscribed": f.Subscribed, "sortOrder": f.SortOrder}
 		if f.ParentID != "" {
-			create["parentId"] = out[f.ParentID]
+			f.ParentID = out[f.ParentID]
 		}
-		result, err := c.call(ctx, "Mailbox/set", object{"accountId": account, "create": object{"f": create}})
+		id, err := c.CreateFolder(ctx, account, f)
 		if err != nil {
 			return nil, err
-		}
-		created, _ := result["created"].(object)
-		made, _ := created["f"].(object)
-		id, _ := made["id"].(string)
-		if id == "" {
-			failed, _ := result["notCreated"].(object)
-			return nil, setError("Mailbox/set", failed["f"])
 		}
 		out[f.ID] = id
 		byPath[path] = id
@@ -585,8 +473,8 @@ func (c *Client) restoreFolders(ctx context.Context, account string, backup []Ba
 }
 
 // folderPath gives the names of a folder and its parents, from the top level.
-func folderPath(all []BackupFolder, f BackupFolder) string {
-	byID := map[string]BackupFolder{}
+func folderPath(all []Folder, f Folder) string {
+	byID := map[string]Folder{}
 	for _, x := range all {
 		byID[x.ID] = x
 	}
@@ -606,28 +494,13 @@ func folderPath(all []BackupFolder, f BackupFolder) string {
 
 // messageKeys gives the key of each message of an account (BackupMessage.key).
 func (c *Client) messageKeys(ctx context.Context, account string) (map[string]bool, error) {
-	ids, err := c.emailIDs(ctx, account)
+	listed, err := c.messages(ctx, account)
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]bool, len(ids))
-	for chunk := range slices.Chunk(ids, page) {
-		result, err := c.call(ctx, "Email/get", object{"accountId": account, "ids": chunk, "properties": []string{"receivedAt", "size", "messageId"}})
-		if err != nil {
-			return nil, err
-		}
-		list, _ := result["list"].([]any)
-		for _, item := range list {
-			o, _ := item.(object)
-			m := BackupMessage{}
-			m.ReceivedAt, _ = o["receivedAt"].(string)
-			size, _ := o["size"].(float64)
-			m.Size = int64(size)
-			if ids, _ := o["messageId"].([]any); len(ids) > 0 {
-				m.MessageID, _ = ids[0].(string)
-			}
-			out[m.key()] = true
-		}
+	out := make(map[string]bool, len(listed))
+	for _, m := range listed {
+		out[m.key()] = true
 	}
 	return out, nil
 }
