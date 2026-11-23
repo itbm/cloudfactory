@@ -1649,7 +1649,7 @@
                     "suspended": false,
                     "suspendedBy": null,
                     "websites": 9,
-                    "databaseServers": 4,
+                    "databaseServers": 5,
                     "createdAt": "2025-10-10T10:00:00+00:00"
                 },
                 {
@@ -2043,10 +2043,11 @@
                     "databaseEngines": [
                         "mariadb",
                         "postgresql",
-                        "valkey"
+                        "valkey",
+                        "mysql"
                     ],
                     "databaseInstances": true,
-                    "databaseServers": 5,
+                    "databaseServers": 6,
                     "dnsName": "ns1.panel.example",
                     "dns": true,
                     "addresses": [
@@ -2131,7 +2132,8 @@
                     "databaseEngines": [
                         "mariadb",
                         "postgresql",
-                        "valkey"
+                        "valkey",
+                        "mysql"
                     ],
                     "databaseInstances": true,
                     "databaseServers": 3,
@@ -2307,6 +2309,62 @@
         "status": 200,
         "body": {
             "data": [
+                {
+                    "id": "01m7cqzs80g1zfka000000000e",
+                    "name": "Apache + PHP-FPM · PHP 8.2",
+                    "family": "apache-php-fpm",
+                    "reference": "ghcr.io/itbm/apache-php8.2",
+                    "tag": "0.1.9",
+                    "digest": "sha256:7ea2da87282fd032d5ab29fa69aa0109f1e8e7e0029a85b64f0e041cde343474",
+                    "availableTag": null,
+                    "availableDigest": null,
+                    "phpVersion": "8.2",
+                    "version": "8.2",
+                    "supportEndsAt": "2026-12-31",
+                    "policy": "manual",
+                    "custom": false,
+                    "pack": {
+                        "id": "01m7cqzs80wzwr170000000002",
+                        "slug": "php-legacy-apache",
+                        "name": "Older PHP for Apache + PHP-FPM",
+                        "version": "0.1.9"
+                    },
+                    "defaults": null,
+                    "signatureVerified": true,
+                    "checkedAt": null,
+                    "checkError": null,
+                    "containerPort": 8080,
+                    "command": [],
+                    "websites": 0
+                },
+                {
+                    "id": "01m7cqzs80g1zfka000000000d",
+                    "name": "Apache + PHP-FPM · PHP 8.3",
+                    "family": "apache-php-fpm",
+                    "reference": "ghcr.io/itbm/apache-php8.3",
+                    "tag": "0.1.9",
+                    "digest": "sha256:3628ead5688cb0e87b75a79384b60a9bdc803bea56d2dc98a1b67efa6d381cb5",
+                    "availableTag": null,
+                    "availableDigest": null,
+                    "phpVersion": "8.3",
+                    "version": "8.3",
+                    "supportEndsAt": "2027-12-31",
+                    "policy": "manual",
+                    "custom": false,
+                    "pack": {
+                        "id": "01m7cqzs80wzwr170000000002",
+                        "slug": "php-legacy-apache",
+                        "name": "Older PHP for Apache + PHP-FPM",
+                        "version": "0.1.9"
+                    },
+                    "defaults": null,
+                    "signatureVerified": true,
+                    "checkedAt": null,
+                    "checkError": null,
+                    "containerPort": 8080,
+                    "command": [],
+                    "websites": 0
+                },
                 {
                     "id": "01m7cqzs80g1zfka0000000003",
                     "name": "Apache + PHP-FPM · PHP 8.4",
@@ -2856,8 +2914,8 @@
             "method": "internal",
             "state": "valid",
             "expiresAt": "2027-02-07T10:00:00+00:00",
-            "caCertificate": "-----BEGIN CERTIFICATE-----\nMIICGTCCAcCgAwIBAgIBADAKBggqhkjOPQQDAjBsMSUwIwYDVQQDDBxDbG91ZGZh\nY3RvcnkgcGFuZWwgQ0EgKGRlbW8pMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29t\nZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTI2\nMTEyMzAwNDI0MVoXDTM2MTEyMDAwNDI0MVowbDElMCMGA1UEAwwcQ2xvdWRmYWN0\nb3J5IHBhbmVsIENBIChkZW1vKTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUt\nU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqG\nSM49AgEGCCqGSM49AwEHA0IABCqzB1r9Nbcpu4Wo9vUUtuWee/tvFT3a8GWw1YWq\nlsFCogUJZJHSdaqMdDFennp2BhPoQqkrs6EB/qpCaGKgZROjUzBRMB0GA1UdDgQW\nBBQ373iX2JOoC3zQH7fAmkWuGLmbhjAfBgNVHSMEGDAWgBQ373iX2JOoC3zQH7fA\nmkWuGLmbhjAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0cAMEQCIHPn6vkP\nLh0Rvvcq3Hrrgpy7gpQSdMAKLGN2dY7/EOUZAiBua7kGyWZsle2GuDFLG+UlgQi4\nxHPVruNpqQcU7RpKIw==\n-----END CERTIFICATE-----\n",
-            "caSha256": "4483c0c237b7e54b2cdba41b65130cc06404404642a89d8cd103ca5d609c6d16",
+            "caCertificate": "-----BEGIN CERTIFICATE-----\nMIICGjCCAcCgAwIBAgIBADAKBggqhkjOPQQDAjBsMSUwIwYDVQQDDBxDbG91ZGZh\nY3RvcnkgcGFuZWwgQ0EgKGRlbW8pMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29t\nZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTI2\nMTEyMzAwNDYzOFoXDTM2MTEyMDAwNDYzOFowbDElMCMGA1UEAwwcQ2xvdWRmYWN0\nb3J5IHBhbmVsIENBIChkZW1vKTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUt\nU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqG\nSM49AgEGCCqGSM49AwEHA0IABFp/r/kz6Nvd8IcEJ1ZcYhyl5zIjDh+x0A/sh8Aw\n0PPZse6Zb4icZHilJJCoLBX9Tej5u5sR3o6G5l6TOXp8ayajUzBRMB0GA1UdDgQW\nBBRVgFrCPy1aAghDeP1PiRPfZORSQDAfBgNVHSMEGDAWgBRVgFrCPy1aAghDeP1P\niRPfZORSQDAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIBZXQ1g+\nFsJpGXfT9PSP8ZSaN2vckf14KOyuAw5NOiHBAiEA7xvCbJTqUR9UzKkw8GUwXsnI\nzKJ+pZ9iKrMLBxFOvdY=\n-----END CERTIFICATE-----\n",
+            "caSha256": "a14657b059a4c529ef8c64b281dcdf0e01b80ac32adc0fdd3498651825c271c1",
             "reportedAt": "2026-11-14T10:00:00+00:00",
             "letsEncryptAvailable": true,
             "serversWithoutCa": [
@@ -2872,6 +2930,40 @@
         "status": 200,
         "body": {
             "data": [
+                {
+                    "id": "01m7cqzs80g1zfka000000000e",
+                    "name": "Apache + PHP-FPM · PHP 8.2",
+                    "family": "apache-php-fpm",
+                    "tag": "0.1.9",
+                    "phpVersion": "8.2",
+                    "version": "8.2",
+                    "custom": false,
+                    "supportEndsAt": "2026-12-31T00:00:00+00:00",
+                    "defaults": null,
+                    "pack": {
+                        "id": "01m7cqzs80wzwr170000000002",
+                        "slug": "php-legacy-apache",
+                        "name": "Older PHP for Apache + PHP-FPM",
+                        "version": "0.1.9"
+                    }
+                },
+                {
+                    "id": "01m7cqzs80g1zfka000000000d",
+                    "name": "Apache + PHP-FPM · PHP 8.3",
+                    "family": "apache-php-fpm",
+                    "tag": "0.1.9",
+                    "phpVersion": "8.3",
+                    "version": "8.3",
+                    "custom": false,
+                    "supportEndsAt": "2027-12-31T00:00:00+00:00",
+                    "defaults": null,
+                    "pack": {
+                        "id": "01m7cqzs80wzwr170000000002",
+                        "slug": "php-legacy-apache",
+                        "name": "Older PHP for Apache + PHP-FPM",
+                        "version": "0.1.9"
+                    }
+                },
                 {
                     "id": "01m7cqzs80g1zfka0000000003",
                     "name": "Apache + PHP-FPM · PHP 8.4",
@@ -3135,6 +3227,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -3162,6 +3255,7 @@
                     "id": "01m7cqzs80df38970000000004",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000001",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -3189,6 +3283,7 @@
                     "id": "01m7cqzs80df38970000000005",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000002",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -3216,6 +3311,7 @@
                     "id": "01m7cqzs80df38970000000006",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000003",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -3243,6 +3339,7 @@
                     "id": "01m7cqzs80df38970000000007",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000005",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -3270,6 +3367,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -3294,9 +3392,38 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00"
+                },
+                {
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -3324,6 +3451,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -3346,6 +3474,71 @@
                     "databases": 2,
                     "maxDatabases": 20,
                     "createdAt": "2026-11-14T10:00:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /database-engines": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "engine": "mariadb",
+                    "name": "MariaDB",
+                    "port": 3306,
+                    "pack": null,
+                    "versions": [],
+                    "users": true,
+                    "moves": true,
+                    "adminer": true,
+                    "anywhere": true
+                },
+                {
+                    "engine": "postgresql",
+                    "name": "PostgreSQL",
+                    "port": 5432,
+                    "pack": null,
+                    "versions": [],
+                    "users": true,
+                    "moves": true,
+                    "adminer": true,
+                    "anywhere": false
+                },
+                {
+                    "engine": "valkey",
+                    "name": "Valkey",
+                    "port": 6379,
+                    "pack": null,
+                    "versions": [],
+                    "users": false,
+                    "moves": true,
+                    "adminer": false,
+                    "anywhere": false
+                },
+                {
+                    "engine": "mysql",
+                    "name": "MySQL",
+                    "port": 3306,
+                    "pack": {
+                        "id": "01m7cqzs80wzwr170000000003",
+                        "slug": "mysql",
+                        "version": "1.0.0",
+                        "publisher": "Example Packs Ltd"
+                    },
+                    "versions": [
+                        {
+                            "version": "8.4",
+                            "supportEndsAt": "2032-04-30"
+                        },
+                        {
+                            "version": "8.0",
+                            "supportEndsAt": "2026-04-30"
+                        }
+                    ],
+                    "users": true,
+                    "moves": false,
+                    "adminer": false,
+                    "anywhere": false
                 }
             ]
         }
@@ -3417,13 +3610,13 @@
                         "enabled": true,
                         "state": "active",
                         "ds": {
-                            "keyTag": 37293,
+                            "keyTag": 43077,
                             "algorithm": 13,
                             "digestType": 2,
-                            "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                            "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                            "digest": "201A84A5F6B420454BB585565DA96FF41CA12167E0D8259976B4E7FE68545323",
+                            "record": "acme.example.com. IN DS 43077 13 2 201A84A5F6B420454BB585565DA96FF41CA12167E0D8259976B4E7FE68545323"
                         },
-                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 PgfO01HzdBH2Ch40JQ4DYgWDdn1pp+f6wjjFVYxksi61/zWkAZlAzDLLuw8lkxzM8pm1LiVCYOaqVQvbLVKRLA=="
                     },
                     "servers": [
                         {
@@ -3924,7 +4117,8 @@
                         "01m7cqzs80df38970000000001",
                         "01m7cqzs80df38970000000002",
                         "01m7cqzs80df38970000000003",
-                        "01m7cqzs80df38970000000008"
+                        "01m7cqzs80df38970000000008",
+                        "01m7cqzs80df38970000000009"
                     ],
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
@@ -4711,7 +4905,7 @@
                     "usedBytes": 3576692736,
                     "encryption": {
                         "fingerprints": [
-                            "DE7384E41EC8FD096EB5D5D921B98642CC731725"
+                            "3D371D5CD23687678765B55ADA7FF9E6931610B7"
                         ],
                         "keyType": "OpenPGP v4: X25519",
                         "expiresAt": null,
@@ -8114,8 +8308,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "efab404ab740285e58684defdc39f121145f061ab3857be2e13b82b1ca83167f",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGKEFV9Ak6c9oCj4RfK0nJAXmPWdc\njDGztUzMn8TuBR6jcaLGJ/O4kxEGb6ZD05EMSyUq062Zs1W/gIBBeELlmg==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8202,8 +8396,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "efab404ab740285e58684defdc39f121145f061ab3857be2e13b82b1ca83167f",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGKEFV9Ak6c9oCj4RfK0nJAXmPWdc\njDGztUzMn8TuBR6jcaLGJ/O4kxEGb6ZD05EMSyUq062Zs1W/gIBBeELlmg==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8254,8 +8448,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "efab404ab740285e58684defdc39f121145f061ab3857be2e13b82b1ca83167f",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGKEFV9Ak6c9oCj4RfK0nJAXmPWdc\njDGztUzMn8TuBR6jcaLGJ/O4kxEGb6ZD05EMSyUq062Zs1W/gIBBeELlmg==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8337,8 +8531,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "efab404ab740285e58684defdc39f121145f061ab3857be2e13b82b1ca83167f",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGKEFV9Ak6c9oCj4RfK0nJAXmPWdc\njDGztUzMn8TuBR6jcaLGJ/O4kxEGb6ZD05EMSyUq062Zs1W/gIBBeELlmg==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8380,15 +8574,15 @@
                 {
                     "id": "01m7cqzs80ykv31f0000000002",
                     "name": "Example Packs Ltd",
-                    "fingerprint": "3d489adccd3f0024a4a3b44001b1d19a55b64de50f63022e501e52685639c30a",
-                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+b2cT1MollG283P4hJdJDPlOylto\nbbP5xdiei/+wigJGS8/wHArRY9XtoHsfez4E3N1NNGl+0eMqAZ4kk/jVGg==\n-----END PUBLIC KEY-----\n",
+                    "fingerprint": "0c354d39544348da5786f308cd58d02af6b1f5f2f29f2a81e802606e0e02eef3",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE7tFgmxu1CQMEJ9EUAfnguYETkJmC\nRLopTlUaTBZvQm9sZWDvIXawN8jmEbiLKqO7cyWuwBr3aTlOxxBXhB96Sw==\n-----END PUBLIC KEY-----\n",
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
                     "id": "01m7cqzs80ykv31f0000000001",
                     "name": "Example Plugins Ltd",
-                    "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                    "fingerprint": "efab404ab740285e58684defdc39f121145f061ab3857be2e13b82b1ca83167f",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGKEFV9Ak6c9oCj4RfK0nJAXmPWdc\njDGztUzMn8TuBR6jcaLGJ/O4kxEGb6ZD05EMSyUq062Zs1W/gIBBeELlmg==\n-----END PUBLIC KEY-----\n",
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 }
             ]
@@ -8414,15 +8608,18 @@
                     "signed": true,
                     "signedBy": {
                         "name": "Example Packs Ltd",
-                        "fingerprint": "3d489adccd3f0024a4a3b44001b1d19a55b64de50f63022e501e52685639c30a",
+                        "fingerprint": "0c354d39544348da5786f308cd58d02af6b1f5f2f29f2a81e802606e0e02eef3",
                         "release": false
                     },
+                    "kind": "runtime",
                     "runtime": {
                         "contract": "cf-runtime/1",
                         "type": "app",
                         "defaultCommand": "./server",
-                        "defaultInstall": "go build -o server ."
+                        "defaultInstall": "go build -o server .",
+                        "family": ""
                     },
+                    "database": null,
                     "images": [
                         {
                             "id": "01m7cqzs80g1zfka000000000b",
@@ -8433,7 +8630,8 @@
                             "digest": "sha256:ee26fa53a628adbcc1bc0be6150e8bae61aab7e76fdabf93fe08325de4b4eb42",
                             "availableDigest": null,
                             "supportEndsAt": "2027-08-31",
-                            "websites": 0
+                            "websites": 0,
+                            "databaseServers": 0
                         },
                         {
                             "id": "01m7cqzs80g1zfka000000000c",
@@ -8444,7 +8642,8 @@
                             "digest": "sha256:2a8d00d1d4cb33cbd3740c6b69e15c33fa73c27c5a8f6ca0eaf5840feb41cccd",
                             "availableDigest": null,
                             "supportEndsAt": "2027-02-28",
-                            "websites": 0
+                            "websites": 0,
+                            "databaseServers": 0
                         }
                     ],
                     "servers": [
@@ -8458,6 +8657,157 @@
                             "id": "01m7cqzs807rnxfq0000000002",
                             "name": "web-2",
                             "version": "1.2.0",
+                            "state": "installed"
+                        },
+                        {
+                            "id": "01m7cqzs807rnxfq0000000003",
+                            "name": "web-3",
+                            "version": null,
+                            "state": "failing"
+                        }
+                    ],
+                    "installedBy": "Alex Admin",
+                    "installedAt": "2026-11-14T10:00:00+00:00",
+                    "updatedAt": "2026-11-14T10:00:00+00:00"
+                },
+                {
+                    "id": "01m7cqzs80wzwr170000000003",
+                    "slug": "mysql",
+                    "name": "MySQL",
+                    "version": "1.0.0",
+                    "publisher": "Example Packs Ltd",
+                    "description": "MySQL database servers. The image starts from the official MySQL image and adds the program /cf/manage of the contract cf-database/1.",
+                    "signed": true,
+                    "signedBy": {
+                        "name": "Example Packs Ltd",
+                        "fingerprint": "0c354d39544348da5786f308cd58d02af6b1f5f2f29f2a81e802606e0e02eef3",
+                        "release": false
+                    },
+                    "kind": "database",
+                    "runtime": {
+                        "contract": "",
+                        "type": "",
+                        "defaultCommand": "",
+                        "defaultInstall": "",
+                        "family": ""
+                    },
+                    "database": {
+                        "contract": "cf-database/1",
+                        "port": 3306,
+                        "dataDir": "/var/lib/mysql",
+                        "firstPort": 20000,
+                        "lastPort": 20049,
+                        "databaseServers": 1
+                    },
+                    "images": [
+                        {
+                            "id": null,
+                            "name": "MySQL 8.4",
+                            "version": "8.4",
+                            "reference": "ghcr.io/example-packs/cf-mysql",
+                            "tag": "8.4",
+                            "digest": "sha256:cb2d96612e074ab892d1eed3537d48ee3942b71365f469c7657e3b7ae011a286",
+                            "availableDigest": null,
+                            "supportEndsAt": "2032-04-30",
+                            "websites": 0,
+                            "databaseServers": 1
+                        },
+                        {
+                            "id": null,
+                            "name": "MySQL 8.0",
+                            "version": "8.0",
+                            "reference": "ghcr.io/example-packs/cf-mysql",
+                            "tag": "8.0",
+                            "digest": "sha256:6598970b31005286bd429daae2434c0eef7dffc8acfd885874acb8b8e273b313",
+                            "availableDigest": null,
+                            "supportEndsAt": "2026-04-30",
+                            "websites": 0,
+                            "databaseServers": 0
+                        }
+                    ],
+                    "servers": [
+                        {
+                            "id": "01m7cqzs807rnxfq0000000001",
+                            "name": "web-1",
+                            "version": "1.0.0",
+                            "state": "installed"
+                        },
+                        {
+                            "id": "01m7cqzs807rnxfq0000000002",
+                            "name": "web-2",
+                            "version": "1.0.0",
+                            "state": "installed"
+                        },
+                        {
+                            "id": "01m7cqzs807rnxfq0000000003",
+                            "name": "web-3",
+                            "version": null,
+                            "state": "failing"
+                        }
+                    ],
+                    "installedBy": "Alex Admin",
+                    "installedAt": "2026-11-14T10:00:00+00:00",
+                    "updatedAt": "2026-11-14T10:00:00+00:00"
+                },
+                {
+                    "id": "01m7cqzs80wzwr170000000002",
+                    "slug": "php-legacy-apache",
+                    "name": "Older PHP for Apache + PHP-FPM",
+                    "version": "0.1.9",
+                    "publisher": "Cloudfactory",
+                    "description": "PHP 8.2 and 8.3 for the Apache + PHP-FPM runtime, for websites that move from a server with an older PHP, for example from cPanel. These versions get only security fixes. PHP 8.2 gets no fixes after 31 December 2026.",
+                    "signed": true,
+                    "signedBy": {
+                        "name": "Cloudfactory release key",
+                        "fingerprint": null,
+                        "release": true
+                    },
+                    "kind": "runtime",
+                    "runtime": {
+                        "contract": "cf-php/1",
+                        "type": "",
+                        "defaultCommand": "",
+                        "defaultInstall": "",
+                        "family": "apache-php-fpm"
+                    },
+                    "database": null,
+                    "images": [
+                        {
+                            "id": "01m7cqzs80g1zfka000000000d",
+                            "name": "Apache + PHP-FPM · PHP 8.3",
+                            "version": "8.3",
+                            "reference": "ghcr.io/itbm/apache-php8.3",
+                            "tag": "0.1.9",
+                            "digest": "sha256:3628ead5688cb0e87b75a79384b60a9bdc803bea56d2dc98a1b67efa6d381cb5",
+                            "availableDigest": null,
+                            "supportEndsAt": "2027-12-31",
+                            "websites": 0,
+                            "databaseServers": 0
+                        },
+                        {
+                            "id": "01m7cqzs80g1zfka000000000e",
+                            "name": "Apache + PHP-FPM · PHP 8.2",
+                            "version": "8.2",
+                            "reference": "ghcr.io/itbm/apache-php8.2",
+                            "tag": "0.1.9",
+                            "digest": "sha256:7ea2da87282fd032d5ab29fa69aa0109f1e8e7e0029a85b64f0e041cde343474",
+                            "availableDigest": null,
+                            "supportEndsAt": "2026-12-31",
+                            "websites": 0,
+                            "databaseServers": 0
+                        }
+                    ],
+                    "servers": [
+                        {
+                            "id": "01m7cqzs807rnxfq0000000001",
+                            "name": "web-1",
+                            "version": "0.1.9",
+                            "state": "installed"
+                        },
+                        {
+                            "id": "01m7cqzs807rnxfq0000000002",
+                            "name": "web-2",
+                            "version": "0.1.9",
                             "state": "installed"
                         },
                         {
@@ -8556,7 +8906,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-                    "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+                    "fingerprint": "357656694a050b4b138da2a458501cd9915f822807509db8121563c96b8c0072",
                     "notBefore": "2025-11-26T10:00:00+00:00",
                     "expiresAt": "2026-11-26T10:00:00+00:00",
                     "trusted": true,
@@ -8585,7 +8935,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Cloudfactory demonstration (Demo CA R1)",
-                    "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+                    "fingerprint": "bad6aa3a92e763067191000c62d5b59c49ecc8175cf606fffb634829e36e45ea",
                     "notBefore": "2026-10-20T10:00:00+00:00",
                     "expiresAt": "2027-01-18T10:00:00+00:00",
                     "trusted": true,
@@ -8698,8 +9048,8 @@
                     "hasClientSecret": false,
                     "entityId": "https://sts.windows.net/0b5c1e5e-demo-4e0a-9d8e-000000000000/",
                     "ssoUrl": "https://login.microsoftonline.com/0b5c1e5e-demo-4e0a-9d8e-000000000000/saml2",
-                    "certificate": "-----BEGIN CERTIFICATE-----\nMIIDwDCCAqigAwIBAgIBADANBgkqhkiG9w0BAQUFADB5MTIwMAYDVQQDDClNaWNy\nb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTELMAkGA1UEBhMC\nQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\ndHMgUHR5IEx0ZDAeFw0yNjExMjMwMDQyMzZaFw0yOTExMjIwMDQyMzZaMHkxMjAw\nBgNVBAMMKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQgU1NPIENlcnRpZmljYXRl\nMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\nZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB\nCgKCAQEAuUFDquBORrY8ilZJXcr0AOYY7z4CoPM/IlYJtjAKIbuwdTEXRtVM83Tg\ntee0xVTJpmhqbHfYknmTYBYEEqAl9+in8RXdkxbudMN8x0mZkKVzt/2Tv0y6vZD4\n/PaqIuHyXsdu3GTVrTUxves/PQiiF3mq9CRmYGTAumU5jM9eKYZMzSNm6dvpZoJs\nvtGxgJ/Tn1fpfdkRl6skYfIRCyBm9dA+8Do/hNccNBBTSxFamWDgBjtM+S+dKOvn\nwfKljd4nqnawS4JvT2nw1FcYIBGFnXSzw2pgW3VLJQ6GpDH/2cD+TxduaE1sjKn3\nfvcfSABgI4FWkbqkDb1/j6rS6psMpQIDAQABo1MwUTAdBgNVHQ4EFgQU/1gt+Af/\n8lDHz7MpVcMaBiKvOcowHwYDVR0jBBgwFoAU/1gt+Af/8lDHz7MpVcMaBiKvOcow\nDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQUFAAOCAQEADJvMun7Ax/y5ZCr3\n6ezGdPBR5CQHxvek5j13yQWo+NYLV7/x2gfTjfY6RJ9ex2tPWblroAP8lzirlUJf\njwvfarxKVQ1SUHzgzb6EI5qE2XurA4yhimI1/Cl5Y+q0nnvCjJFvdrfYUikXT81k\nsswl+0yYvplFZPt+YCBoZbL8ZxOC/3LaB75v2Iqvhozy+IUtx2M0f1F3R5qU86Y/\ng0RTUjUytju5j+IYIRVWtNmcu0M68Luejybhwu87EMf/cQ9PKXBURps9uyVS7577\nJUWm3avlZ7WHCrnYAOlq0AEV6VZqrxeVgyJtFxZyYuHDZBAAL/OwyA4n0Ud3WpKn\nJGuF+w==\n-----END CERTIFICATE-----\n",
-                    "certificateExpiresAt": "2029-11-22T00:42:36+00:00",
+                    "certificate": "-----BEGIN CERTIFICATE-----\nMIIDwDCCAqigAwIBAgIBADANBgkqhkiG9w0BAQUFADB5MTIwMAYDVQQDDClNaWNy\nb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTELMAkGA1UEBhMC\nQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\ndHMgUHR5IEx0ZDAeFw0yNjExMjMwMDQ2MzRaFw0yOTExMjIwMDQ2MzRaMHkxMjAw\nBgNVBAMMKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQgU1NPIENlcnRpZmljYXRl\nMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\nZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB\nCgKCAQEA1TZwSKN7O6zWOg0B0TA8ITWpUsMN4ifS9Y5tfw+yjyQM3L04K2KqLREK\n1XEsCZXs8MGMZoDE9UtP+rnInePpZpEHfVRU1a9pUDcLaFMcsyolMvWQM1Kby0yC\nw8tbYXa84Y6K4KpKtYs7aEj3m8dB2TjXUHXbB/l1FS5NjPXcuiZa8YQeiGD05n8Q\n8QZXdwxhYCZMBvQvhAnrnVK3R1YHKVSoehfCg3mOomwQnnlUNSmL1BeI5iqhraMl\nMH2T27Yn9KLdqumQMi72/St6UpeGUHaJqkHN2btfFD00aSA7kcj8djw723yvhZj5\nHGnXEX1QI40j03kh93c4bJ7ytwbz8QIDAQABo1MwUTAdBgNVHQ4EFgQUWLOFXpNF\ny/TalCVvbCX6y4Y5bGgwHwYDVR0jBBgwFoAUWLOFXpNFy/TalCVvbCX6y4Y5bGgw\nDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQUFAAOCAQEAsIY1ELEus8YHA5AM\nvjMrPtuL+zwKMIeaaJHJ6OLV0NeHA0B1MZ3Rb/gHr0T8Tfm/cC+rLJFaasOZPHem\nYzDGMKPV/ofZI0jqX8RKgiCuxb4Xr6fsLXxtzjEC4s8MiDSt53ymfdxEYleBTVCH\nz/Mj8iGERskM0b4gW4UR5OQIKfSQwNcAZzi3ZLAkzEVNNtzvhhZzlC9pxhfRhJgY\nxL7FNaVBXnC+0PPPYVi5bjKwg2p+AEeETpo8ZQgDaOz/EB2fNnIDLpvClG2B+dPP\ngAtZF/nOONplK9nfZvFpjk5ZY1Av4uMbligZ1TM+ORdH/5Xhsh4RkkJabJM7HZ7J\n2NgWRw==\n-----END CERTIFICATE-----\n",
+                    "certificateExpiresAt": "2029-11-22T00:46:34+00:00",
                     "linkByEmail": false,
                     "emailDomains": [],
                     "users": 0,
@@ -8751,6 +9101,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -8779,6 +9130,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -8807,6 +9159,7 @@
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -8835,6 +9188,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -8855,6 +9209,35 @@
                         "diskSizeBytes": 10737418240
                     },
                     "databases": 2,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": false
+                },
+                {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
                     "maxDatabases": 20,
                     "createdAt": "2026-11-14T10:00:00+00:00",
                     "remote": false
@@ -9539,6 +9922,17 @@
                     "keys": null
                 },
                 {
+                    "id": "01m7cqzs803h34e2000000000b",
+                    "engine": "mysql",
+                    "name": "apiacme_97c4_events",
+                    "databaseServerId": "01m7cqzs80df38970000000009",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "sizeBytes": 171966464,
+                    "number": null,
+                    "keys": null
+                },
+                {
                     "id": "01m7cqzs803h34e20000000005",
                     "engine": "valkey",
                     "name": "apiacme_97c4_queue",
@@ -9566,6 +9960,20 @@
                     ]
                 },
                 {
+                    "id": "01m7cqzs80nsqn8g000000000c",
+                    "engine": "mysql",
+                    "name": "apiacme_97c4_events",
+                    "access": "website",
+                    "databaseServerId": "01m7cqzs80df38970000000009",
+                    "grants": [
+                        {
+                            "databaseId": "01m7cqzs803h34e2000000000b",
+                            "database": "apiacme_97c4_events",
+                            "privileges": "readwrite"
+                        }
+                    ]
+                },
+                {
                     "id": "01m7cqzs80nsqn8g0000000005",
                     "engine": "valkey",
                     "name": "apiacme_97c4_queue",
@@ -9585,6 +9993,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -9613,6 +10022,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -9641,6 +10051,7 @@
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -9669,6 +10080,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -9689,6 +10101,35 @@
                         "diskSizeBytes": 10737418240
                     },
                     "databases": 2,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": false
+                },
+                {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
                     "maxDatabases": 20,
                     "createdAt": "2026-11-14T10:00:00+00:00",
                     "remote": false
@@ -9864,7 +10305,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDiEqiz9Rf1dqD4l95/bLPPspHUzmIWRiXQPg58YYwHH cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/16H7ykJdTkG5pMRXURFTceWP4rPcblfCfP2PsKTbVQSmNGHN",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -10415,6 +10856,7 @@
                     "id": "01m7cqzs80df38970000000005",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000002",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -10894,6 +11336,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -10922,6 +11365,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -10947,9 +11391,39 @@
                     "remote": true
                 },
                 {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": true
+                },
+                {
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -10978,6 +11452,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -11612,6 +12087,7 @@
                     "id": "01m7cqzs80df38970000000006",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000003",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -12130,6 +12606,7 @@
                     "id": "01m7cqzs80df38970000000007",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000005",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -12651,6 +13128,7 @@
                     "id": "01m7cqzs80df38970000000004",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000001",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -13121,6 +13599,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -13149,6 +13628,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -13177,6 +13657,7 @@
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -13205,6 +13686,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -13225,6 +13707,35 @@
                         "diskSizeBytes": 10737418240
                     },
                     "databases": 2,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": false
+                },
+                {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
                     "maxDatabases": 20,
                     "createdAt": "2026-11-14T10:00:00+00:00",
                     "remote": false
@@ -13678,6 +14189,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -13706,6 +14218,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -13731,9 +14244,39 @@
                     "remote": true
                 },
                 {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": true
+                },
+                {
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -13762,6 +14305,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14235,6 +14779,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14263,6 +14808,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14291,6 +14837,7 @@
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14319,6 +14866,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14339,6 +14887,35 @@
                         "diskSizeBytes": 10737418240
                     },
                     "databases": 2,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": false
+                },
+                {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
                     "maxDatabases": 20,
                     "createdAt": "2026-11-14T10:00:00+00:00",
                     "remote": false
@@ -14385,7 +14962,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDiEqiz9Rf1dqD4l95/bLPPspHUzmIWRiXQPg58YYwHH cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/G6mt5KmRycsDBSMMYLLgnRniZtanaanOr6V5GyXkL5c3djlK",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -14820,6 +15397,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14848,6 +15426,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14876,6 +15455,7 @@
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14904,6 +15484,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -14924,6 +15505,35 @@
                         "diskSizeBytes": 10737418240
                     },
                     "databases": 2,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": false
+                },
+                {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
                     "maxDatabases": 20,
                     "createdAt": "2026-11-14T10:00:00+00:00",
                     "remote": false
@@ -15362,6 +15972,7 @@
                     "id": "01m7cqzs80df38970000000004",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000001",
                     "serverId": "01m7cqzs807rnxfq0000000002",
                     "movingToServerId": null,
@@ -15896,6 +16507,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -15924,6 +16536,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -15952,6 +16565,7 @@
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -15980,6 +16594,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -16000,6 +16615,35 @@
                         "diskSizeBytes": 10737418240
                     },
                     "databases": 2,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": false
+                },
+                {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
                     "maxDatabases": 20,
                     "createdAt": "2026-11-14T10:00:00+00:00",
                     "remote": false
@@ -16737,6 +17381,7 @@
                     "id": "01m7cqzs80df38970000000001",
                     "name": "mariadb-1",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -16765,6 +17410,7 @@
                     "id": "01m7cqzs80df38970000000008",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -16790,9 +17436,39 @@
                     "remote": true
                 },
                 {
+                    "id": "01m7cqzs80df38970000000009",
+                    "name": "mysql-1",
+                    "engine": "mysql",
+                    "engineVersion": "8.4",
+                    "customerId": "01m7cqzs80h56kh10000000004",
+                    "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
+                    "planId": "01m7cqzs80tpf66h0000000002",
+                    "status": "running",
+                    "host": "mysql-1.internal",
+                    "port": 3306,
+                    "networkHost": "mysql-1.internal",
+                    "networkPort": 3306,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 1073741824,
+                        "diskBytes": 10737418240
+                    },
+                    "usage": {
+                        "memoryBytes": 325058560,
+                        "diskBytes": 241172480,
+                        "diskSizeBytes": 10737418240
+                    },
+                    "databases": 1,
+                    "maxDatabases": 20,
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "remote": true
+                },
+                {
                     "id": "01m7cqzs80df38970000000003",
                     "name": "postgresql-1",
                     "engine": "postgresql",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -16821,6 +17497,7 @@
                     "id": "01m7cqzs80df38970000000002",
                     "name": "valkey-1",
                     "engine": "valkey",
+                    "engineVersion": null,
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
                     "movingToServerId": null,
@@ -17420,13 +18097,13 @@
                 "enabled": true,
                 "state": "active",
                 "ds": {
-                    "keyTag": 37293,
+                    "keyTag": 43077,
                     "algorithm": 13,
                     "digestType": 2,
-                    "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                    "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                    "digest": "201A84A5F6B420454BB585565DA96FF41CA12167E0D8259976B4E7FE68545323",
+                    "record": "acme.example.com. IN DS 43077 13 2 201A84A5F6B420454BB585565DA96FF41CA12167E0D8259976B4E7FE68545323"
                 },
-                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 PgfO01HzdBH2Ch40JQ4DYgWDdn1pp+f6wjjFVYxksi61/zWkAZlAzDLLuw8lkxzM8pm1LiVCYOaqVQvbLVKRLA=="
             },
             "servers": [
                 {
@@ -18178,7 +18855,7 @@
             ],
             "state": "valid",
             "issuer": "Cloudfactory demonstration (Demo CA R1)",
-            "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+            "fingerprint": "bad6aa3a92e763067191000c62d5b59c49ecc8175cf606fffb634829e36e45ea",
             "notBefore": "2026-10-20T10:00:00+00:00",
             "expiresAt": "2027-01-18T10:00:00+00:00",
             "trusted": true,
@@ -18230,7 +18907,7 @@
                     "serverName": "web-1"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBnTCCAUSgAwIBAgIIaH6rI22SZbYwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMjcwMjIxMDA0MjM2WjAbMRkwFwYDVQQDDBBhY21l\nLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEujYWvqJbFJvJ\n82Zi2kVTvGf88+K1y13ztghLRagfO9ndP0SCLiiUV1gM7MNVSYtnizd32M5woGAR\nCtoGSXLpiaNTMFEwLwYDVR0RBCgwJoIQYWNtZS5leGFtcGxlLmNvbYISKi5hY21l\nLmV4YW1wbGUuY29tMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYI\nKoZIzj0EAwIDRwAwRAIgFHdMizcWY/33ZwOvTZ9qV2FkKQGuSJe9eEiHxXQBJ4wC\nIC/NHgJ+yuBccO9V+KRBCkNqXSbApBhSeiBiH+beY9V8\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIG5rhSOwAyPgwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABA93jFkA8GzewXoiFUy9szI3IbsrCwYE2znC\nv8gPkiJ1Z+Fym0MqOPOAtYZDTZAKZXqo/bc2Ly5D9+KJPu2Iz6ejIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIFFp\nPyd3aVIGzgelzXMigFHSrErmr/1tmQVScSWr1cfgAiEAgoc794eJNBDtCt+SbEPT\nuH/jIsp3jepxljVbLpzHJ/Y=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBnjCCAUSgAwIBAgIISoLe9lnvzmgwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0NjM0WhcNMjcwMjIxMDA0NjM0WjAbMRkwFwYDVQQDDBBhY21l\nLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE6kGQMjakS7zL\nkc0kV2IlY8X3aAYuNo8kvAAEh9vj+VSdvAuDGOTgTIdCtEphZ2P4+RLMVadG2v5x\nFCLtfB9mMKNTMFEwLwYDVR0RBCgwJoIQYWNtZS5leGFtcGxlLmNvbYISKi5hY21l\nLmV4YW1wbGUuY29tMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYI\nKoZIzj0EAwIDSAAwRQIhAP/f67keHsHtuQaPXihTAZ4E9GihU1ifpu0gBoTzStCK\nAiB6mP3IIItxeeo9g5IlN4MwXFHsDqpM+exELBrnb8SvLA==\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIZKpRGH7Wz88wCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0NjM0WhcNMzYxMTIwMDA0NjM0WjA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABBWst9nAbANSw/SQ+xCa+BuLIovvohcufHQ5\nSin9AWo8Y8xv8i8waG+ZoIjEUb+7HrXoSzydnHbqChO5htk3RMqjIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIE1q\nJse0k+Nh1r7+Z/o26Mh4laG6ceFGkimqnfDH4W4VAiEAhaPEYKyC5NaN+AUOKF3U\nodvcbeFIcxQxeF/rFRy5Vx8=\n-----END CERTIFICATE-----\n",
             "createdAt": "2026-10-20T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }
@@ -18247,7 +18924,7 @@
             ],
             "state": "valid",
             "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-            "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+            "fingerprint": "357656694a050b4b138da2a458501cd9915f822807509db8121563c96b8c0072",
             "notBefore": "2025-11-26T10:00:00+00:00",
             "expiresAt": "2026-11-26T10:00:00+00:00",
             "trusted": true,
@@ -18263,7 +18940,7 @@
                     "serverName": "web-2"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBtzCCAV6gAwIBAgIIV5XkHtUD64gwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMjcxMTIzMDA0MjM2WjAjMSEwHwYDVQQDDBhjb3Ju\nZXJiYWtlcnkuZXhhbXBsZS5vcmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATG\nTnE+10SKd268CcAFIjSKOyek9vPdC5DPnUqcUp55Iz6u31zGEz5WOsFUtlrxsquc\nWn8ZgN0dYig922t5ALYUo2UwYzBBBgNVHREEOjA4ghhjb3JuZXJiYWtlcnkuZXhh\nbXBsZS5vcmeCHHd3dy5jb3JuZXJiYWtlcnkuZXhhbXBsZS5vcmcwCQYDVR0TBAIw\nADATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNHADBEAiB+g+BhcX4H\nWy+QmKFpVQ2S6fvNR5BRwwvl4L2vjBjAaAIgMkE+S0zV6nMPzcwb5YJcbipXfAoA\nSxp8b0ARuGv5ptc=\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIKMfbONu0oeAwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRwwGgYDVQQDDBNFeGFt\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABFB4pkW85xFwoajdu+eVeuC/+jRe2E6++WDa\nUA+Yl1PQVCOK2B3qtSz2SRlZ2K53r5Erqf2Ez8BRx/gLy2XXQuOjIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIQDo\nL3yTqs2/rElecBLK2yN2kqW+UD9f/DeWW9gCoLgHYgIgXKLQ0nvmizB0y3g2bwEU\n9P+eKxJkv0QbOmao14s8Vpg=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBuTCCAV6gAwIBAgIIHzWTDrWDjeQwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0NjM0WhcNMjcxMTIzMDA0NjM0WjAjMSEwHwYDVQQDDBhjb3Ju\nZXJiYWtlcnkuZXhhbXBsZS5vcmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAT7\n3niMIqC6u3WaoXwK7jVAcx4rlanW5OBi8fB4cOa8ENUuXKWE5REA2qPRou/tFjnh\n3vkd3r/sDf1NxP1Pf/Hjo2UwYzBBBgNVHREEOjA4ghhjb3JuZXJiYWtlcnkuZXhh\nbXBsZS5vcmeCHHd3dy5jb3JuZXJiYWtlcnkuZXhhbXBsZS5vcmcwCQYDVR0TBAIw\nADATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNJADBGAiEA8BYAFiHR\nYVbMPLF/2U9JdXwT+g9EJc+p97IVr+dVaUsCIQDplaIz8FpD8RXNYorvZHzULUnE\nw3jLfjaykmWzD31VSQ==\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIbyCCM0wR0zgwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0NjM0WhcNMzYxMTIwMDA0NjM0WjA6MRwwGgYDVQQDDBNFeGFt\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABM8CT/kyI7z/6hdUBjSILQVMkzzYSyiuEfXB\n+q7sxjMq1JaaAoftxA8JqyGglD2kye3khAf8tFcPQH0f+2BXTFujIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIHAE\n9uyC6R6Om8CNbngbA4rvQWoZlZt3K8IBriaTXwHiAiEAi21f99ELLPy501urbCTW\nuayLRtNp16JSQp2/f3b8MD4=\n-----END CERTIFICATE-----\n",
             "createdAt": "2025-11-26T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }
@@ -18467,8 +19144,8 @@
                             }
                         ],
                         "phpVersion": "8.1",
-                        "imageId": "01m7cqzs80g1zfka0000000003",
-                        "imageName": "Apache + PHP-FPM · PHP 8.4",
+                        "imageId": "01m7cqzs80g1zfka000000000e",
+                        "imageName": "Apache + PHP-FPM · PHP 8.2",
                         "diskBytes": 1300234240,
                         "files": true,
                         "databases": [
@@ -18491,8 +19168,8 @@
                             }
                         ],
                         "phpVersion": "7.4",
-                        "imageId": "01m7cqzs80g1zfka0000000003",
-                        "imageName": "Apache + PHP-FPM · PHP 8.4",
+                        "imageId": "01m7cqzs80g1zfka000000000e",
+                        "imageName": "Apache + PHP-FPM · PHP 8.2",
                         "diskBytes": 230686720,
                         "files": true,
                         "databases": [
@@ -18515,8 +19192,8 @@
                             }
                         ],
                         "phpVersion": "8.2",
-                        "imageId": "01m7cqzs80g1zfka0000000003",
-                        "imageName": "Apache + PHP-FPM · PHP 8.4",
+                        "imageId": "01m7cqzs80g1zfka000000000e",
+                        "imageName": "Apache + PHP-FPM · PHP 8.2",
                         "diskBytes": 325058560,
                         "files": true,
                         "databases": [],
@@ -18555,6 +19232,16 @@
                     }
                 ],
                 "images": [
+                    {
+                        "id": "01m7cqzs80g1zfka000000000e",
+                        "name": "Apache + PHP-FPM · PHP 8.2",
+                        "phpVersion": "8.2"
+                    },
+                    {
+                        "id": "01m7cqzs80g1zfka000000000d",
+                        "name": "Apache + PHP-FPM · PHP 8.3",
+                        "phpVersion": "8.3"
+                    },
                     {
                         "id": "01m7cqzs80g1zfka0000000003",
                         "name": "Apache + PHP-FPM · PHP 8.4",

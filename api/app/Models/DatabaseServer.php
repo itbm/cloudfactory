@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * All websites of the customer on the same server can connect to the database server, on the
  * host name of the engine and the port of the database server.
  */
-#[Fillable(['customer_id', 'server_id', 'plan_id', 'engine', 'name', 'port', 'limits', 'status', 'usage', 'moving_to_server_id'])]
+#[Fillable(['customer_id', 'server_id', 'plan_id', 'engine', 'engine_version', 'name', 'port', 'limits', 'status', 'usage', 'moving_to_server_id'])]
 class DatabaseServer extends Model
 {
     use HasUlids;
@@ -118,10 +118,13 @@ class DatabaseServer extends Model
         return $this->hasMany(DatabaseUser::class);
     }
 
-    /** The host name that a website container uses for the database server. */
+    /**
+     * The host name that a website container uses for the database server. A database server
+     * of a pack engine has no host name of its engine: the websites use its member name.
+     */
     public function host(): string
     {
-        return self::HOSTS[$this->engine];
+        return self::HOSTS[$this->engine] ?? (string) Networks::hostOf($this);
     }
 
     /** The database server as the agent gets it. */
@@ -131,6 +134,8 @@ class DatabaseServer extends Model
             'id' => $this->id,
             'customer' => $this->customer_id,
             'engine' => $this->engine,
+            // The agent takes the image of this version from the verified pack.
+            ...($this->engine_version !== null ? ['version' => $this->engine_version] : []),
             'port' => $this->port,
             'limits' => [
                 'vcpus' => (float) ($this->limits['vcpus'] ?? 0),

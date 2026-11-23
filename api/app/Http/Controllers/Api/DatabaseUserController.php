@@ -10,6 +10,7 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseEngines;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\DatabaseTools;
@@ -50,7 +51,7 @@ class DatabaseUserController extends Controller
             throw ValidationException::withMessages(['engine' => 'A Valkey database has one user, with the name of the database. Make a Valkey database to get its user.']);
         }
         $data = $request->validate([
-            'engine' => ['required', Rule::in(Database::SQL_ENGINES)],
+            'engine' => ['required', Rule::in(DatabaseEngines::withUsers())],
             'name' => ['required', 'string', 'max:64'],
             'access' => ['sometimes', Rule::in(['website', 'anywhere'])],
             // The database server of the user. It is necessary only for a user with no
@@ -60,6 +61,9 @@ class DatabaseUserController extends Controller
         ]);
         if ($data['engine'] === 'postgresql' && ($data['access'] ?? 'website') === 'anywhere') {
             throw ValidationException::withMessages(['access' => self::NO_POSTGRESQL_ANYWHERE]);
+        }
+        if (($data['access'] ?? 'website') === 'anywhere') {
+            DatabaseEngines::refusePack($data['engine'], 'The access from anywhere', 'access');
         }
         $name = DatabaseNames::full($website, 'name', $data['name']);
         // Adminer accepts only the temporary users of the panel, which have this name part.
@@ -102,6 +106,9 @@ class DatabaseUserController extends Controller
         }
         if ($user->engine === 'postgresql' && ($data['access'] ?? 'website') === 'anywhere' && $user->access !== 'anywhere') {
             throw ValidationException::withMessages(['access' => self::NO_POSTGRESQL_ANYWHERE]);
+        }
+        if (($data['access'] ?? 'website') === 'anywhere') {
+            DatabaseEngines::refusePack($user->engine, 'The access from anywhere', 'access');
         }
         $grants = null;
         if (array_key_exists('grants', $data)) {

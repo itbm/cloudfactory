@@ -277,3 +277,61 @@ func TestAnUnsignedPackHasNoRule(t *testing.T) {
 		t.Error("the runtime of the pack is not available")
 	}
 }
+
+// phpPack gives the manifest of a first-party PHP pack in the repository.
+func phpPack(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile("../../../plugins/packs/php-legacy-apache/pack.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// A PHP pack adds versions of a built-in PHP runtime: the agent adds no runtime, and its
+// images get a rule in the image policy as the images of each other pack.
+func TestAPHPPackAddsNoRuntime(t *testing.T) {
+	d, _, _ := deps(t)
+	withPolicy(t, d)
+	before := len(quadlet.Runtimes())
+	// The image is not below the release registry here, so it gets a rule of its own.
+	raw := strings.ReplaceAll(string(phpPack(t)), "ghcr.io/itbm/", "registry.example.com/php/")
+	if err := run(t)(d.SetPacks(&agentv1.SetPacksRequest{JobId: jobID, Packs: []*agentv1.Pack{signedPack(t, []byte(raw))}})); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(quadlet.Runtimes()); got != before {
+		t.Errorf("%d runtimes, want %d", got, before)
+	}
+	if _, ok := quadlet.RuntimeOf("php-legacy-apache"); ok {
+		t.Error("the PHP pack is a runtime")
+	}
+	if got := d.PackStates(); len(got) != 1 || got[0].Slug != "php-legacy-apache" {
+		t.Errorf("packs = %+v", got)
+	}
+	b, _ := os.ReadFile(d.imagePolicy())
+	if !strings.Contains(string(b), `"registry.example.com/php/apache-php8.2"`) || !strings.Contains(string(b), `"registry.example.com/php/apache-php8.3"`) {
+		t.Errorf("the policy has no rule for the images of the PHP pack:\n%s", b)
+	}
+}
+
+// A website of a built-in PHP runtime with an image of a PHP pack keeps the pack.
+func TestSetPacksKeepsThePHPPackOfAWebsite(t *testing.T) {
+	d, _, _ := deps(t)
+	withPolicy(t, d)
+	if err := run(t)(d.SetPacks(&agentv1.SetPacksRequest{JobId: jobID, Packs: []*agentv1.Pack{signedPack(t, phpPack(t))}})); err != nil {
+		t.Fatal(err)
+	}
+	w := website("ghcr.io/itbm/apache-php8.2:0.2.0@sha256:" + strings.Repeat("0", 62) + "82")
+	w.Runtime = "apache-php-fpm"
+	w.PhpVersion = "8.2"
+	if err := d.State.Put(&Site{ID: websiteID, UnixUser: "acme_x7k2", Port: 20000, Website: w}); err != nil {
+		t.Fatal(err)
+	}
+	err := run(t)(d.SetPacks(&agentv1.SetPacksRequest{JobId: jobID2}))
+	if err == nil || !strings.Contains(err.Error(), "uses the image ghcr.io/itbm/apache-php8.2 of the pack php-legacy-apache") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(d.packsDir(), "php-legacy-apache", packs.ManifestFile)); err != nil {
+		t.Errorf("the pack went: %v", err)
+	}
+}

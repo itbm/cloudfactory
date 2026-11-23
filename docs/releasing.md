@@ -102,7 +102,12 @@ The workflow [`release.yml`](../.github/workflows/release.yml) then does these s
 5. Build `cf-agent` and `cf` for x86-64 and ARM64.
 6. Put the version, the gVisor version, the registry and the public key into `install.sh`.
 7. Sign each file and make a `.sha256` file for each file.
-8. When all of the steps above are successful, the last job does these steps:
+8. Make the files of the packs of Cloudfactory (refer to
+   [packs.md](packs.md#the-packs-of-cloudfactory)). For each pack in `plugins/packs` whose
+   images the release builds, the job writes the version, the image tags and the digests into
+   `SLUG.pack.json`. It signs the file with the release key in `SLUG.pack.json.sig`, and
+   verifies the signature with `cosign.pub`.
+9. When all of the steps above are successful, the last job does these steps:
    1. Verify the signature of each image with `cosign.pub`.
    2. Give each image the version tag, for example `0.1.0`.
    3. Make the GitHub release with all files, or add the files to the release that you made.
@@ -124,8 +129,10 @@ Servers pull the images with no login. Thus, before production, each image packa
 A package that the release workflow makes for the first time can get a visibility that is not
 the same as the visibility of the repository or of the other packages. Thus, after a release
 adds a new image, check the visibility of its package. For example, the first release with
-Valkey makes the package `valkey`, and the first release with Node.js and Python makes the
-packages `node22`, `node24`, `node26`, `python3.13` and `python3.14`. To make a package public:
+Valkey makes the package `valkey`, the first release with Node.js and Python makes the
+packages `node22`, `node24`, `node26`, `python3.13` and `python3.14`, and the first release
+with the packs of older PHP versions makes the packages `frankenphp-php8.2`,
+`frankenphp-php8.3`, `apache-php8.2` and `apache-php8.3`. To make a package public:
 
 1. Open `https://github.com/users/<owner>/packages/container/<package>/settings`.
 2. In **Danger Zone**, select **Change visibility**, then **Public**.

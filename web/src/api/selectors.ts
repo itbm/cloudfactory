@@ -159,7 +159,8 @@ export function platformAttention(s: State): AttentionItem[] {
   for (const i of s.images) {
     if (i.checkError) items.push({ id: `chk-${i.id}`, tone: "warning", subject: i.name, text: "could not be checked for updates. The panel does not know if a newer image exists.", action: "Open images", href: "/updates" });
     else if (i.available && i.availableNote !== "rolling_out") items.push({ id: `img-${i.id}`, tone: "info", subject: i.name, text: `has the update ${i.available} ready to roll out.`, action: "Review update", href: "/updates" });
-    if (i.supportEndsAt && daysUntil(i.supportEndsAt) <= 90) items.push({ id: `eol-${i.id}`, tone: "warning", subject: i.name, text: `loses security support on ${longDate(i.supportEndsAt)}. Move its websites to a newer PHP version.`, action: "Open images", href: "/updates" });
+    // An image that no website uses needs no action, for example PHP 8.2 from a pack.
+    if (i.supportEndsAt && daysUntil(i.supportEndsAt) <= 90 && Number(i.websites) > 0) items.push({ id: `eol-${i.id}`, tone: "warning", subject: i.name, text: `loses security support on ${longDate(i.supportEndsAt)}. Move its websites to a newer PHP version.`, action: "Open images", href: "/updates" });
   }
   return items;
 }
