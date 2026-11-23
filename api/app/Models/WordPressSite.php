@@ -21,6 +21,9 @@ class WordPressSite extends Model
 
     public const CHECKING = 'checking';
 
+    /** FR-205: the panel makes the WordPress site of a new staging copy. */
+    public const COPYING = 'copying';
+
     public const READY = 'ready';
 
     public const FAILED = 'failed';

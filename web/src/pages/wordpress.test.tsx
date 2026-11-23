@@ -128,6 +128,42 @@ describe("the WordPress tab", () => {
   });
 });
 
+describe("a staging copy of a WordPress site", () => {
+  it("says that the copy uses its database copy and gets its own address", async () => {
+    const api = await signedIn("owner");
+    const id = website("acme.example.com").id;
+    render(<MemoryRouter initialEntries={[`/websites/${id}`]}><App /></MemoryRouter>);
+    let made: Record<string, unknown> = {};
+    api.change<{ data: Record<string, unknown>[] }>("/websites?perPage=100&page=1", (body) => { made = { ...structuredClone(body.data.find((w) => w.name === "acme.example.com")!), id: "copy", name: "staging.acme.example.com", status: "starting", stagingOf: id }; });
+    api.on(`POST /websites/${id}/staging`, () => [202, {
+      website: made, job: apiJob({ id: "job-copy", action: "CreateWebsite", websiteId: "copy" }),
+      databaseCredentials: [{ engine: "mariadb", user: "staging_ab12_app", password: "Copy-secret-1234", databases: ["staging_ab12_wp"], host: "mariadb.internal", port: 3306 }],
+      wordpress: { database: "staging_ab12_wp", user: "staging_ab12_app" },
+    }]);
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for acme.example.com" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Make staging copy" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("status").textContent).toBe("WordPress in the copy uses the database copy staging_ab12_wp with the user staging_ab12_app: the panel writes them to wp-config.php. When the copy runs, the panel changes the site address to https://staging.acme.example.com and asks search engines not to index the copy.");
+    expect(within(dialog).queryByText(/Put these users in the configuration/)).toBeNull();
+    expect(api.changes.at(-1)).toEqual({ method: "POST", path: `/websites/${id}/staging`, body: undefined });
+  });
+
+  it("shows the progress of the copy, and an error of the copy", async () => {
+    const api = await signedIn("owner");
+    const id = website("acme.example.com").id;
+    api.change<WordPressState>(`/websites/${id}/wordpress`, (body) => { body.wordpress!.status = "copying"; body.busy = "job-stage"; });
+    render(<MemoryRouter initialEntries={[`/websites/${id}/wordpress`]}><App /></MemoryRouter>);
+    expect(await screen.findByText(/The panel makes the WordPress copy\. It connects WordPress to the database copy/)).toBeTruthy();
+    // One progress message: no second banner for the job.
+    expect(screen.queryByText(/WordPress has a job on this website now/)).toBeNull();
+    cleanup();
+
+    api.change<WordPressState>(`/websites/${id}/wordpress`, (body) => { body.wordpress!.status = "ready"; body.busy = null; body.wordpress!.error = "The panel did not change the site address of the copy: Replace the site address: wp search-replace: Error: no connection"; });
+    render(<MemoryRouter initialEntries={[`/websites/${id}/wordpress`]}><App /></MemoryRouter>);
+    expect((await screen.findByText(/The panel did not change the site address of the copy/)).closest("[role=alert]")).toBeTruthy();
+  });
+});
+
 describe("a new WordPress website", () => {
   it("sends the WordPress fields and shows the password of the administrator", async () => {
     const api = await signedIn("owner");

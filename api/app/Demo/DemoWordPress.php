@@ -39,6 +39,8 @@ final class DemoWordPress
             AgentAction::CheckWordPress, AgentAction::RestoreWordPress => ['wordpress' => $current],
             AgentAction::UpdateWordPress => ['before' => $current, 'wordpress' => self::updated($current, (string) ($p['core'] ?? ''), (array) ($p['plugins'] ?? []), (array) ($p['themes'] ?? []))],
             AgentAction::RunWpCli => ['exitCode' => 0, 'output' => self::output($current, $job), 'ranAt' => now()->toIso8601String(), 'wordpress' => $current],
+            // The copy has the versions of the live site, at the address of the copy.
+            AgentAction::StageWordPress => ['wordpress' => ['siteUrl' => (string) ($p['url'] ?? ''), 'checkedAt' => now()->toIso8601String()] + $current],
             default => [],
         };
     }

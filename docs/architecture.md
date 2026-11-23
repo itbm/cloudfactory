@@ -1524,6 +1524,44 @@ exit code and the output. The panel replaces the values of the password options,
 example `--user_pass`, with `***` in the table and in the audit log. The job has the full
 arguments until it ends.
 
+### Staging copy of a WordPress site
+
+A staging copy (FR-205) gets the files and a copy of each database of the website. Without
+changes, WordPress in the copy uses the database of the live site, and sends each visitor to
+the address of the live site. Thus the panel changes the copy of a WordPress site in two
+jobs.
+
+The panel does this only when the WordPress site is ready and its database is a MariaDB
+database of the website. For a different site, the copy has the files only, and the owner
+sets the database in `wp-config.php` of the copy.
+
+In the job `CreateWebsite` of the copy, at the end of the step **Copy databases**, the agent
+sets the database copy and its new user in `wp-config.php` of the copy: `DB_NAME`,
+`DB_USER` and `DB_PASSWORD`. `DB_HOST` does not change, because the database copy is in the
+database server of the live database. The website user of the copy reads and writes the
+file, and the password goes on standard input. The agent looks for `wp-config.php` in the
+document root, then in the directory above it. When the file does not set the three
+constants with a text value, the job fails before the container of the copy starts. Thus
+the copy never connects to the live database.
+
+When the copy runs, the panel sends the job `StageWordPress`:
+
+1. **Replace the site address.** The agent reads the options `home` and `siteurl` in the
+   database copy. For each host of the live site, it runs
+   `wp search-replace //<live host> //<copy host>` on all the tables with the table prefix,
+   apart from the column `guid`. It does this again with `\/\/`, for the addresses in JSON.
+   When `wp-config.php` sets `WP_HOME` or `WP_SITEURL` to the live address, the agent
+   changes the constant.
+2. **Hide from search engines.** `wp option update blog_public 0`. The agent also sets the
+   constant `WP_ENVIRONMENT_TYPE` to `staging`, so that plugins can see that the site is a
+   copy.
+3. **Check WordPress.** The agent reads the versions in the copy.
+
+The copy has its own record of the site, with the status `copying` until the job is
+complete. The automatic updates of the copy are off. When `StageWordPress` fails, the copy
+still uses its database copy: the **WordPress** tab shows the error, and the owner can use
+WP-CLI.
+
 ## Uptime checks
 
 An uptime check is an address of a website that the panel requests on a schedule. When the

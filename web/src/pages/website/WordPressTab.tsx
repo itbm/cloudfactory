@@ -107,14 +107,15 @@ export function WordPressTab({ website }: { website: Website }) {
 
   return (
     <div className="stack">
-      {!running && <div className="alert alert-warning" role="status"><span>The website does not run. Start it before you change WordPress.</span></div>}
-      {busy && site?.status !== "installing" && site?.status !== "checking" && <div className="alert alert-info" role="status"><span>WordPress has a job on this website now. The page shows the result when it is complete.</span><Live /></div>}
+      {/* A new website or a new staging copy starts: the WordPress card shows the progress. */}
+      {!running && website.status !== "starting" && <div className="alert alert-warning" role="status"><span>The website does not run. Start it before you change WordPress.</span></div>}
+      {busy && site?.status !== "installing" && site?.status !== "checking" && site?.status !== "copying" && <div className="alert alert-info" role="status"><span>WordPress has a job on this website now. The page shows the result when it is complete.</span><Live /></div>}
       {!site || site.status === "failed" ? (
         <InstallCard website={website} site={site} disabled={!running || !!busy} onInstalled={(a) => { setAdmin(a); load.reload(); }} onChecked={load.reload} />
-      ) : site.status === "installing" || site.status === "checking" ? (
+      ) : site.status === "installing" || site.status === "checking" || site.status === "copying" ? (
         <Card title="WordPress" actions={<Live />}>
           <div className="card-body">
-            <p>{site.status === "installing" ? "The panel installs WordPress. This takes about one minute." : "The panel looks for WordPress in the document root of the website."}</p>
+            <p>{PROGRESS[site.status]}</p>
           </div>
         </Card>
       ) : (
@@ -125,6 +126,12 @@ export function WordPressTab({ website }: { website: Website }) {
     </div>
   );
 }
+
+const PROGRESS = {
+  installing: "The panel installs WordPress. This takes about one minute.",
+  checking: "The panel looks for WordPress in the document root of the website.",
+  copying: "The panel makes the WordPress copy. It connects WordPress to the database copy, changes the site address to the address of this website, and asks search engines not to index the copy.",
+};
 
 function InstallCard({ website, site, disabled, onInstalled, onChecked }: {
   website: Website;
@@ -215,9 +222,11 @@ function ReadySite({ website, site, disabled, reload }: { website: Website; site
             <button type="button" className="btn" disabled={disabled || check.busy} onClick={() => void check.run()}>{check.busy ? "Starting…" : "Check for updates"}</button>
           </div>
           <p className="muted small" style={{ marginTop: 10 }}>Before each update, the agent saves a restore point. If an update or the health check fails, the agent puts back the restore point.</p>
+          {website.stagingOf && <p className="muted small">This is a staging copy: search engines do not index it. Its automatic updates are off at the start.</p>}
         </div>
       </Card>
 
+      {site.error && site.error !== last?.error && <div className="alert alert-danger" role="alert"><span>{site.error}</span></div>}
       {last && <LastUpdate update={last} />}
 
       {(site.coreMinor || site.coreLatest) && (

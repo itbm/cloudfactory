@@ -154,10 +154,12 @@ class WebsiteTest extends TestCase
     {
         $customer = $this->customer();
         $website = $this->website($customer, $this->server(), $this->image(), 'www.acme.example');
+        // The source is a member of a network. Its member address is for the source only.
+        $website->forceFill(['mesh_address' => '10.207.1.1'])->save();
         $this->actingWith($this->user());
 
         $this->postJson("/api/v1/websites/{$website->id}/staging")->assertAccepted()->assertJsonPath('website.name', 'staging.acme.example');
-        $this->assertSame($website->id, Website::where('name', 'staging.acme.example')->value('staging_of'));
+        $this->assertSame([$website->id, null], [Website::where('name', 'staging.acme.example')->value('staging_of'), Website::where('name', 'staging.acme.example')->value('mesh_address')]);
         $this->postJson("/api/v1/websites/{$website->id}/staging")->assertJsonValidationErrors('name');
     }
 

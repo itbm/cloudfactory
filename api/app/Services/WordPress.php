@@ -33,7 +33,7 @@ final class WordPress
     public const FEATURE = 'wordpress';
 
     /** The WordPress actions of the agent. */
-    public const ACTIONS = [AgentAction::InstallWordPress, AgentAction::CheckWordPress, AgentAction::UpdateWordPress, AgentAction::RestoreWordPress, AgentAction::RunWpCli];
+    public const ACTIONS = [AgentAction::InstallWordPress, AgentAction::CheckWordPress, AgentAction::UpdateWordPress, AgentAction::RestoreWordPress, AgentAction::RunWpCli, AgentAction::StageWordPress];
 
     /** The health check after an update: most answers of the site in 60 seconds are not server errors. */
     public const HEALTH_CHECK = ['status' => 0, 'maxErrorRate' => 0.1, 'seconds' => 60];
@@ -169,6 +169,66 @@ final class WordPress
         $site->update(['pending_install' => null]);
 
         return $job;
+    }
+
+    /**
+     * FR-205: the staging copy of a website with a WordPress site. The copy gets its own record
+     * of the site, with its database copy. In the job that makes the copy, the agent sets the
+     * database copy and its user in wp-config.php of the copy. When the copy runs, the panel
+     * sends the job that changes the address of the site (stage). The caller runs this in the
+     * transaction that makes the copy.
+     *
+     * @param  list<array{engine: string, name: string, password: string, databaseServer: string}>  $users  The database users of the copy.
+     * @return array{database: string, user: string}|null The WordPress copy for the agent, or null when the copy has no WordPress site.
+     */
+    public static function prepareCopy(Website $source, Website $copy, array $users): ?array
+    {
+        $site = $source->wordpress()->with('database')->first();
+        $database = $site?->database;
+        // A site with no known database, or with a database that the copy does not get, stays
+        // as the files only. The owner sets its database in wp-config.php of the copy.
+        if (! $site || $site->status !== WordPressSite::READY || ! $database || $database->engine !== 'mariadb') {
+            return null;
+        }
+        $name = DatabaseNames::prefix($copy).substr($database->name, strlen(DatabaseNames::prefix($source)));
+        $new = $copy->databases()->where(['engine' => 'mariadb', 'name' => $name])->first();
+        $user = collect($users)->first(fn (array $u) => $u['engine'] === 'mariadb' && $u['databaseServer'] === $database->database_server_id);
+        if (! $new || ! $user) {
+            return null;
+        }
+        WordPressSite::create([
+            'website_id' => $copy->id,
+            'database_id' => $new->id,
+            'status' => WordPressSite::COPYING,
+            'version' => $site->version,
+            'plugins' => $site->plugins,
+            'themes' => $site->themes,
+            'admin_user' => $site->admin_user,
+            // The copy is for tests: the panel does not update it automatically.
+            'auto_update_core' => 'off',
+            'auto_update_plugins' => false,
+            'auto_update_themes' => false,
+        ]);
+
+        return ['database' => $name, 'user' => $user['name']];
+    }
+
+    /**
+     * Sends the job that gives the WordPress site of a new staging copy the address of the copy.
+     * The agent also reads the address in the database copy.
+     */
+    public static function stage(WordPressSite $site): AgentJob
+    {
+        $website = $site->website;
+        $source = $website->staging_of ? Website::with('wordpress')->find($website->staging_of) : null;
+        $from = array_filter([$source?->wordpress?->site_url, $source ? "https://{$source->name}" : null],
+            fn (?string $url) => is_string($url) && preg_match('~^https?://([^/:?#]+)(/[^?#]*)?$~i', $url, $m) === 1 && Input::valid('domain', Str::lower($m[1])));
+
+        return app(JobDispatcher::class)->dispatch($website->server, AgentAction::StageWordPress, [
+            'websiteId' => $website->id,
+            'url' => "https://{$website->name}",
+            'fromUrls' => array_values(array_unique($from)),
+        ], "Set up WordPress on the staging copy {$website->name}", $website);
     }
 
     /** Asks the agent for the versions and the available updates of a site. */
@@ -329,14 +389,28 @@ final class WordPress
             AgentAction::RestoreWordPress => $site && ($succeeded
                 ? self::apply($site, $result['wordpress'] ?? [], ['restore_point' => [...($site->restore_point ?? []), 'restoredAt' => now()->toIso8601String()], 'error' => null])
                 : $site->update(['error' => JobResource::publicError($job)])),
+            // The copy uses its database copy also when the job fails: the owner can use WP-CLI.
+            AgentAction::StageWordPress => $site && ($succeeded
+                ? self::apply($site, $result['wordpress'] ?? [], ['status' => WordPressSite::READY, 'error' => null])
+                : $site->update(['status' => WordPressSite::READY, 'error' => 'The panel did not change the site address of the copy: '.JobResource::publicError($job)])),
             default => null,
         };
     }
 
-    /** A new website with WordPress: the install starts when the website runs. */
+    /**
+     * A new website with WordPress: the install starts when the website runs. A staging copy of
+     * a WordPress site gets the address of the copy.
+     */
     private static function websiteMade(AgentJob $job, bool $succeeded): void
     {
         $site = $job->website_id ? WordPressSite::where('website_id', $job->website_id)->first() : null;
+        if ($site?->status === WordPressSite::COPYING) {
+            $succeeded
+                ? self::stage($site)
+                : $site->update(['status' => WordPressSite::FAILED, 'error' => 'The panel did not make the staging copy of WordPress, because the website was not made.']);
+
+            return;
+        }
         if (! $site || $site->pending_install === null) {
             return;
         }

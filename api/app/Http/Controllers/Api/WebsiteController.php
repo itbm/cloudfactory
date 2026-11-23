@@ -500,7 +500,7 @@ class WebsiteController extends Controller
         $domain = DomainController::newDomain($this->domains, $request, $source->customer_id, $name, DomainKind::Primary, $proved);
         // The copy and its databases are one transaction: when a database server has no space
         // for the copies, the panel makes nothing.
-        [$copy, $copies, $users, $credentials, $servers] = DB::transaction(function () use ($source, $name, $domain) {
+        [$copy, $copies, $users, $credentials, $servers, $wordpress] = DB::transaction(function () use ($source, $name, $domain) {
             // CF-09: a staging copy is a website, so the plan limit applies.
             self::checkWebsiteLimit($source->customer);
             // Audit finding R7: the copy has no SFTP account on the server, so it does not get
@@ -510,9 +510,10 @@ class WebsiteController extends Controller
             // proxy made a route for the live names to the copy, and it refused the certificate
             // rule of a copy with a local name. Thus the copy starts with no relations.
             // Adversarial review, finding A2-11: the copy does not get the counters and the
-            // flags of the source.
+            // flags of the source. The member address of the source is unique: the copy gets
+            // its own address when it joins a network.
             $copy = $source->replicate(['usage', 'managed_by_terraform', 'sftp_enabled', 'sftp_keys', 'bandwidth_month', 'bandwidth_bytes',
-                'stopped_by_suspension', 'sftp_closed_by_suspension', 'previous_image_id', 'previous_image_tag'])->withoutRelations();
+                'stopped_by_suspension', 'sftp_closed_by_suspension', 'previous_image_id', 'previous_image_tag', 'mesh_address'])->withoutRelations();
             $copy->fill([
                 'name' => $name,
                 'application' => "Staging copy of {$source->name}",
@@ -522,8 +523,10 @@ class WebsiteController extends Controller
                 'managed_by_terraform' => false,
             ])->save();
             $copy->domains()->create($domain);
+            [$copies, $users, $credentials, $servers] = $this->copyDatabases($source, $copy);
 
-            return [$copy, ...$this->copyDatabases($source, $copy)];
+            // FR-206: a WordPress site of the source connects to its database copy in the copy.
+            return [$copy, $copies, $users, $credentials, $servers, WordPress::prepareCopy($source, $copy, $users)];
         });
         $payload = JobDispatcher::websitePayload($copy) + [
             'copyFrom' => $source->id,
@@ -534,6 +537,7 @@ class WebsiteController extends Controller
             'copyUsers' => $users,
             // The database servers of the copies.
             'databaseServers' => array_map(fn (DatabaseServer $s) => $s->forAgent(), $servers),
+            ...($wordpress ? ['copyWordpress' => $wordpress] : []),
         ];
         $job = $this->jobs->dispatch($copy->server, AgentAction::CreateWebsite, $payload, "Make staging copy of {$source->name}", $copy);
         // The passwords are in the payload for the agent only. The panel removes them when the job ends.
@@ -543,6 +547,8 @@ class WebsiteController extends Controller
             'website' => new WebsiteResource($copy->fresh(['image', 'domains', 'server'])),
             // Shown once. The application of the copy needs these values in place of the live ones.
             'databaseCredentials' => $credentials,
+            // The database and the user that the agent sets in wp-config.php of the copy.
+            ...($wordpress ? ['wordpress' => $wordpress] : []),
             'job' => new JobResource($job),
         ], 202);
     }

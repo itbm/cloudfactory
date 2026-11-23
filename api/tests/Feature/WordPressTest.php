@@ -288,6 +288,71 @@ class WordPressTest extends TestCase
         $this->postJson("/api/v1/websites/{$website->id}/wordpress/cli", ['args' => ['plugin', 'list']])->assertStatus(409);
     }
 
+    public function test_a_staging_copy_of_wordpress_uses_its_database_copy_and_its_own_address(): void
+    {
+        $website = $this->wordpress();
+        $website->wordpress->update(['site_url' => 'https://www.acme.example', 'auto_update_plugins' => true]);
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+
+        $response = $this->postJson("/api/v1/websites/{$website->id}/staging")->assertAccepted();
+        $copy = Website::findOrFail($response->json('website.id'));
+        $to = $copy->unix_user.'_';
+        // The agent sets the database copy and its user in wp-config.php of the copy.
+        $response->assertJsonPath('wordpress', ['database' => $to.'wp', 'user' => $to.'app']);
+        $create = AgentJob::findOrFail($response->json('job.id'));
+        $this->assertSame(['database' => $to.'wp', 'user' => $to.'app'], $create->payload['copyWordpress']);
+        $this->assertSame([$to.'app'], array_column($create->payload['copyUsers'], 'name'));
+        $site = $copy->wordpress;
+        $this->assertSame([WordPressSite::COPYING, $copy->databases()->where('name', $to.'wp')->value('id'), '6.8.1', 'off', false],
+            [$site->status, $site->database_id, $site->version, $site->auto_update_core, $site->auto_update_plugins]);
+        $this->getJson("/api/v1/websites/{$copy->id}/wordpress")->assertJsonPath('wordpress.status', 'copying');
+        $this->postJson("/api/v1/websites/{$copy->id}/wordpress/updates", ['all' => true])->assertStatus(409);
+
+        // When the copy runs, the panel sends the addresses of the live site and of the copy.
+        $this->finish($create, JobState::Succeeded);
+        $stage = $this->lastJob(AgentAction::StageWordPress);
+        $this->assertSame($copy->id, $stage->website_id);
+        $this->assertSame(['websiteId' => $copy->id, 'url' => 'https://staging.acme.example', 'fromUrls' => ['https://www.acme.example', 'https://acme.example']], $stage->payload);
+        $this->assertSame(['Replace the site address', 'Hide from search engines', 'Check WordPress'], $stage->steps);
+        $this->finish($stage, JobState::Succeeded, ['wordpress' => ['siteUrl' => 'https://staging.acme.example'] + self::INVENTORY]);
+        $this->getJson("/api/v1/websites/{$copy->id}/wordpress")->assertJsonPath('wordpress.status', 'ready')
+            ->assertJsonPath('wordpress.adminUrl', 'https://staging.acme.example/wp-admin/')->assertJsonPath('wordpress.error', null);
+
+        // A failed change of the address: the copy uses its database copy, and the owner sees the error.
+        $failed = WordPress::stage($site->fresh());
+        $this->finish($failed, JobState::Failed, [], 'Replace the site address: wp search-replace: Error: no connection');
+        $this->assertSame([WordPressSite::READY, 'The panel did not change the site address of the copy: Replace the site address: wp search-replace: Error: no connection'],
+            [$site->fresh()->status, $site->fresh()->error]);
+        // The live site does not change.
+        $this->assertSame([WordPressSite::READY, 'https://www.acme.example', true], [$website->wordpress->fresh()->status, $website->wordpress->fresh()->site_url, $website->wordpress->fresh()->auto_update_plugins]);
+    }
+
+    public function test_a_staging_copy_without_a_known_wordpress_database_copies_only_the_files(): void
+    {
+        $website = $this->wordpress();
+        $website->wordpress->update(['database_id' => null]);
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+
+        $response = $this->postJson("/api/v1/websites/{$website->id}/staging")->assertAccepted()->assertJsonMissingPath('wordpress');
+        $copy = Website::findOrFail($response->json('website.id'));
+        $this->assertArrayNotHasKey('copyWordpress', AgentJob::findOrFail($response->json('job.id'))->payload);
+        $this->assertNull($copy->wordpress);
+        $this->finish(AgentJob::findOrFail($response->json('job.id')), JobState::Succeeded);
+        $this->assertFalse(AgentJob::where('action', AgentAction::StageWordPress)->exists());
+    }
+
+    public function test_a_staging_copy_that_the_panel_could_not_make_has_a_failed_wordpress(): void
+    {
+        $website = $this->wordpress();
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+
+        $response = $this->postJson("/api/v1/websites/{$website->id}/staging")->assertAccepted();
+        $this->finish(AgentJob::findOrFail($response->json('job.id')), JobState::Failed, [], 'Copy databases: wp-config.php of the copy does not set DB_NAME with a text value');
+        $site = Website::findOrFail($response->json('website.id'))->wordpress;
+        $this->assertSame(WordPressSite::FAILED, $site->status);
+        $this->assertFalse(AgentJob::where('action', AgentAction::StageWordPress)->exists());
+    }
+
     public function test_only_users_of_the_customer_see_wordpress(): void
     {
         $website = $this->wordpress();

@@ -223,7 +223,7 @@ class WordPressController extends Controller
     private function busyJob(Website $website): ?AgentJob
     {
         return AgentJob::where('website_id', $website->id)
-            ->whereIn('action', array_map(fn (AgentAction $a) => $a->value, [AgentAction::InstallWordPress, AgentAction::CheckWordPress, AgentAction::UpdateWordPress, AgentAction::RestoreWordPress]))
+            ->whereIn('action', array_map(fn (AgentAction $a) => $a->value, [AgentAction::InstallWordPress, AgentAction::CheckWordPress, AgentAction::UpdateWordPress, AgentAction::RestoreWordPress, AgentAction::StageWordPress]))
             ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->latest()->first();
     }
 

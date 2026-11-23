@@ -296,6 +296,10 @@ func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agent
 	return s.submit(s.Deps.SetWebsiteSecurity(r.Msg))
 }
 
+func (s *Service) StageWordPress(_ context.Context, r *connect.Request[agentv1.StageWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.StageWordPress(r.Msg))
+}
+
 func (s *Service) UpdateAgent(_ context.Context, r *connect.Request[agentv1.UpdateAgentRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.UpdateAgent(r.Msg))
 }
