@@ -27,6 +27,10 @@ service AgentService {
   rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
   rpc Backup(BackupRequest) returns (JobAccepted);
   rpc Restore(RestoreRequest) returns (JobAccepted);
+  // Account export (docs/account-export.md): the agent sends the files and the database dumps
+  // of a website to the panel, as parts of an export. Each part goes to
+  // /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
+  rpc ExportWebsite(ExportWebsiteRequest) returns (JobAccepted);
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
   rpc Reboot(HostRequest) returns (JobAccepted);
   rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
@@ -73,10 +77,6 @@ service AgentService {
   // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
   // each pack only with a signature of its publisher, and loads the runtimes of the packs.
   rpc SetPacks(SetPacksRequest) returns (JobAccepted);
-  // Account export (docs/account-export.md): the agent sends the files and the database dumps
-  // of a website to the panel, as parts of an export. Each part goes to
-  // /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
-  rpc ExportWebsite(ExportWebsiteRequest) returns (JobAccepted);
   // Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
   // the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
   // value with the website and changes only the edge route. The container does not restart.

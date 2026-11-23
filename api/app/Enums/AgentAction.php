@@ -21,6 +21,7 @@ enum AgentAction: string
     case DeleteDatabaseUser = 'DeleteDatabaseUser';
     case Backup = 'Backup';
     case Restore = 'Restore';
+    case ExportWebsite = 'ExportWebsite';
     case InstallHostUpdates = 'InstallHostUpdates';
     case Reboot = 'Reboot';
     case UpdateAgent = 'UpdateAgent';
@@ -54,7 +55,6 @@ enum AgentAction: string
     case SendDatabaseServer = 'SendDatabaseServer';
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
     case SetPacks = 'SetPacks';
-    case ExportWebsite = 'ExportWebsite';
     case SetWebsiteSecurity = 'SetWebsiteSecurity';
     case SetCertificates = 'SetCertificates';
     // The import of an account from a different panel (docs/imports.md).
@@ -84,6 +84,8 @@ enum AgentAction: string
             self::DeleteDatabaseUser => ['Remove user'],
             self::Backup => ['Snapshot files', 'Dump databases', 'Upload to object storage', 'Apply retention'],
             self::Restore => ['Download snapshot', 'Restore', 'Health check'],
+            // An account export: the agent sends each part to the panel while it makes it.
+            self::ExportWebsite => ['Send database dumps', 'Send files'],
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
             self::Reboot => ['Drain the edge proxy', 'Stop containers', 'Reboot', 'Start containers', 'Check all services'],
             self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],
@@ -119,8 +121,6 @@ enum AgentAction: string
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
-            // An account export: the agent sends each part to the panel while it makes it.
-            self::ExportWebsite => ['Send database dumps', 'Send files'],
             self::SetWebsiteSecurity => ['Set edge proxy rules'],
             self::SetCertificates => ['Load certificates', 'Check certificates'],
             // A download for a server that only copies a part has no second step.
