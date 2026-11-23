@@ -406,6 +406,27 @@
       "empty": true,
       "echo": false,
       "message": "Each argument must have at most 1000 characters and no control characters."
+    },
+    "phpVersion": {
+      "what": "PHP version",
+      "doc": "The version of PHP in one image of a PHP pack (cf-php/1): the major version and the minor version, for example \"8.3\".",
+      "pattern": "^[0-9]{1,2}\\.[0-9]{1,2}$",
+      "go": "PHPVersion",
+      "message": "Use a PHP version such as 8.3: two numbers with a dot between them."
+    },
+    "packPort": {
+      "what": "port of a database pack",
+      "doc": "The TCP port of the engine in the container of a database pack (cf-database/1), for example \"3306\". The panel and the agent also check that it is from 1024 to 65535.",
+      "pattern": "^[1-9][0-9]{3,4}$",
+      "go": "PackPort",
+      "message": "Use a TCP port from 1024 to 65535."
+    },
+    "packDataDir": {
+      "what": "data directory of a database pack",
+      "doc": "The absolute path of the data directory in the container of a database pack (cf-database/1), for example \"/var/lib/mysql\". The first directory cannot be one of reservedPackDirs.",
+      "pattern": "^(/[a-z0-9][a-z0-9._-]{0,63}){1,8}$",
+      "go": "PackDataDir",
+      "message": "Use an absolute path such as /var/lib/mysql, with lower-case letters, digits and the characters . _ -."
     }
   },
   "sets": {
@@ -421,9 +442,17 @@
       "doc": "The types of DNS record that a user can make.",
       "values": ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"]
     },
+    "phpRuntimes": {
+      "doc": "The built-in PHP runtimes. A PHP pack (cf-php/1) adds versions of PHP to one of them.",
+      "values": ["frankenphp", "apache-php-fpm"]
+    },
     "reservedRuntimeNames": {
       "doc": "The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.",
       "values": ["frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database", "mariadb", "postgresql", "valkey"]
+    },
+    "reservedPackDirs": {
+      "doc": "The first directory of the data directory of a database pack cannot be one of these. The agent mounts a temporary file system at /tmp, and the others belong to the container.",
+      "values": ["tmp", "proc", "sys", "dev", "run", "cf"]
     }
   },
   "limits": {
@@ -512,6 +541,11 @@
     "packs": {
       "doc": "The largest number of packs on a panel.",
       "value": 50
+    },
+    "databasePackPort": {
+      "doc": "The first host port of the database servers of the database packs. Each database pack gets a block of 50 ports from this port, one block for each pack on the panel.",
+      "value": 20000,
+      "smallest": true
     },
     "packManifestBytes": {
       "doc": "The largest size of a pack manifest, in bytes.",

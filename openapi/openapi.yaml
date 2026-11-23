@@ -2628,6 +2628,25 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/database-engines:
+    get:
+      tags: [Databases]
+      summary: List database engines
+      description: >-
+        The built-in database engines, then the engines of the installed database packs
+        (cf-database/1, docs/packs.md). A pack engine has versions: each database server keeps
+        the version that it got. A pack engine has database users and backups, as MariaDB. It
+        has no move to a different server, no Adminer and no access from anywhere.
+      responses:
+        '200':
+          description: The database engines.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/DatabaseEngine' } }
+
   /v1/database-servers:
     get:
       tags: [Databases]
@@ -2664,7 +2683,9 @@ paths:
 
         The first database server of an engine has the usual port of the engine (3306, 5432 or
         6379). A second one of the same engine, for the same customer on the same server, has
-        the next port.
+        the next port. The database servers of a pack engine get the ports of the block of the
+        pack, from 20000. The websites connect to them by their network name and the port of
+        the engine.
 
 
         The database server is on a server that has a website of the customer: by default the
@@ -2680,6 +2701,9 @@ paths:
               required: [engine]
               properties:
                 engine: { $ref: '#/components/schemas/Engine' }
+                version:
+                  type: [string, 'null']
+                  description: The version of a pack engine, for example "8.4". Default is the first version of the pack. A built-in engine has no version.
                 name:
                   type: [string, 'null']
                   pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$'
@@ -6572,12 +6596,16 @@ components:
         version: { type: string }
     PackRuntime:
       type: object
-      description: The runtime of a pack (cf-runtime/1).
+      description: >-
+        The runtime of a pack. A pack with cf-runtime/1 adds a runtime that runs the start command
+        of the website. A pack with cf-php/1 adds versions of PHP to a built-in PHP runtime. The
+        keys of the other contract are empty.
       properties:
-        contract: { type: string, enum: [cf-runtime/1] }
-        type: { type: string, enum: [app] }
-        defaultCommand: { type: string }
+        contract: { type: string, enum: [cf-runtime/1, cf-php/1] }
+        type: { type: string, enum: [app, ''], description: app for cf-runtime/1. Empty for cf-php/1. }
+        defaultCommand: { type: string, description: Empty for cf-php/1. }
         defaultInstall: { type: string, description: Empty when the pack has no install command. }
+        family: { type: string, enum: [frankenphp, apache-php-fpm, ''], description: The built-in PHP runtime that a cf-php/1 pack adds versions to. Empty for cf-runtime/1. }
     PackSigner:
       type: object
       properties:
@@ -6588,21 +6616,34 @@ components:
       type: object
       properties:
         id: { type: string }
-        slug: { type: string, description: The name of the runtime, for example golang. }
+        slug: { type: string, description: 'The name of the pack, for example golang. For a cf-runtime/1 pack, it is also the name of the runtime.' }
         name: { type: string }
         version: { type: string }
         publisher: { type: string }
         description: { type: [string, 'null'] }
         signed: { type: boolean }
         signedBy: { oneOf: [{ $ref: '#/components/schemas/PackSigner' }, { type: 'null' }] }
+        kind: { type: string, enum: [runtime, database] }
         runtime: { $ref: '#/components/schemas/PackRuntime' }
+        database:
+          oneOf:
+            - type: 'null'
+            - type: object
+              description: The engine of a database pack (cf-database/1).
+              properties:
+                contract: { type: string, enum: [cf-database/1] }
+                port: { type: integer, description: The port of the engine in its container. }
+                dataDir: { type: string, description: The data directory in the container. }
+                firstPort: { type: integer, description: The first host port of the block of the pack. The database servers of the engine get the ports of the block. }
+                lastPort: { type: integer }
+                databaseServers: { type: integer, description: The number of database servers of the engine. }
         images:
           type: array
-          description: The images of the pack, the latest version first.
+          description: The images of the pack, the latest version first. For a database pack, the images of the manifest.
           items:
             type: object
             properties:
-              id: { type: string }
+              id: { type: [string, 'null'], description: Null for an image of a database pack. }
               name: { type: string }
               version: { type: string }
               reference: { type: string, description: The repository, with no tag. }
@@ -6611,6 +6652,7 @@ components:
               availableDigest: { type: [string, 'null'], description: A new digest from a new version of the pack. It waits for a rollout. }
               supportEndsAt: { type: [string, 'null'], format: date }
               websites: { type: integer }
+              databaseServers: { type: integer, description: The database servers of this version of a database pack. }
         servers:
           type: array
           description: The state of the pack on each web server.
@@ -6631,14 +6673,21 @@ components:
           type: object
           description: The manifest, with only the keys of the contract.
           properties:
-            contract: { type: string, enum: [cf-pack/1] }
-            kind: { type: string, enum: [runtime] }
+            contract: { type: string, enum: [cf-pack/1, cf-pack/2] }
+            kind: { type: string, enum: [runtime, database] }
             slug: { type: string }
             name: { type: string }
             version: { type: string }
             publisher: { type: string }
             description: { type: string }
             runtime: { $ref: '#/components/schemas/PackRuntime' }
+            database:
+              type: [object, 'null']
+              description: The engine of a database pack. Null for a runtime pack.
+              properties:
+                contract: { type: string, enum: [cf-database/1] }
+                port: { type: integer }
+                dataDir: { type: string }
             images:
               type: array
               items:
@@ -7253,7 +7302,10 @@ components:
         finishedAt: { type: [string, 'null'], format: date-time }
     Engine:
       type: string
-      enum: [mariadb, postgresql, valkey]
+      pattern: '^[a-z][a-z0-9-]{1,30}$'
+      description: >-
+        A built-in database engine (`mariadb`, `postgresql` or `valkey`), or the slug of an
+        installed database pack, for example `mysql`. `GET /v1/database-engines` lists them.
     DnsRecordType:
       type: string
       enum: [A, AAAA, CNAME, MX, TXT, SRV, CAA, NS]
@@ -8062,12 +8114,39 @@ components:
         destinations: { type: array, items: { type: string } }
         status: { $ref: '#/components/schemas/MailStatus' }
         createdAt: { type: string, format: date-time }
+    DatabaseEngine:
+      type: object
+      properties:
+        engine: { $ref: '#/components/schemas/Engine' }
+        name: { type: string, description: The name for people, for example "MySQL". }
+        port: { type: integer, description: The port of the engine in its container. A website connects to a database server on this port at its network name. }
+        pack:
+          type: [object, 'null']
+          description: The database pack of a pack engine. Null for a built-in engine.
+          properties:
+            id: { type: string }
+            slug: { type: string }
+            version: { type: string }
+            publisher: { type: string }
+        versions:
+          type: array
+          description: The versions of a pack engine, newest first. Empty for a built-in engine.
+          items:
+            type: object
+            properties:
+              version: { type: string }
+              supportEndsAt: { type: [string, 'null'], format: date }
+        users: { type: boolean, description: True when a database user can have access to more than one database. }
+        moves: { type: boolean, description: True when a database server can move to a different server. }
+        adminer: { type: boolean, description: True when Adminer can open the databases. }
+        anywhere: { type: boolean, description: True when a database user can have the access "anywhere". }
     DatabaseServer:
       type: object
       properties:
         id: { type: string }
         name: { type: string }
         engine: { $ref: '#/components/schemas/Engine' }
+        engineVersion: { type: [string, 'null'], description: 'The version of a pack engine, for example "8.4". Null for a built-in engine.' }
         customerId: { type: string }
         serverId: { type: string, description: The server that has the container. }
         movingToServerId:
@@ -8083,8 +8162,8 @@ components:
             container does not operate. "failed": the agent could not make the database server.
             "moving": the database server moves to a different server, and does not operate.
             "removing": the agent removes the database server.
-        host: { type: string, description: 'The host name that a website container connects to: `mariadb.internal`, `postgres.internal` or `valkey.internal`.' }
-        port: { type: integer, description: The port that a website container connects to. }
+        host: { type: string, description: 'The host name that a website container connects to: `mariadb.internal`, `postgres.internal` or `valkey.internal`. For a pack engine, the network name of the database server.' }
+        port: { type: integer, description: The port that a website container connects to. For a pack engine, the port of the engine. }
         networkHost:
           type: [string, 'null']
           description: >-

@@ -36,19 +36,20 @@ final class OpenPgpKey
     /**
      * Makes a key for an address.
      *
+     * @param  ?string  $seed  32 bytes that give the keys. Without them, the keys are random.
      * @return array{publicKey: string, privateKey: string, fingerprint: string}
      */
-    public static function generate(string $address, string $password, ?int $time = null): array
+    public static function generate(string $address, string $password, ?int $time = null, ?string $seed = null): array
     {
         $time ??= time();
         $created = pack('N', $time);
 
-        $sign = sodium_crypto_sign_keypair();
+        $sign = $seed === null ? sodium_crypto_sign_keypair() : sodium_crypto_sign_seed_keypair($seed);
         $signSecret = sodium_crypto_sign_secretkey($sign);
         $signPublic = sodium_crypto_sign_publickey($sign);
         $seed = substr($signSecret, 0, 32);
 
-        $scalar = random_bytes(32);
+        $scalar = $seed === null ? random_bytes(32) : hash('sha256', "encryption {$seed}", true);
         // The form of a Curve25519 private key.
         $scalar[0] = chr(ord($scalar[0]) & 248);
         $scalar[31] = chr((ord($scalar[31]) & 127) | 64);

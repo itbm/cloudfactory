@@ -7,38 +7,71 @@ use App\Validation\InputRules;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The manifest of a pack (pack.json, docs/packs.md). The contract "cf-pack/1" is stable: the
- * panel and the agent read the same keys with the same rules (agent/internal/packs). A key
- * that the contract does not have is an error, except a key that starts with "x-", so that
- * the panel never ignores a key of a later contract.
+ * The manifest of a pack (pack.json, docs/packs.md). The contracts "cf-pack/1" and
+ * "cf-pack/2" are stable: the panel and the agent read the same keys with the same rules
+ * (agent/internal/packs). A key that the contract does not have is an error, except a key that
+ * starts with "x-", so that the panel never ignores a key of a later contract.
+ *
+ * cf-pack/1 has the kind "runtime". The runtime contract gives the keys of the runtime object.
+ * A pack with "cf-runtime/1" adds a new runtime. A pack with "cf-php/1" adds versions of PHP to
+ * a built-in PHP runtime.
+ *
+ * cf-pack/2 has the keys of cf-pack/1 and the kind "database". A database pack has the object
+ * "database" (cf-database/1) in the place of "runtime", and adds a database engine.
  *
  * The panel reads the manifest only as data. It never runs a program that a manifest names.
  */
 class PackManifest
 {
-    /** The version of the manifest format. */
+    /** The first version of the manifest format. It has only the kind "runtime". */
     public const CONTRACT = 'cf-pack/1';
+
+    /** The second version of the manifest format: cf-pack/1 and the kind "database". */
+    public const CONTRACT_2 = 'cf-pack/2';
+
+    /**
+     * The version of the contract between the agent and the image of a database pack: the
+     * image has the program /cf/manage.
+     */
+    public const DATABASE_CONTRACT = 'cf-database/1';
 
     /** The version of the contract between the agent and the image of a runtime pack. */
     public const RUNTIME_CONTRACT = 'cf-runtime/1';
 
-    /** The only kind of pack of cf-pack/1. The kind "database" is for a later release. */
+    /**
+     * The version of the contract between the agent and the image of a PHP pack. A PHP pack
+     * adds versions of PHP to a built-in PHP runtime (runtime.family), and its images do what
+     * the images of that runtime do.
+     */
+    public const PHP_CONTRACT = 'cf-php/1';
+
+    /** A pack that adds a website runtime or versions of PHP. The only kind of cf-pack/1. */
     public const KIND_RUNTIME = 'runtime';
+
+    /** A pack that adds a database engine (cf-pack/2). */
+    public const KIND_DATABASE = 'database';
 
     /** The only runtime type of cf-runtime/1: the image runs the start command of the website. */
     public const TYPE_APP = 'app';
 
     private const TOP = ['contract', 'kind', 'slug', 'name', 'version', 'publisher', 'description', 'runtime', 'images'];
 
-    private const RUNTIME = ['contract', 'type', 'defaultCommand', 'defaultInstall'];
+    /** The keys of the runtime object for each runtime contract. */
+    private const RUNTIME = [
+        self::RUNTIME_CONTRACT => ['contract', 'type', 'defaultCommand', 'defaultInstall'],
+        self::PHP_CONTRACT => ['contract', 'family'],
+    ];
 
     private const IMAGE = ['version', 'ref', 'digest', 'supportEndsAt'];
+
+    private const DATABASE = ['contract', 'port', 'dataDir'];
 
     /**
      * Reads and checks a manifest. The result has only the keys of the contract.
      *
      * @return array{contract: string, kind: string, slug: string, name: string, version: string, publisher: string, description: string,
-     *     runtime: array{contract: string, type: string, defaultCommand: string, defaultInstall: string},
+     *     runtime: array{contract: string, type: string, defaultCommand: string, defaultInstall: string, family: string},
+     *     database: ?array{contract: string, port: int, dataDir: string},
      *     images: list<array{version: string, ref: string, repository: string, tag: string, digest: string, supportEndsAt: ?string}>}
      *
      * @throws ValidationException
@@ -48,21 +81,25 @@ class PackManifest
         if (strlen($raw) > InputRules::MAX_PACK_MANIFEST_BYTES) {
             self::fail(sprintf('The manifest has %d bytes. The limit is %d.', strlen($raw), InputRules::MAX_PACK_MANIFEST_BYTES));
         }
-        $top = self::object(json_decode($raw, false, 16), 'The manifest', self::TOP);
+        $decoded = json_decode($raw, false, 16);
+        // The contract gives the keys of the manifest. cf-pack/2 adds the key database.
+        $two = is_object($decoded) && ($decoded->contract ?? null) === self::CONTRACT_2;
+        $top = self::object($decoded, 'The manifest', $two ? [...self::TOP, 'database'] : self::TOP);
         $errors = [];
         $m = [];
         foreach (['contract', 'kind', 'slug', 'name', 'version', 'publisher', 'description'] as $key) {
             $m[$key] = self::string($top, $key, $key, $errors);
         }
-        if ($m['contract'] !== self::CONTRACT) {
-            self::fail("The contract \"{$m['contract']}\" is not known. This panel reads \"".self::CONTRACT.'".');
+        if ($m['contract'] !== self::CONTRACT && $m['contract'] !== self::CONTRACT_2) {
+            self::fail("The contract \"{$m['contract']}\" is not known. This panel reads \"".self::CONTRACT.'" and "'.self::CONTRACT_2.'".');
         }
-        if ($m['kind'] === 'database') {
-            self::fail('Database engine packs are not available yet. This release installs runtime packs only.');
+        if ($m['kind'] === self::KIND_DATABASE && $m['contract'] === self::CONTRACT) {
+            self::fail('A database pack needs the contract "'.self::CONTRACT_2.'".');
         }
-        if ($m['kind'] !== self::KIND_RUNTIME) {
-            self::fail("The kind \"{$m['kind']}\" is not known. Use \"".self::KIND_RUNTIME.'".');
+        if ($m['kind'] !== self::KIND_RUNTIME && $m['kind'] !== self::KIND_DATABASE) {
+            self::fail("The kind \"{$m['kind']}\" is not known. Use \"".self::KIND_RUNTIME.'" or "'.self::KIND_DATABASE.'".');
         }
+        $database = $m['kind'] === self::KIND_DATABASE;
         if (! Input::valid('packSlug', $m['slug'])) {
             $errors[] = 'slug: '.InputRules::MESSAGES['packSlug'];
         } elseif (in_array($m['slug'], InputRules::RESERVED_RUNTIME_NAMES, true)) {
@@ -75,23 +112,47 @@ class PackManifest
         self::text('publisher', $m['publisher'], 1, 100, $errors);
         self::text('description', $m['description'], 0, 500, $errors);
 
-        $m['runtime'] = ['contract' => '', 'type' => '', 'defaultCommand' => '', 'defaultInstall' => ''];
-        if (! property_exists($top, 'runtime')) {
-            $errors[] = 'A runtime pack needs the key runtime.';
-        } else {
-            $runtime = self::object($top->runtime, 'runtime', self::RUNTIME);
-            foreach (self::RUNTIME as $key) {
-                $m['runtime'][$key] = self::string($runtime, $key, "runtime.{$key}", $errors);
+        $m['runtime'] = ['contract' => '', 'type' => '', 'defaultCommand' => '', 'defaultInstall' => '', 'family' => ''];
+        $m['database'] = null;
+        if ($database) {
+            if (property_exists($top, 'runtime')) {
+                $errors[] = 'A database pack cannot have the key runtime.';
             }
-            if ($m['runtime']['contract'] !== self::RUNTIME_CONTRACT) {
-                $errors[] = "The runtime contract \"{$m['runtime']['contract']}\" is not known. This panel reads \"".self::RUNTIME_CONTRACT.'".';
+            if (! property_exists($top, 'database')) {
+                $errors[] = 'A database pack needs the key database.';
+            } else {
+                $m['database'] = self::database($top->database, $errors);
             }
-            if ($m['runtime']['type'] !== self::TYPE_APP) {
-                $errors[] = "The runtime type \"{$m['runtime']['type']}\" is not known. ".self::RUNTIME_CONTRACT.' has only the type "'.self::TYPE_APP.'".';
-            }
-            self::command('runtime.defaultCommand', $m['runtime']['defaultCommand'], true, $errors);
-            self::command('runtime.defaultInstall', $m['runtime']['defaultInstall'], false, $errors);
+        } elseif (property_exists($top, 'database')) {
+            $errors[] = 'A runtime pack cannot have the key database.';
         }
+        // A database pack has no runtime.
+        if (! $database && ! property_exists($top, 'runtime')) {
+            $errors[] = 'A runtime pack needs the key runtime.';
+        } elseif (! $database && ! is_object($top->runtime)) {
+            $errors[] = 'runtime is not a JSON object.';
+        } elseif (! $database) {
+            $m['runtime']['contract'] = self::string($top->runtime, 'contract', 'runtime.contract', $errors);
+            $known = self::RUNTIME[$m['runtime']['contract']] ?? null;
+            if ($known === null) {
+                $errors[] = "The runtime contract \"{$m['runtime']['contract']}\" is not known. This panel reads \"".self::RUNTIME_CONTRACT.'" and "'.self::PHP_CONTRACT.'".';
+            } else {
+                $runtime = self::object($top->runtime, 'runtime', $known);
+                foreach (array_diff($known, ['contract']) as $key) {
+                    $m['runtime'][$key] = self::string($runtime, $key, "runtime.{$key}", $errors);
+                }
+            }
+            if ($m['runtime']['contract'] === self::RUNTIME_CONTRACT) {
+                if ($m['runtime']['type'] !== self::TYPE_APP) {
+                    $errors[] = "The runtime type \"{$m['runtime']['type']}\" is not known. ".self::RUNTIME_CONTRACT.' has only the type "'.self::TYPE_APP.'".';
+                }
+                self::command('runtime.defaultCommand', $m['runtime']['defaultCommand'], true, $errors);
+                self::command('runtime.defaultInstall', $m['runtime']['defaultInstall'], false, $errors);
+            } elseif ($m['runtime']['contract'] === self::PHP_CONTRACT && ! in_array($m['runtime']['family'], InputRules::PHP_RUNTIMES, true)) {
+                $errors[] = "runtime.family: the runtime \"{$m['runtime']['family']}\" is not a built-in PHP runtime. Use one of ".implode(', ', InputRules::PHP_RUNTIMES).'.';
+            }
+        }
+        $php = $m['runtime']['contract'] === self::PHP_CONTRACT;
 
         $images = $top->images ?? null;
         $m['images'] = [];
@@ -116,6 +177,9 @@ class PackManifest
             }
             if (! Input::valid('packImageVersion', $img['version'])) {
                 $errors[] = "{$what}.version: ".InputRules::MESSAGES['packImageVersion'];
+            } elseif ($php && ! Input::valid('phpVersion', $img['version'])) {
+                // The agent writes the php.ini file of a website for this version of PHP.
+                $errors[] = "{$what}.version: ".InputRules::MESSAGES['phpVersion'];
             }
             if (! Input::valid('image', $img['ref'])) {
                 $errors[] = "{$what}.ref: ".InputRules::MESSAGES['image'];
@@ -146,6 +210,68 @@ class PackManifest
         return $m;
     }
 
+    /**
+     * True when the pack adds versions of PHP to a built-in PHP runtime (cf-php/1). Such a pack
+     * adds no runtime of its own.
+     *
+     * @param  array<string, mixed>  $spec  The result of parse.
+     */
+    public static function isPhp(array $spec): bool
+    {
+        return ($spec['runtime']['contract'] ?? null) === self::PHP_CONTRACT;
+    }
+
+    /** True when the pack adds a database engine (cf-pack/2, cf-database/1). */
+    public static function isDatabase(array $spec): bool
+    {
+        return ($spec['kind'] ?? null) === self::KIND_DATABASE && is_array($spec['database'] ?? null);
+    }
+
+    /**
+     * Reads and checks the database object of a database pack.
+     *
+     * @param  list<string>  $errors
+     * @return array{contract: string, port: int, dataDir: string}
+     */
+    private static function database(mixed $value, array &$errors): array
+    {
+        if (! is_object($value)) {
+            self::fail('database is not a JSON object.');
+        }
+        $contract = self::string($value, 'contract', 'database.contract', $errors);
+        if ($contract !== self::DATABASE_CONTRACT) {
+            self::fail("The database contract \"{$contract}\" is not known. This panel reads \"".self::DATABASE_CONTRACT.'".');
+        }
+        $fields = self::object($value, 'database', self::DATABASE);
+        $out = ['contract' => $contract, 'port' => 0, 'dataDir' => ''];
+        foreach (['port', 'dataDir'] as $key) {
+            if (! property_exists($fields, $key)) {
+                $errors[] = "database.{$key} is necessary.";
+            }
+        }
+        $port = self::string($fields, 'port', 'database.port', $errors);
+        if ($port !== '') {
+            if (! Input::valid('packPort', $port) || (int) $port < 1024 || (int) $port > 65535) {
+                $errors[] = 'database.port: '.InputRules::MESSAGES['packPort'];
+            } else {
+                $out['port'] = (int) $port;
+            }
+        }
+        $dir = self::string($fields, 'dataDir', 'database.dataDir', $errors);
+        if ($dir !== '') {
+            if (! Input::valid('packDataDir', $dir)) {
+                $errors[] = 'database.dataDir: '.InputRules::MESSAGES['packDataDir'];
+            } elseif (in_array(explode('/', $dir)[1], InputRules::RESERVED_PACK_DIRS, true)) {
+                $first = explode('/', $dir)[1];
+                $errors[] = "database.dataDir: the directory /{$first} belongs to the container. Use a different directory, for example /var/lib/data.";
+            } else {
+                $out['dataDir'] = $dir;
+            }
+        }
+
+        return $out;
+    }
+
     /** An image reference with no tag and no digest, for example "ghcr.io/example/cf-golang". */
     public static function repository(string $ref): string
     {
@@ -171,7 +297,7 @@ class PackManifest
         $unknown = array_values(array_filter(array_keys(get_object_vars($value)), fn ($k) => ! in_array($k, $known, true) && ! str_starts_with((string) $k, 'x-')));
         if ($unknown !== []) {
             sort($unknown);
-            self::fail("{$what} has the key \"{$unknown[0]}\", which the contract ".self::CONTRACT.' does not have. The pack may need a later release of Cloudfactory.');
+            self::fail("{$what} has the key \"{$unknown[0]}\", which the contract does not have. The pack may need a later release of Cloudfactory.");
         }
 
         return $value;

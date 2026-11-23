@@ -1,8 +1,9 @@
 // Package packs reads and checks packs: signed manifests from a publisher that add a website
-// runtime to Cloudfactory with no new agent code. docs/packs.md is the contract.
+// runtime, versions of a built-in PHP runtime, or a database engine to Cloudfactory with no new
+// agent code. docs/packs.md is the contract.
 //
-// A pack has a manifest (pack.json) with the contract "cf-pack/1", and the images of the
-// runtime, each with a digest. The publisher signs the exact bytes of the manifest with an
+// A pack has a manifest (pack.json) with the contract "cf-pack/1" or "cf-pack/2", and the
+// images of the runtime or of the engine, each with a digest. The publisher signs the exact bytes of the manifest with an
 // ECDSA P-256 key ("cosign sign-blob"), and signs each image with the same key ("cosign
 // sign"). The panel installs a pack only when a trusted key signed it. The agent checks the
 // signature again, and lets Podman pull an image of a pack only with a signature of that key
@@ -20,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -29,14 +31,26 @@ import (
 )
 
 const (
-	// Contract is the version of the manifest format.
+	// Contract is the first version of the manifest format. It has only the kind "runtime".
 	Contract = "cf-pack/1"
+	// Contract2 is the second version of the manifest format. It has the keys of Contract and
+	// the kind "database". A runtime pack can use either version.
+	Contract2 = "cf-pack/2"
 	// RuntimeContract is the version of the contract between the agent and the image of a
-	// runtime pack.
+	// runtime pack that adds a new runtime.
 	RuntimeContract = "cf-runtime/1"
-	// KindRuntime is the only kind of pack of the contract cf-pack/1. The kind "database" is
-	// for a later release.
+	// PHPContract is the version of the contract between the agent and the image of a PHP
+	// pack. A PHP pack adds no runtime: it adds versions of PHP to a built-in PHP runtime
+	// (Runtime.Family), and its images do what the images of that runtime do.
+	PHPContract = "cf-php/1"
+	// KindRuntime is a pack that adds a website runtime or versions of PHP. It is the only
+	// kind of cf-pack/1.
 	KindRuntime = "runtime"
+	// KindDatabase is a pack that adds a database engine (cf-pack/2).
+	KindDatabase = "database"
+	// DatabaseContract is the version of the contract between the agent and the image of a
+	// database pack: the image has the program /cf/manage (docs/packs.md).
+	DatabaseContract = "cf-database/1"
 	// TypeApp is the only runtime type of cf-runtime/1: the image has /usr/local/bin/cf-app,
 	// which runs the start command of the website. It is quadlet.KindApp.
 	TypeApp = "app"
@@ -59,18 +73,64 @@ type Manifest struct {
 	Publisher   string  `json:"publisher"`
 	Description string  `json:"description,omitempty"`
 	Runtime     Runtime `json:"runtime"`
-	Images      []Image `json:"images"`
+	// Database is the engine of a database pack. A runtime pack has none.
+	Database *Database `json:"database,omitempty"`
+	Images   []Image   `json:"images"`
 }
 
-// Runtime is the runtime of a runtime pack.
+// Database is the engine of a database pack (cf-database/1).
+type Database struct {
+	Contract string `json:"contract"`
+	// Port is the TCP port of the engine in its container, for example "3306". The websites
+	// connect to a database server on this port at its member address.
+	Port string `json:"port"`
+	// DataDir is the data directory in the container, for example "/var/lib/mysql". The agent
+	// mounts the data of the database server there.
+	DataDir string `json:"dataDir"`
+}
+
+// PortNumber gives the port of the engine as a number. Parse checked it.
+func (d Database) PortNumber() int {
+	n, _ := strconv.Atoi(d.Port)
+	return n
+}
+
+// IsDatabase reports whether the pack adds a database engine.
+func (m Manifest) IsDatabase() bool { return m.Kind == KindDatabase && m.Database != nil }
+
+// Image gives the image of a version of the pack.
+func (m Manifest) Image(version string) (Image, bool) {
+	for _, img := range m.Images {
+		if img.Version == version {
+			return img, true
+		}
+	}
+	return Image{}, false
+}
+
+// Runtime is the runtime of a runtime pack. The runtime contract gives its keys: Type,
+// DefaultCommand and DefaultInstall for cf-runtime/1, and Family for cf-php/1.
 type Runtime struct {
 	Contract string `json:"contract"`
-	Type     string `json:"type"`
+	Type     string `json:"type,omitempty"`
 	// DefaultCommand and DefaultInstall are the usual start command and install command of a
 	// website. Only the panel uses them: the job of a website gives its own command.
-	DefaultCommand string `json:"defaultCommand"`
+	DefaultCommand string `json:"defaultCommand,omitempty"`
 	DefaultInstall string `json:"defaultInstall,omitempty"`
+	// Family is the built-in PHP runtime that a PHP pack adds versions to, for example
+	// "apache-php-fpm".
+	Family string `json:"family,omitempty"`
 }
+
+// runtimeKeys are the keys of the runtime object for each runtime contract.
+var runtimeKeys = map[string][]string{
+	RuntimeContract: {"contract", "type", "defaultCommand", "defaultInstall"},
+	PHPContract:     {"contract", "family"},
+}
+
+// PHP reports whether the pack adds versions of PHP to a built-in PHP runtime (cf-php/1). Such
+// a pack adds no runtime to the agent.
+func (m Manifest) PHP() bool { return m.Runtime.Contract == PHPContract }
 
 // Image is one image of a runtime pack, for one version of the runtime.
 type Image struct {
@@ -119,7 +179,16 @@ func Parse(raw []byte) (Manifest, error) {
 	if len(raw) > validate.MaxPackManifestBytes {
 		return m, fmt.Errorf("the manifest has %d bytes; the limit is %d", len(raw), validate.MaxPackManifestBytes)
 	}
-	top, err := object(raw, "the manifest", "contract", "kind", "slug", "name", "version", "publisher", "description", "runtime", "images")
+	// The contract gives the keys of the manifest. cf-pack/2 adds the key database.
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(raw, &probe) == nil && probe != nil {
+		_ = json.Unmarshal(probe["contract"], &m.Contract)
+	}
+	keys := []string{"contract", "kind", "slug", "name", "version", "publisher", "description", "runtime", "images"}
+	if m.Contract == Contract2 {
+		keys = append(keys, "database")
+	}
+	top, err := object(raw, "the manifest", keys...)
 	if err != nil {
 		return m, err
 	}
@@ -133,42 +202,39 @@ func Parse(raw []byte) (Manifest, error) {
 			}
 		}
 	}
-	if m.Contract != Contract {
-		return m, fmt.Errorf("the contract %q is not known; this agent reads %q", m.Contract, Contract)
+	if m.Contract != Contract && m.Contract != Contract2 {
+		return m, fmt.Errorf("the contract %q is not known; this agent reads %q and %q", m.Contract, Contract, Contract2)
 	}
-	switch m.Kind {
-	case KindRuntime:
-	case "database":
-		return m, errors.New("database engine packs are not available yet; this release installs runtime packs only")
+	switch {
+	case m.Kind == KindRuntime:
+	case m.Kind == KindDatabase && m.Contract == Contract:
+		return m, fmt.Errorf("a database pack needs the contract %q", Contract2)
+	case m.Kind == KindDatabase:
 	default:
-		return m, fmt.Errorf("the kind %q is not known; use %q", m.Kind, KindRuntime)
+		return m, fmt.Errorf("the kind %q is not known; use %q or %q", m.Kind, KindRuntime, KindDatabase)
 	}
 	errs := []error{validate.PackName(m.Slug), validate.PackVersion(m.Version),
 		text("name", m.Name, 1, 60), text("publisher", m.Publisher, 1, 100), text("description", m.Description, 0, 500)}
 
-	rt, ok := top["runtime"]
-	if !ok {
-		errs = append(errs, errors.New("a runtime pack needs the key runtime"))
-	} else if fields, err := object(rt, "runtime", "contract", "type", "defaultCommand", "defaultInstall"); err != nil {
-		errs = append(errs, err)
+	if m.Kind == KindRuntime {
+		if rt, ok := top["runtime"]; !ok {
+			errs = append(errs, errors.New("a runtime pack needs the key runtime"))
+		} else if err := parseRuntime(rt, &m.Runtime); err != nil {
+			errs = append(errs, err)
+		}
+		if _, ok := top["database"]; ok {
+			errs = append(errs, errors.New("a runtime pack cannot have the key database"))
+		}
 	} else {
-		for _, f := range []struct {
-			key string
-			to  *string
-		}{{"contract", &m.Runtime.Contract}, {"type", &m.Runtime.Type}, {"defaultCommand", &m.Runtime.DefaultCommand}, {"defaultInstall", &m.Runtime.DefaultInstall}} {
-			if v, ok := fields[f.key]; ok {
-				if err := json.Unmarshal(v, f.to); err != nil {
-					errs = append(errs, fmt.Errorf("runtime.%s: %w", f.key, errString))
-				}
-			}
+		if _, ok := top["runtime"]; ok {
+			errs = append(errs, errors.New("a database pack cannot have the key runtime"))
 		}
-		if m.Runtime.Contract != RuntimeContract {
-			errs = append(errs, fmt.Errorf("the runtime contract %q is not known; this agent reads %q", m.Runtime.Contract, RuntimeContract))
+		m.Database = &Database{}
+		if db, ok := top["database"]; !ok {
+			errs = append(errs, errors.New("a database pack needs the key database"))
+		} else if err := parseDatabase(db, m.Database); err != nil {
+			errs = append(errs, err)
 		}
-		if m.Runtime.Type != TypeApp {
-			errs = append(errs, fmt.Errorf("the runtime type %q is not known; %s has only the type %q", m.Runtime.Type, RuntimeContract, TypeApp))
-		}
-		errs = append(errs, commandLine("runtime.defaultCommand", m.Runtime.DefaultCommand, true), commandLine("runtime.defaultInstall", m.Runtime.DefaultInstall, false))
 	}
 
 	var images []json.RawMessage
@@ -197,6 +263,12 @@ func Parse(raw []byte) (Manifest, error) {
 			}
 		}
 		errs = append(errs, validate.PackImageVersion(img.Version), validate.Image(img.Ref))
+		if m.PHP() && img.Version != "" {
+			// The agent writes the php.ini file of a website for this version of PHP.
+			if err := validate.PHPVersion(img.Version); err != nil {
+				errs = append(errs, fmt.Errorf("%s.version: %w", what, err))
+			}
+		}
 		if img.Digest == "" {
 			errs = append(errs, fmt.Errorf("%s needs a digest", what))
 		} else {
@@ -218,6 +290,93 @@ func Parse(raw []byte) (Manifest, error) {
 
 var errString = errors.New("the value must be a string")
 
+// parseDatabase reads and checks the database object of a database pack (cf-database/1).
+func parseDatabase(raw json.RawMessage, db *Database) error {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil || probe == nil {
+		return errors.New("database is not a JSON object")
+	}
+	if v, ok := probe["contract"]; ok && json.Unmarshal(v, &db.Contract) != nil {
+		return fmt.Errorf("database.contract: %w", errString)
+	}
+	if db.Contract != DatabaseContract {
+		return fmt.Errorf("the database contract %q is not known; this agent reads %q", db.Contract, DatabaseContract)
+	}
+	fields, err := object(raw, "database", "contract", "port", "dataDir")
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, f := range []struct {
+		key string
+		to  *string
+	}{{"port", &db.Port}, {"dataDir", &db.DataDir}} {
+		if v, ok := fields[f.key]; !ok {
+			errs = append(errs, fmt.Errorf("database.%s is necessary", f.key))
+		} else if err := json.Unmarshal(v, f.to); err != nil {
+			errs = append(errs, fmt.Errorf("database.%s: %w", f.key, errString))
+		}
+	}
+	if db.Port != "" {
+		if err := validate.PackPort(db.Port); err != nil {
+			errs = append(errs, fmt.Errorf("database.port: %w", err))
+		} else if n := db.PortNumber(); n < 1024 || n > 65535 {
+			errs = append(errs, errors.New("database.port: use a TCP port from 1024 to 65535"))
+		}
+	}
+	if db.DataDir != "" {
+		if err := validate.PackDataDir(db.DataDir); err != nil {
+			errs = append(errs, fmt.Errorf("database.dataDir: %w", err))
+		} else if first, _, _ := strings.Cut(db.DataDir[1:], "/"); validate.ReservedPackDir(first) {
+			errs = append(errs, fmt.Errorf("database.dataDir: the directory /%s belongs to the container; use a different directory, for example /var/lib/data", first))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// parseRuntime reads and checks the runtime object of a runtime pack. The runtime contract
+// gives the keys of the object.
+func parseRuntime(raw json.RawMessage, rt *Runtime) error {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil || probe == nil {
+		return errors.New("runtime is not a JSON object")
+	}
+	if v, ok := probe["contract"]; ok && json.Unmarshal(v, &rt.Contract) != nil {
+		return fmt.Errorf("runtime.contract: %w", errString)
+	}
+	known, ok := runtimeKeys[rt.Contract]
+	if !ok {
+		return fmt.Errorf("the runtime contract %q is not known; this agent reads %q and %q", rt.Contract, RuntimeContract, PHPContract)
+	}
+	fields, err := object(raw, "runtime", known...)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, f := range []struct {
+		key string
+		to  *string
+	}{{"type", &rt.Type}, {"defaultCommand", &rt.DefaultCommand}, {"defaultInstall", &rt.DefaultInstall}, {"family", &rt.Family}} {
+		if v, ok := fields[f.key]; ok {
+			if err := json.Unmarshal(v, f.to); err != nil {
+				errs = append(errs, fmt.Errorf("runtime.%s: %w", f.key, errString))
+			}
+		}
+	}
+	switch rt.Contract {
+	case RuntimeContract:
+		if rt.Type != TypeApp {
+			errs = append(errs, fmt.Errorf("the runtime type %q is not known; %s has only the type %q", rt.Type, RuntimeContract, TypeApp))
+		}
+		errs = append(errs, commandLine("runtime.defaultCommand", rt.DefaultCommand, true), commandLine("runtime.defaultInstall", rt.DefaultInstall, false))
+	case PHPContract:
+		if err := validate.PHPRuntime(rt.Family); err != nil {
+			errs = append(errs, fmt.Errorf("runtime.family: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // object reads a JSON object and gives its values. A key that is not in known and that does
 // not start with "x-" is an error.
 func object(raw []byte, what string, known ...string) (map[string]json.RawMessage, error) {
@@ -237,7 +396,7 @@ func object(raw []byte, what string, known ...string) (map[string]json.RawMessag
 	}
 	if len(unknown) > 0 {
 		slices.Sort(unknown)
-		return nil, fmt.Errorf("%s has the key %q, which the contract %s does not have; the pack may need a later release of Cloudfactory", what, unknown[0], Contract)
+		return nil, fmt.Errorf("%s has the key %q, which the contract does not have; the pack may need a later release of Cloudfactory", what, unknown[0])
 	}
 	return fields, nil
 }

@@ -7,6 +7,7 @@
 // The panel has no sample data of its own. For development, the demonstration and the
 // screenshots, the panel API has a demo seeder and a demo agent (docs/development.md).
 
+import { BUILT_IN_ENGINES } from "../lib/labels";
 import * as live from "./live";
 import type {
   ApiToken,
@@ -88,7 +89,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], certificates: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], databaseEngines: BUILT_IN_ENGINES, dnsZones: [], certificates: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -924,12 +925,14 @@ export interface DatabaseServerInput {
   serverId?: string;
   /** Only an administrator sets limits. The other users select a plan. */
   limits?: DatabaseLimits;
+  /** The version of a pack engine. With no version, the database server gets the newest version of the pack. */
+  version?: string;
 }
 
 /** Makes a database server. The promise resolves when the panel has put the job in the queue. */
 export function createDatabaseServer(input: DatabaseServerInput): Promise<void> {
   return call(async () => {
-    const body = { engine: input.engine, customerId: input.customerId, name: input.name?.trim() || undefined, planId: input.planId || undefined, serverId: input.serverId || undefined, limits: input.limits };
+    const body = { engine: input.engine, customerId: input.customerId, name: input.name?.trim() || undefined, planId: input.planId || undefined, serverId: input.serverId || undefined, limits: input.limits, version: input.version || undefined };
     const r = await live.request<{ databaseServer: live.ApiDatabaseServer; job: live.ApiJob }>("POST", "/database-servers", body);
     putDatabaseServer(r.databaseServer);
     void track(r.job).then(() => refresh());

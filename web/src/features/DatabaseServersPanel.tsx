@@ -2,13 +2,25 @@ import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
 import { contextCustomers, inContext } from "../api/selectors";
 import { createDatabaseServer, deleteDatabaseServer, moveDatabaseServer, retryDatabaseServer, setDatabaseServer } from "../api/store";
-import type { Customer, DatabaseEngine, DatabaseLimits, DatabaseServer, Plan, State } from "../api/types";
+import type { Customer, DatabaseEngine, DatabaseEngineInfo, DatabaseLimits, DatabaseServer, Plan, State } from "../api/types";
 import { Card, Field, FormError, JobError, Meter, Modal, RowMenu, Status, TableWrap } from "../components/ui";
-import { bytes, GB, MB } from "../lib/format";
-import { DATABASE_PORT, DATABASE_SERVER_STATUS, ENGINE_NAME, jobActive } from "../lib/labels";
+import { bytes, GB, longDate, MB } from "../lib/format";
+import { DATABASE_PORT, DATABASE_SERVER_STATUS, engineInfo, engineName, jobActive } from "../lib/labels";
 
-const ENGINES: DatabaseEngine[] = ["mariadb", "postgresql", "valkey"];
-const ENGINE_USE: Record<DatabaseEngine, string> = { mariadb: "SQL databases", postgresql: "SQL databases", valkey: "Cache, sessions and queues" };
+const ENGINE_USE: Record<string, string> = { mariadb: "SQL databases", postgresql: "SQL databases", valkey: "Cache, sessions and queues" };
+
+/** What an engine is for. A pack engine shows its publisher. */
+const engineUse = (e: DatabaseEngineInfo) => ENGINE_USE[e.engine] ?? `From a pack of ${e.pack?.publisher ?? "a publisher"}`;
+
+/** "8.4 · support until 30 April 2032" */
+const versionText = (v: DatabaseEngineInfo["versions"][number]) =>
+  !v.supportEndsAt ? v.version : `${v.version} · ${new Date(v.supportEndsAt) < new Date() ? "support ended" : "support until"} ${longDate(v.supportEndsAt)}`;
+
+/** "MariaDB, PostgreSQL, Valkey or MySQL" */
+const engineList = (engines: DatabaseEngineInfo[]) => {
+  const names = engines.map((e) => e.name);
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+};
 
 /** "2 vCPU · 1 GB memory · 10 GB disk" */
 export const limitsText = (l: DatabaseLimits) => `${l.vcpus} vCPU · ${bytes(l.memoryBytes)} memory · ${bytes(l.diskBytes)} disk`;
@@ -53,7 +65,7 @@ export function DatabaseServersPanel() {
     <Card title="Database servers" actions={<button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>New database server</button>}>
       <div className="card-body" style={{ paddingBottom: 12 }}>
         <p className="muted">
-          A database server is one container with MariaDB, PostgreSQL or Valkey. It has its own limits for CPU, memory and disk space, and a plan gives the number of its databases. All the websites of the customer can connect to it, also from a different server.
+          A database server is one container with {engineList(state.databaseEngines)}. It has its own limits for CPU, memory and disk space, and a plan gives the number of its databases. All the websites of the customer can connect to it, also from a different server.
           {only && allowed !== undefined && <> {only.name} has {servers.filter((s) => s.customerId === only.id).length} of {allowed} database servers.</>}
         </p>
         <FormError error={retry.error ?? remove.error} />
@@ -80,7 +92,7 @@ export function DatabaseServersPanel() {
                 <tr key={s.id}>
                   <td>
                     <strong className="nowrap">{s.name}</strong>
-                    <span className="cell-sub">{ENGINE_NAME[s.engine]}</span>
+                    <span className="cell-sub">{engineName(state.databaseEngines, s.engine)}{s.engineVersion && ` ${s.engineVersion}`}</span>
                     {showCustomer && <span className="cell-sub">{customer(s.customerId)?.name ?? "Removed customer"}</span>}
                   </td>
                   <td>
@@ -90,7 +102,7 @@ export function DatabaseServersPanel() {
                   <td><Use server={s} /></td>
                   <td className="nowrap">{s.databases} of {s.maxDatabases}</td>
                   <td>
-                    {s.networkHost
+                    {s.networkHost && (s.networkHost !== s.host || s.networkPort !== s.port)
                       ? <><code className="nowrap">{s.networkHost}:{s.networkPort}</code><span className="cell-sub">Also <code>{s.host}:{s.port}</code>{host(s.serverId) ? ` on the server ${host(s.serverId)}` : " on its server"}</span></>
                       : <><code>{s.host}:{s.port}</code>{host(s.serverId) && <span className="cell-sub">On the server {host(s.serverId)}</span>}</>}
                   </td>
@@ -105,7 +117,7 @@ export function DatabaseServersPanel() {
                       <RowMenu label={`Actions for the database server ${s.name}`} actions={[
                         ...(s.status === "failed" ? [{ label: "Try again", onSelect: () => void retry.run(s.id) }] : []),
                         { label: "Change", onSelect: () => setEditing(s) },
-                        ...(admin && (s.status === "running" || s.status === "stopped") ? [{ label: "Move to a different server", onSelect: () => setMoving(s) }] : []),
+                        ...(admin && engineInfo(state.databaseEngines, s.engine).moves && (s.status === "running" || s.status === "stopped") ? [{ label: "Move to a different server", onSelect: () => setMoving(s) }] : []),
                         { label: "Remove", danger: true, onSelect: () => setRemoving(s) },
                       ]} />
                     )}
@@ -118,7 +130,7 @@ export function DatabaseServersPanel() {
         </table>
       </TableWrap>
       <p className="card-body muted small" style={{ paddingTop: 12 }}>
-        An app connects to the first name in the Host column, for example <code>shop-db.internal:{DATABASE_PORT.mariadb}</code>. The name is the name of the database server with <code>.internal</code>, and the port is the usual port of the engine. The name is the same for each website of the customer, on the same server and on a different server. A website on the same server can also use the name of the engine: there, a second database server of the same engine has the next port.
+        An app connects to the first name in the Host column, for example <code>shop-db.internal:{DATABASE_PORT.mariadb}</code>. The name is the name of the database server with <code>.internal</code>, and the port is the usual port of the engine. The name is the same for each website of the customer, on the same server and on a different server. A website on the same server can also use the name of a built-in engine: there, a second database server of the same engine has the next port.{state.databaseEngines.some((e) => e.pack) && " A database server of an engine from a pack has only its network name."}
       </p>
       {creating && <CreateDialog onClose={() => setCreating(false)} />}
       {editing && <ChangeDialog server={editing} onClose={() => setEditing(null)} />}
@@ -210,6 +222,8 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
   const [customerId, setCustomerId] = useState(() => customers.find((c) => c.id === state.session.contextId)?.id ?? customers[0]?.id ?? "");
   const customer = customers.find((c) => c.id === customerId);
   const [engine, setEngine] = useState<DatabaseEngine>("mariadb");
+  const info = engineInfo(state.databaseEngines, engine);
+  const [version, setVersion] = useState("");
   const [name, setName] = useState("");
   const [planId, setPlanId] = useState(customer?.planId ?? "");
   const [serverId, setServerId] = useState("");
@@ -260,10 +274,10 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
     >
       <form id="new-dbs" noValidate onSubmit={async (e) => {
         e.preventDefault();
-        const r = await create.run({ customerId, engine, name, planId: selectPlan ? planId : undefined, serverId: serverId || undefined, limits: admin && custom ? fromForm(limits) : undefined });
+        const r = await create.run({ customerId, engine, name, planId: selectPlan ? planId : undefined, serverId: serverId || undefined, limits: admin && custom ? fromForm(limits) : undefined, version: info.versions.length ? version || info.versions[0].version : undefined });
         if (r.ok) onClose();
       }}>
-        <FormError error={create.error} shown={["name", "planId", "serverId", "customerId", "limits.vcpus", "limits.memoryBytes", "limits.diskBytes"]} />
+        <FormError error={create.error} shown={["name", "version", "planId", "serverId", "customerId", "limits.vcpus", "limits.memoryBytes", "limits.diskBytes"]} />
         {customers.length > 1 && (
           <Field label="Customer" error={create.error?.fields.customerId}>
             {(p) => (
@@ -280,14 +294,25 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
         )}
         <fieldset className="radio-cards" style={{ marginTop: 14, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
           <legend>Engine</legend>
-          {ENGINES.map((e) => (
-            <label className="radio-card" key={e}>
-              <input type="radio" name="dbs-engine" checked={engine === e} onChange={() => setEngine(e)} />
-              <span><strong>{ENGINE_NAME[e]}</strong><span>{ENGINE_USE[e]}</span></span>
+          {state.databaseEngines.map((e) => (
+            <label className="radio-card" key={e.engine}>
+              <input type="radio" name="dbs-engine" checked={engine === e.engine} onChange={() => { setEngine(e.engine); setVersion(""); }} />
+              <span><strong>{e.name}</strong><span>{engineUse(e)}</span></span>
             </label>
           ))}
         </fieldset>
         {create.error?.fields.engine && <p className="text-danger small" role="alert" style={{ marginTop: 6 }}>{create.error.fields.engine}</p>}
+        {info.versions.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <Field label="Version" hint={<>The database server keeps this version. {info.name} comes from a pack: a database server of it cannot move to a different server, and has no Adminer and no access from anywhere.</>} error={create.error?.fields.version}>
+              {(p) => (
+                <select {...p} className="select" value={version || info.versions[0].version} onChange={(e) => setVersion(e.target.value)}>
+                  {info.versions.map((v) => <option key={v.version} value={v.version}>{info.name} {versionText(v)}</option>)}
+                </select>
+              )}
+            </Field>
+          </div>
+        )}
         <div style={{ marginTop: 14 }}>
           <Field label="Name" hint={<>Optional. With no name, the panel gives the name <code>{free}</code>. Use lower-case letters, digits and hyphens.</>} error={create.error?.fields.name}>
             {(p) => <input {...p} className="input" value={name} placeholder={free} onChange={(e) => setName(e.target.value)} autoCapitalize="none" spellCheck={false} />}
