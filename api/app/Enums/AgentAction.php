@@ -63,6 +63,7 @@ enum AgentAction: string
     case ImportDatabase = 'ImportDatabase';
     case ImportMail = 'ImportMail';
     case DeleteImport = 'DeleteImport';
+    case ScanWebsite = 'ScanWebsite';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -127,6 +128,7 @@ enum AgentAction: string
             self::ImportDatabase => ['Check archive', 'Load dump'],
             self::ImportMail => ['Check archive', 'Copy messages'],
             self::DeleteImport => ['Remove archive'],
+            self::ScanWebsite => ['Update malware signatures', 'Scan files'],
         };
     }
 

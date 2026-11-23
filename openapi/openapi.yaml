@@ -1575,6 +1575,69 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '503': { description: The panel cannot connect to the server of the website. }
 
+  /v1/websites/{websiteId}/malware-scans:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Websites]
+      summary: Read the malware scans of a website
+      description: >-
+        The schedule and the last 20 malware scans of the website, the newest first. The agent
+        scans the files of the website with ClamAV, as the Unix user of the website, with no
+        network. A scan changes no file. The schedule `weekly` scans the website one time in each
+        week, in an hour of the week that comes from the ID of the website.
+      responses:
+        '200':
+          description: The scans.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MalwareScans' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Websites]
+      summary: Scan a website for malware now
+      description: >-
+        Starts a scan (a job `ScanWebsite`). The agent updates the malware signatures of the
+        server, at most one time in each hour, then scans the files. The agent does the scans of a
+        server one at a time. Each scan uses approximately 1 GB of memory for the signatures, and
+        a scan stops after 1 hour. ClamAV scans the first 25 MB of each file. When the scan finds
+        malware, the users of the customer and the administrators get the email `malware.found`.
+        Remove a file that the scan found with `DELETE /v1/websites/{websiteId}/files`.
+      responses:
+        '202':
+          description: The scan started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scan: { $ref: '#/components/schemas/MalwareScan' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A scan of the website runs, the website does not run and is not stopped, or the customer of the website is suspended.' }
+        '429': { description: More than 10 scans in one minute. }
+    patch:
+      tags: [Websites]
+      summary: Change the malware scan schedule of a website
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schedule]
+              properties:
+                schedule: { type: string, enum: [weekly, 'off'] }
+      responses:
+        '200':
+          description: The scans, with the new schedule.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MalwareScans' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended, or the panel could not make the website. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/usage:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -7693,6 +7756,37 @@ components:
               id: { type: integer, example: 942100 }
               message: { type: string }
               data: { type: string, description: The part of the request that the rule found. }
+    MalwareScans:
+      type: object
+      properties:
+        schedule: { type: string, enum: [weekly, 'off'] }
+        nextScanAt: { type: [string, 'null'], format: date-time, description: The start of the next scheduled scan. Null with the schedule `off`. }
+        scans: { type: array, items: { $ref: '#/components/schemas/MalwareScan' } }
+    MalwareScan:
+      type: object
+      properties:
+        id: { type: string }
+        trigger: { type: string, enum: [manual, scheduled] }
+        state: { type: string, enum: [running, clean, infected, failed] }
+        scannedFiles: { type: integer }
+        infectedFiles: { type: integer }
+        errors: { type: integer, description: The number of files that ClamAV could not read. }
+        signatures: { type: integer, description: The number of signatures of the scan. }
+        engine: { type: [string, 'null'], description: The version of ClamAV. }
+        findings:
+          type: array
+          description: The infected files, at most 500.
+          items:
+            type: object
+            properties:
+              path: { type: string, description: 'The path in the directory of the website, as in the file manager.', example: /public/wp-content/uploads/cache.php }
+              signature: { type: string, example: Php.Webshell-1 }
+              removed: { type: boolean, description: True when the file manager removed the file after the scan. }
+        truncated: { type: boolean, description: True when the scan found more files than `findings` has. }
+        error: { type: [string, 'null'], description: The error of a failed scan. An administrator gets the full error of the agent. }
+        jobId: { type: [string, 'null'] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
     Job:
       type: object
       properties:
@@ -8819,7 +8913,7 @@ components:
             id: { type: string }
     NotificationEvent:
       type: string
-      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline, deploy.attention, uptime.down, uptime.up, password.reset]
+      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline, deploy.attention, uptime.down, uptime.up, password.reset, malware.found]
     NotificationPreference:
       type: object
       properties:

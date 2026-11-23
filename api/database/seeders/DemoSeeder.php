@@ -30,6 +30,7 @@ use App\Models\MailAlias;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
 use App\Models\MailServer;
+use App\Models\MalwareScan;
 use App\Models\MeshTunnel;
 use App\Models\Network;
 use App\Models\NetworkMember;
@@ -152,6 +153,7 @@ class DemoSeeder extends Seeder
         $this->cronJobsAndDeploys();
         $this->uptime();
         $this->commandLog();
+        $this->malwareScans();
         $this->mail();
         $this->jobsAndRollout();
         $this->imports();
@@ -1140,6 +1142,36 @@ class DemoSeeder extends Seeder
         ]);
         $snapshot->created_at = $at > now() ? now()->subHours(20) : $at;
         $snapshot->save();
+    }
+
+    /**
+     * The weekly malware scans of some websites. The scan of the shop found the EICAR test file
+     * of the demonstration (DemoSite::EICAR), and one website has no schedule.
+     */
+    private function malwareScans(): void
+    {
+        $clean = fn (int $files) => ['state' => MalwareScan::CLEAN, 'scanned_files' => $files, 'signatures' => 3627519, 'engine' => '1.4.4', 'findings' => []];
+        // website, hours ago, values
+        $rows = [
+            ['acme.example.com', 200, $clean(4812)],
+            ['acme.example.com', 32, $clean(4830)],
+            ['shop.acme.example.com', 180, $clean(9214)],
+            ['shop.acme.example.com', 14, [
+                'state' => MalwareScan::INFECTED, 'scanned_files' => 9240, 'infected_files' => 1, 'signatures' => 3627519, 'engine' => '1.4.4',
+                'findings' => [['path' => '/public/uploads/invoice-2026-11.php', 'signature' => 'Eicar-Test-Signature', 'removed' => false]],
+            ]],
+            ['northwind.example.com', 60, [
+                'state' => MalwareScan::FAILED, 'findings' => [],
+                'error' => 'The step "Update malware signatures" failed on the server. Your provider can see the details.',
+            ]],
+            ['northwind.example.com', 230, $clean(3120)],
+        ];
+        foreach ($rows as [$name, $hours, $values]) {
+            $scan = $this->websites[$name]->malwareScans()->create(['trigger' => MalwareScan::SCHEDULED, ...$values,
+                'finished_at' => now()->subHours($hours)->addMinutes(3)]);
+            $scan->forceFill(['created_at' => now()->subHours($hours), 'updated_at' => now()->subHours($hours)->addMinutes(3)])->save();
+        }
+        $this->websites['cornerbakery.example.org']->update(['malware_scan_schedule' => 'off']);
     }
 
     /** The cron jobs of some websites, and one website that deploys from Git. */
