@@ -348,8 +348,10 @@ A new key or a new value needs a new contract, for example `cf-pack/2`. Refer to
 
 ## Continuous integration
 
-The workflow [`ci.yml`](../.github/workflows/ci.yml) runs for each pull request. It has these
-jobs:
+The workflow [`ci.yml`](../.github/workflows/ci.yml) runs for each pull request. On a pull
+request, a job runs only when the files that it tests change. For example, a change in `web/`
+runs only the job **web**. A change to the workflow, and a push to `main`, run all jobs. The
+workflow has these jobs:
 
 - **web**: type check, tests and build.
 - **api**: tests and Pint on PHP 8.4. The tests run with SQLite and with
