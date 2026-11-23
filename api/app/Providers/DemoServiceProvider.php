@@ -7,6 +7,7 @@ use App\Demo\DemoAgentClient;
 use App\Demo\DemoDomainPolicy;
 use App\Demo\DemoLookup;
 use App\Demo\DemoMailDns;
+use App\Demo\DemoUptimeProbe;
 use App\Models\MeshTunnel;
 use App\Models\Server;
 use App\Services\AgentClient;
@@ -18,6 +19,7 @@ use App\Services\Notifications\DemoMailTransport;
 use App\Services\Notifications\MailTransport;
 use App\Services\Notifications\SmtpMailTransport;
 use App\Services\Plugins\Outbound;
+use App\Services\Uptime\Probe;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -51,6 +53,8 @@ class DemoServiceProvider extends ServiceProvider
         // The demonstration mode sends no email. It writes each email to the log.
         $this->app->singleton(MailTransport::class, fn () => self::enabled() ? new DemoMailTransport : new SmtpMailTransport);
         $this->app->bind(MailDns::class, fn () => self::enabled() ? new DemoMailDns : new MailDns);
+        // The demonstration mode sends no request for the uptime checks.
+        $this->app->bind(Probe::class, fn ($app) => self::enabled() ? new DemoUptimeProbe : new Probe($app->make(Outbound::class)));
 
         // The sample plugin "Uptime monitor" is on the address of the demo API (127.0.0.1).
         $this->app->bind(Outbound::class, fn () => self::enabled() ? new class extends Outbound
