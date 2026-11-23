@@ -210,6 +210,11 @@ class Website extends Model
         return $this->hasMany(CronJob::class)->oldest()->orderBy('id');
     }
 
+    public function uptimeChecks(): HasMany
+    {
+        return $this->hasMany(UptimeCheck::class)->oldest()->orderBy('id');
+    }
+
     public function gitSource(): HasOne
     {
         return $this->hasOne(GitSource::class);
