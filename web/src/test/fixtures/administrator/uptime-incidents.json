@@ -1,0 +1,80 @@
+{
+    "request": "GET /uptime-incidents",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80n49e1s0000000005",
+                "startedAt": "2026-11-14T09:35:00+00:00",
+                "resolvedAt": null,
+                "durationSeconds": 1500,
+                "error": "The answer does not have the text \"Order now\".",
+                "endedByPause": false,
+                "checkId": "01m7cqzs80ghhxm20000000005",
+                "websiteId": "01m7cqzs80jjfnwd0000000004",
+                "websiteName": "storefront.acme.example.com",
+                "url": "https://storefront.acme.example.com/"
+            },
+            {
+                "id": "01m7cqzs80n49e1s0000000003",
+                "startedAt": "2026-11-14T02:48:00+00:00",
+                "resolvedAt": "2026-11-14T02:52:00+00:00",
+                "durationSeconds": 240,
+                "error": "HTTP status 502.",
+                "endedByPause": false,
+                "checkId": "01m7cqzs80ghhxm20000000002",
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "websiteName": "shop.acme.example.com",
+                "url": "https://shop.acme.example.com/"
+            },
+            {
+                "id": "01m7cqzs80n49e1s0000000004",
+                "startedAt": "2026-11-13T07:36:00+00:00",
+                "resolvedAt": "2026-11-13T07:39:00+00:00",
+                "durationSeconds": 180,
+                "error": "The server closed the connection with no answer.",
+                "endedByPause": false,
+                "checkId": "01m7cqzs80ghhxm20000000004",
+                "websiteId": "01m7cqzs80jjfnwd0000000003",
+                "websiteName": "api.acme.example.com",
+                "url": "https://api.acme.example.com/up"
+            },
+            {
+                "id": "01m7cqzs80n49e1s0000000006",
+                "startedAt": "2026-11-12T05:12:00+00:00",
+                "resolvedAt": "2026-11-12T05:53:00+00:00",
+                "durationSeconds": 2460,
+                "error": "The TLS certificate is not valid: SSL certificate problem: certificate has expired",
+                "endedByPause": false,
+                "checkId": "01m7cqzs80ghhxm20000000009",
+                "websiteId": "01m7cqzs80jjfnwd0000000007",
+                "websiteName": "cornerbakery.example.org",
+                "url": "https://cornerbakery.example.org/"
+            },
+            {
+                "id": "01m7cqzs80n49e1s0000000001",
+                "startedAt": "2026-11-11T00:24:00+00:00",
+                "resolvedAt": "2026-11-11T00:38:00+00:00",
+                "durationSeconds": 840,
+                "error": "HTTP status 503.",
+                "endedByPause": false,
+                "checkId": "01m7cqzs80ghhxm20000000001",
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "websiteName": "acme.example.com",
+                "url": "https://acme.example.com/"
+            },
+            {
+                "id": "01m7cqzs80n49e1s0000000002",
+                "startedAt": "2026-11-02T05:12:00+00:00",
+                "resolvedAt": "2026-11-02T05:18:00+00:00",
+                "durationSeconds": 360,
+                "error": "No answer in 10 seconds.",
+                "endedByPause": false,
+                "checkId": "01m7cqzs80ghhxm20000000001",
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "websiteName": "acme.example.com",
+                "url": "https://acme.example.com/"
+            }
+        ]
+    }
+}

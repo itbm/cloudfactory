@@ -1,0 +1,126 @@
+{
+    "request": "GET /jobs?perPage=50",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs802ghns6000000000b",
+                "title": "Create website",
+                "ref": "events.harbourbooks.example.net",
+                "action": "CreateWebsite",
+                "state": "failed",
+                "steps": [
+                    "Create Unix user",
+                    "Copy databases",
+                    "Pull and check image signature",
+                    "Start container in gVisor",
+                    "Configure edge proxy",
+                    "Get TLS certificate"
+                ],
+                "step": 3,
+                "error": "The step \"Start container in gVisor\" failed on the server. Your provider can see the details.",
+                "websiteId": "01m7cqzs80jjfnwd0000000009",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000003",
+                "createdAt": "2026-11-14T09:35:00+00:00",
+                "finishedAt": "2026-11-14T09:36:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000e",
+                "title": "Add TXT record to harbourbooks.example.net",
+                "ref": "harbourbooks.example.net",
+                "action": "SetDnsZones",
+                "state": "succeeded",
+                "steps": [
+                    "Start DNS server",
+                    "Write zones",
+                    "Load zones"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": "01m7cqzs800neg3e0000000005",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T09:27:00+00:00",
+                "finishedAt": "2026-11-14T09:28:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000f",
+                "title": "Add TXT record to harbourbooks.example.net",
+                "ref": "harbourbooks.example.net",
+                "action": "SetDnsZones",
+                "state": "failed",
+                "steps": [
+                    "Start DNS server",
+                    "Write zones",
+                    "Load zones"
+                ],
+                "step": 2,
+                "error": "The step \"Load zones\" failed on the server. Your provider can see the details.",
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": "01m7cqzs800neg3e0000000005",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-14T09:27:00+00:00",
+                "finishedAt": "2026-11-14T09:28:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000008",
+                "title": "Add domain cornerbakery-orders.example.org",
+                "ref": "cornerbakery.example.org",
+                "action": "AddDomain",
+                "state": "succeeded",
+                "steps": [
+                    "Add edge proxy route",
+                    "Check DNS",
+                    "Get TLS certificate"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000007",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-14T08:50:00+00:00",
+                "finishedAt": "2026-11-14T08:51:00+00:00"
+            }
+        ],
+        "links": {
+            "first": "http://localhost/api/v1/jobs?page=1",
+            "last": "http://localhost/api/v1/jobs?page=1",
+            "prev": null,
+            "next": null
+        },
+        "meta": {
+            "current_page": 1,
+            "from": 1,
+            "last_page": 1,
+            "links": [
+                {
+                    "url": null,
+                    "label": "&laquo; Previous",
+                    "page": null,
+                    "active": false
+                },
+                {
+                    "url": "http://localhost/api/v1/jobs?page=1",
+                    "label": "1",
+                    "page": 1,
+                    "active": true
+                },
+                {
+                    "url": null,
+                    "label": "Next &raquo;",
+                    "page": null,
+                    "active": false
+                }
+            ],
+            "path": "http://localhost/api/v1/jobs",
+            "per_page": 50,
+            "to": 4,
+            "total": 4
+        }
+    }
+}

@@ -1,0 +1,56 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000003/previews",
+    "status": 200,
+    "body": {
+        "settings": {
+            "enabled": true,
+            "domain": "preview.acme.example.com",
+            "limit": 1,
+            "copyEnvironment": false
+        },
+        "suggestedDomain": "preview.api.acme.example.com",
+        "maxLimit": 10,
+        "previews": [
+            {
+                "number": 42,
+                "title": "Add the export of invoices as CSV",
+                "branch": "feature/invoice-csv",
+                "url": "https://github.com/acme-example/api/pull/42",
+                "websiteId": "01m7cqzs80jjfnwd000000000f",
+                "name": "pr-42.preview.acme.example.com",
+                "state": "live",
+                "release": {
+                    "id": "01m7cqzs80w9ds6h0000000008",
+                    "branch": "feature/invoice-csv",
+                    "commit": "f7e9eb8ffe21af8d5213ad97d50b5e1c945c2246",
+                    "message": "Export the invoices as CSV",
+                    "state": "ready",
+                    "live": true,
+                    "trigger": "webhook",
+                    "migration": false,
+                    "healthError": null,
+                    "durationSeconds": 58,
+                    "error": null,
+                    "jobId": null,
+                    "createdAt": "2026-11-14T08:00:00+00:00"
+                },
+                "error": null,
+                "createdAt": "2026-11-14T05:00:00+00:00",
+                "updatedAt": "2026-11-14T08:00:00+00:00"
+            },
+            {
+                "number": 47,
+                "title": "Bump laravel/framework from 13.2.0 to 13.3.0",
+                "branch": "dependabot/composer/laravel/framework-13.3.0",
+                "url": "https://github.com/acme-example/api/pull/47",
+                "websiteId": null,
+                "name": null,
+                "state": "failed",
+                "release": null,
+                "error": "The limit of the previews of this website is 1. Close a pull request, or change the limit.",
+                "createdAt": "2026-11-14T09:00:00+00:00",
+                "updatedAt": "2026-11-14T09:00:00+00:00"
+            }
+        ]
+    }
+}

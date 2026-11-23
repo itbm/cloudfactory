@@ -1,0 +1,47 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000002/commands",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs805jjpn10000000007",
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "source": "run",
+                "sessionId": null,
+                "command": "wp cache flush",
+                "state": "done",
+                "exitCode": 0,
+                "timedOut": false,
+                "timeoutSeconds": 600,
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "jobId": null,
+                "createdAt": "2026-11-14T08:32:00+00:00",
+                "startedAt": "2026-11-14T08:32:00+00:00",
+                "finishedAt": "2026-11-14T08:32:01+00:00"
+            },
+            {
+                "id": "01m7cqzs805jjpn10000000006",
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "source": "run",
+                "sessionId": null,
+                "command": "wp plugin list --update=available",
+                "state": "done",
+                "exitCode": 0,
+                "timedOut": false,
+                "timeoutSeconds": 600,
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "jobId": null,
+                "createdAt": "2026-11-14T08:30:00+00:00",
+                "startedAt": "2026-11-14T08:30:00+00:00",
+                "finishedAt": "2026-11-14T08:30:02+00:00"
+            }
+        ],
+        "meta": {
+            "currentPage": 1,
+            "lastPage": 1,
+            "total": 2
+        }
+    }
+}

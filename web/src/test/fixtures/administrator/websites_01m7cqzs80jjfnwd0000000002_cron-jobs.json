@@ -1,0 +1,38 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000002/cron-jobs",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs808gd1y70000000002",
+                "schedule": "*/5 * * * *",
+                "command": "wp cron event run --due-now",
+                "enabled": true,
+                "lastRunAt": "2026-11-14T09:56:00+00:00",
+                "lastResult": "ok",
+                "lastExitCode": 0,
+                "lastOutput": "Success: Executed a total of 3 cron events."
+            },
+            {
+                "id": "01m7cqzs808gd1y70000000003",
+                "schedule": "15 2 * * *",
+                "command": "php bin/export-orders.php --yesterday",
+                "enabled": true,
+                "lastRunAt": "2026-11-14T00:00:00+00:00",
+                "lastResult": "failed",
+                "lastExitCode": 1,
+                "lastOutput": "PHP Fatal error:  Uncaught RuntimeException: The export directory is not writable in /app/bin/export-orders.php:18\nStack trace:\n#0 {main}\n  thrown in /app/bin/export-orders.php on line 18"
+            },
+            {
+                "id": "01m7cqzs808gd1y70000000004",
+                "schedule": "0 4 * * 0",
+                "command": "wp transient delete --expired",
+                "enabled": false,
+                "lastRunAt": null,
+                "lastResult": null,
+                "lastExitCode": null,
+                "lastOutput": null
+            }
+        ]
+    }
+}

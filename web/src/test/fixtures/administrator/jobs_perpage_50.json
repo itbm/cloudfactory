@@ -1,0 +1,267 @@
+{
+    "request": "GET /jobs?perPage=50",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs802ghns6000000000b",
+                "title": "Create website",
+                "ref": "events.harbourbooks.example.net",
+                "action": "CreateWebsite",
+                "state": "failed",
+                "steps": [
+                    "Create Unix user",
+                    "Copy databases",
+                    "Pull and check image signature",
+                    "Start container in gVisor",
+                    "Configure edge proxy",
+                    "Get TLS certificate"
+                ],
+                "step": 3,
+                "error": "systemctl start cf-site-eventsha_08d5.service: exit status 1: the container did not answer the health check on port 8080 in 90 seconds",
+                "websiteId": "01m7cqzs80jjfnwd0000000009",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000003",
+                "createdAt": "2026-11-14T09:35:00+00:00",
+                "finishedAt": "2026-11-14T09:36:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000e",
+                "title": "Add TXT record to harbourbooks.example.net",
+                "ref": "harbourbooks.example.net",
+                "action": "SetDnsZones",
+                "state": "succeeded",
+                "steps": [
+                    "Start DNS server",
+                    "Write zones",
+                    "Load zones"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": "01m7cqzs800neg3e0000000005",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T09:27:00+00:00",
+                "finishedAt": "2026-11-14T09:28:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000f",
+                "title": "Add TXT record to harbourbooks.example.net",
+                "ref": "harbourbooks.example.net",
+                "action": "SetDnsZones",
+                "state": "failed",
+                "steps": [
+                    "Start DNS server",
+                    "Write zones",
+                    "Load zones"
+                ],
+                "step": 2,
+                "error": "knotc -b zone-reload harbourbooks.example.net: exit status 1: error: [harbourbooks.example.net.] (operation timed out)",
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": "01m7cqzs800neg3e0000000005",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-14T09:27:00+00:00",
+                "finishedAt": "2026-11-14T09:28:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000a",
+                "title": "Create database",
+                "ref": "shop.acme.example.com",
+                "action": "CreateDatabase",
+                "state": "succeeded",
+                "steps": [
+                    "Create database",
+                    "Create user",
+                    "Allow the website container only"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T09:15:00+00:00",
+                "finishedAt": "2026-11-14T09:16:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000009",
+                "title": "Create database",
+                "ref": "shop.acme.example.com",
+                "action": "CreateDatabase",
+                "state": "failed",
+                "steps": [
+                    "Create database",
+                    "Create user",
+                    "Allow the website container only"
+                ],
+                "step": 0,
+                "error": "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/994 podman exec cf-valkey valkey-cli -s /run/valkey/valkey.sock PING: exit status 1: Could not connect to Valkey at /run/valkey/valkey.sock: No such file or directory",
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T09:10:00+00:00",
+                "finishedAt": "2026-11-14T09:11:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000008",
+                "title": "Add domain cornerbakery-orders.example.org",
+                "ref": "cornerbakery.example.org",
+                "action": "AddDomain",
+                "state": "succeeded",
+                "steps": [
+                    "Add edge proxy route",
+                    "Check DNS",
+                    "Get TLS certificate"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000007",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-14T08:50:00+00:00",
+                "finishedAt": "2026-11-14T08:51:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000007",
+                "title": "Create database",
+                "ref": "api.acme.example.com",
+                "action": "CreateDatabase",
+                "state": "succeeded",
+                "steps": [
+                    "Create database",
+                    "Create user",
+                    "Allow the website container only"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000003",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T08:25:00+00:00",
+                "finishedAt": "2026-11-14T08:26:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000c",
+                "title": "Add TXT record to acme.example.com",
+                "ref": "acme.example.com",
+                "action": "SetDnsZones",
+                "state": "succeeded",
+                "steps": [
+                    "Start DNS server",
+                    "Write zones",
+                    "Load zones"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": "01m7cqzs800neg3e0000000001",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T07:40:00+00:00",
+                "finishedAt": "2026-11-14T07:41:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns6000000000d",
+                "title": "Add TXT record to acme.example.com",
+                "ref": "acme.example.com",
+                "action": "SetDnsZones",
+                "state": "succeeded",
+                "steps": [
+                    "Start DNS server",
+                    "Write zones",
+                    "Load zones"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": "01m7cqzs800neg3e0000000001",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-14T07:40:00+00:00",
+                "finishedAt": "2026-11-14T07:41:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000005",
+                "title": "Back up",
+                "ref": "acme.example.com",
+                "action": "Backup",
+                "state": "succeeded",
+                "steps": [
+                    "Snapshot files",
+                    "Dump databases",
+                    "Upload to object storage",
+                    "Apply retention"
+                ],
+                "step": 4,
+                "error": null,
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "createdAt": "2026-11-14T05:00:00+00:00",
+                "finishedAt": "2026-11-14T05:01:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802ghns60000000006",
+                "title": "Install updates on web-2",
+                "ref": null,
+                "action": "InstallHostUpdates",
+                "state": "succeeded",
+                "steps": [
+                    "Download packages",
+                    "Install packages",
+                    "Restart changed services only"
+                ],
+                "step": 3,
+                "error": null,
+                "websiteId": null,
+                "databaseServerId": null,
+                "dnsZoneId": null,
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "createdAt": "2026-11-02T10:00:00+00:00",
+                "finishedAt": "2026-11-02T10:01:00+00:00"
+            }
+        ],
+        "links": {
+            "first": "http://localhost/api/v1/jobs?page=1",
+            "last": "http://localhost/api/v1/jobs?page=1",
+            "prev": null,
+            "next": null
+        },
+        "meta": {
+            "current_page": 1,
+            "from": 1,
+            "last_page": 1,
+            "links": [
+                {
+                    "url": null,
+                    "label": "&laquo; Previous",
+                    "page": null,
+                    "active": false
+                },
+                {
+                    "url": "http://localhost/api/v1/jobs?page=1",
+                    "label": "1",
+                    "page": 1,
+                    "active": true
+                },
+                {
+                    "url": null,
+                    "label": "Next &raquo;",
+                    "page": null,
+                    "active": false
+                }
+            ],
+            "path": "http://localhost/api/v1/jobs",
+            "per_page": 50,
+            "to": 11,
+            "total": 11
+        }
+    }
+}

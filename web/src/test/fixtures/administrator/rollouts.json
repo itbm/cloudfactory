@@ -1,0 +1,51 @@
+{
+    "request": "GET /rollouts",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80k7vwbz0000000001",
+                "imageId": "01m7cqzs80g1zfka0000000003",
+                "title": "Apache + PHP-FPM · PHP 8.4 0.1.9",
+                "fromTag": "0.1.8",
+                "toTag": "0.1.9",
+                "severity": "security",
+                "state": "done",
+                "stages": [
+                    {
+                        "name": "Canary",
+                        "websites": 1,
+                        "state": "done"
+                    },
+                    {
+                        "name": "10%",
+                        "websites": 1,
+                        "state": "done"
+                    },
+                    {
+                        "name": "50%",
+                        "websites": 1,
+                        "state": "done"
+                    },
+                    {
+                        "name": "Everyone",
+                        "websites": 2,
+                        "state": "done"
+                    }
+                ],
+                "websites": 2,
+                "healthy": 1,
+                "rolledBack": 1,
+                "running": 0,
+                "rollbacks": [
+                    {
+                        "website": "old.acme.example.com",
+                        "reason": "The health check failed: the website gave status 500."
+                    }
+                ],
+                "startedAt": "2026-11-13T04:00:00+00:00",
+                "finishedAt": "2026-11-13T05:00:00+00:00"
+            }
+        ]
+    }
+}

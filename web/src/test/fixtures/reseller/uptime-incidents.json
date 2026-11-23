@@ -1,0 +1,20 @@
+{
+    "request": "GET /uptime-incidents",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80n49e1s0000000006",
+                "startedAt": "2026-11-12T05:12:00+00:00",
+                "resolvedAt": "2026-11-12T05:53:00+00:00",
+                "durationSeconds": 2460,
+                "error": "The TLS certificate is not valid: SSL certificate problem: certificate has expired",
+                "endedByPause": false,
+                "checkId": "01m7cqzs80ghhxm20000000009",
+                "websiteId": "01m7cqzs80jjfnwd0000000007",
+                "websiteName": "cornerbakery.example.org",
+                "url": "https://cornerbakery.example.org/"
+            }
+        ]
+    }
+}

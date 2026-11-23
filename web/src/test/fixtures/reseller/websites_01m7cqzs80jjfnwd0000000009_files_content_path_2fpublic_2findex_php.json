@@ -1,0 +1,12 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000009/files/content?path=%2Fpublic%2Findex.php",
+    "status": 422,
+    "body": {
+        "message": "The panel could not make this website. Use \"Try again\" on the website first, or delete the website.",
+        "errors": {
+            "website": [
+                "The panel could not make this website. Use \"Try again\" on the website first, or delete the website."
+            ]
+        }
+    }
+}

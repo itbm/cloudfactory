@@ -1,0 +1,63 @@
+{
+    "request": "GET /imports",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80w9bv8w0000000001",
+                "status": "ready",
+                "source": "upload",
+                "fileName": "cpmove-bakery.tar.gz",
+                "sizeBytes": 1960837120,
+                "receivedBytes": 1960837120,
+                "panel": "cpanel",
+                "panelName": "cPanel",
+                "account": "bakery",
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "customerName": "Corner Bakery",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "serverName": "web-2",
+                "error": null,
+                "counts": {
+                    "websites": 3,
+                    "databases": 2,
+                    "mailboxes": 4,
+                    "dnsZones": 2
+                },
+                "progress": {
+                    "total": 0,
+                    "done": 0,
+                    "failed": 0
+                },
+                "createdAt": "2026-11-14T09:42:00+00:00",
+                "startedAt": null,
+                "finishedAt": null
+            },
+            {
+                "id": "01m7cqzs80w9bv8w0000000002",
+                "status": "done",
+                "source": "url",
+                "fileName": "user.admin.harbour.tar.zst",
+                "sizeBytes": 4519362560,
+                "receivedBytes": 0,
+                "panel": "directadmin",
+                "panelName": "DirectAdmin",
+                "account": "harbour",
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "customerName": "Harbour Books",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "serverName": "web-2",
+                "error": null,
+                "counts": null,
+                "progress": {
+                    "total": 8,
+                    "done": 7,
+                    "failed": 1
+                },
+                "createdAt": "2026-10-04T10:00:00+00:00",
+                "startedAt": "2026-10-04T10:09:00+00:00",
+                "finishedAt": "2026-10-04T10:31:00+00:00"
+            }
+        ]
+    }
+}
