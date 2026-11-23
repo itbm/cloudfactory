@@ -499,6 +499,12 @@ export async function resetPassword(email: string, resetToken: string, password:
   await request<void>("POST", "/auth/password-reset/confirm", { email, token: resetToken, password, password_confirmation: confirmation });
 }
 
+/** Waits for each promise of an object, and gives an object with the same names and the values. */
+async function allNamed<T extends object>(promises: T): Promise<{ [K in keyof T]: Awaited<T[K]> }> {
+  const values = await Promise.all(Object.values(promises));
+  return Object.fromEntries(Object.keys(promises).map((key, i) => [key, values[i]])) as { [K in keyof T]: Awaited<T[K]> };
+}
+
 /** Loads the full state for the signed-in user from the API. */
 export async function load(previous: State): Promise<State> {
   const me = await request<ApiMe>("GET", "/me");
@@ -516,50 +522,83 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, databaseEngines, dns, dnsAccounts, dnsSecondaries, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates, exports] = await Promise.all([
-    all<ApiWebsite>("/websites"),
-    request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
-    optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
-    optional(request<{ data: Plan[] }>("GET", "/plans").then((r) => r.data), []),
-    optional(request<{ data: ApiToken_[] }>("GET", "/tokens").then((r) => r.data), []),
-    optional(request<BackupPolicy>("GET", "/backup-policy"), previous.backupPolicy),
-    admin ? request<{ data: ApiServer[] }>("GET", "/servers").then((r) => r.data) : Promise.resolve([] as ApiServer[]),
-    admin ? request<{ data: ApiImage[] }>("GET", "/images").then((r) => r.data) : Promise.resolve([] as ApiImage[]),
-    admin ? request<{ data: ApiRollout[] }>("GET", "/rollouts").then((r) => r.data) : Promise.resolve([] as ApiRollout[]),
-    optional(request<{ data: ApiAudit[] }>("GET", "/audit?perPage=100").then((r) => r.data), []),
-    optional(request<{ data: ApiUser[] }>("GET", "/users").then((r) => r.data), []),
-    admin ? optional(request<ApiPanelCertificate>("GET", "/panel-certificate"), null) : Promise.resolve(null),
-    admin ? optional(request<SetupChecklist>("GET", "/setup"), undefined) : Promise.resolve(undefined),
-    admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
-    // The database servers of the customers that the user can see.
-    optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
-    // The engines of the database packs. A panel API of an earlier release has the built-in engines only.
-    optional(request<{ data: DatabaseEngineInfo[] }>("GET", "/database-engines").then((r) => r.data), previous.databaseEngines),
-    // The DNS zones, and the name servers that a customer gives to the registrar of a domain.
-    optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
-    // The accounts at external DNS providers, and the providers of the plugins.
-    optional(request<{ data: ApiDnsAccount[]; providers: DnsProvider[] }>("GET", "/dns-accounts"), { data: [], providers: [] }),
-    // The secondary DNS servers of the panel, which copy all zones.
-    admin ? optional(request<ApiDnsSecondaries>("GET", "/dns-secondaries").then(toDnsSecondaries), undefined) : Promise.resolve(undefined),
-    // A panel API of an earlier release has no mesh.
-    admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
-    // A panel API of an earlier release has no private networks.
-    optional(request<{ data: ApiNetwork[] }>("GET", "/networks").then((r) => r.data.map(toNetwork)), []),
+  // One request on each line, in alphabetical order of the name, so that two pull requests that
+  // add requests do not conflict.
+  const {
+    account,
+    alerts,
+    audit,
+    certificate,
+    certificates,
+    customers,
+    databaseEngines,
+    databaseServers,
+    dns,
+    dnsAccounts,
+    dnsSecondaries,
+    exports,
+    images,
+    jobs,
+    mailAliases,
+    mailClusters,
+    mailDomains,
+    mailboxes,
+    mesh,
+    networks,
+    plans,
+    pluginActions,
+    pluginPages,
+    policy,
+    rollouts,
+    servers,
+    setup,
+    tokens,
+    users,
+    websites,
+  } = await allNamed({
+    account: admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
     // A panel API of an earlier release has no usage alerts.
-    optional(request<{ data: UsageAlert[]; settings: UsageAlertSettings }>("GET", "/usage-alerts"), { data: [], settings: previous.alertSettings }),
-    // Email. A panel of an earlier release, or a token with no mail scope, gives no lists.
-    optional(request<{ data: ApiMailDomain[] }>("GET", "/mail/domains").then((r) => r.data), []),
-    optional(request<{ data: ApiMailbox[] }>("GET", "/mail/mailboxes").then((r) => r.data), []),
-    optional(request<{ data: MailAlias[] }>("GET", "/mail/aliases").then((r) => r.data), []),
-    admin ? optional(request<{ data: MailCluster[] }>("GET", "/mail-clusters").then((r) => r.data), []) : Promise.resolve([] as MailCluster[]),
-    // The pages of the plugins for the menu. A panel API of an earlier release has no plugins.
-    optional(request<{ data: PluginPage[] }>("GET", "/plugin-pages").then((r) => r.data), []),
-    optional(request<{ data: PluginAction[] }>("GET", "/plugin-actions").then((r) => r.data), []),
+    alerts: optional(request<{ data: UsageAlert[]; settings: UsageAlertSettings }>("GET", "/usage-alerts"), { data: [], settings: previous.alertSettings }),
+    audit: optional(request<{ data: ApiAudit[] }>("GET", "/audit?perPage=100").then((r) => r.data), []),
+    certificate: admin ? optional(request<ApiPanelCertificate>("GET", "/panel-certificate"), null) : Promise.resolve(null),
     // The certificates of the customers. A token with no websites scope gives no list.
-    optional(request<{ data: ApiCertificate[] }>("GET", "/certificates").then((r) => r.data), []),
+    certificates: optional(request<{ data: ApiCertificate[] }>("GET", "/certificates").then((r) => r.data), []),
+    customers: optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
+    // The engines of the database packs. A panel API of an earlier release has the built-in engines only.
+    databaseEngines: optional(request<{ data: DatabaseEngineInfo[] }>("GET", "/database-engines").then((r) => r.data), previous.databaseEngines),
+    // The database servers of the customers that the user can see.
+    databaseServers: optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
+    // The DNS zones, and the name servers that a customer gives to the registrar of a domain.
+    dns: optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
+    // The accounts at external DNS providers, and the providers of the plugins.
+    dnsAccounts: optional(request<{ data: ApiDnsAccount[]; providers: DnsProvider[] }>("GET", "/dns-accounts"), { data: [], providers: [] }),
+    // The secondary DNS servers of the panel, which copy all zones.
+    dnsSecondaries: admin ? optional(request<ApiDnsSecondaries>("GET", "/dns-secondaries").then(toDnsSecondaries), undefined) : Promise.resolve(undefined),
     // The account exports. A token with no exports scope gets none.
-    optional(request<{ data: AccountExport[] }>("GET", "/exports").then((r) => r.data), []),
-  ]);
+    exports: optional(request<{ data: AccountExport[] }>("GET", "/exports").then((r) => r.data), []),
+    images: admin ? request<{ data: ApiImage[] }>("GET", "/images").then((r) => r.data) : Promise.resolve([] as ApiImage[]),
+    jobs: request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
+    mailAliases: optional(request<{ data: MailAlias[] }>("GET", "/mail/aliases").then((r) => r.data), []),
+    mailClusters: admin ? optional(request<{ data: MailCluster[] }>("GET", "/mail-clusters").then((r) => r.data), []) : Promise.resolve([] as MailCluster[]),
+    // Email. A panel of an earlier release, or a token with no mail scope, gives no lists.
+    mailDomains: optional(request<{ data: ApiMailDomain[] }>("GET", "/mail/domains").then((r) => r.data), []),
+    mailboxes: optional(request<{ data: ApiMailbox[] }>("GET", "/mail/mailboxes").then((r) => r.data), []),
+    // A panel API of an earlier release has no mesh.
+    mesh: admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
+    // A panel API of an earlier release has no private networks.
+    networks: optional(request<{ data: ApiNetwork[] }>("GET", "/networks").then((r) => r.data.map(toNetwork)), []),
+    plans: optional(request<{ data: Plan[] }>("GET", "/plans").then((r) => r.data), []),
+    pluginActions: optional(request<{ data: PluginAction[] }>("GET", "/plugin-actions").then((r) => r.data), []),
+    // The pages of the plugins for the menu. A panel API of an earlier release has no plugins.
+    pluginPages: optional(request<{ data: PluginPage[] }>("GET", "/plugin-pages").then((r) => r.data), []),
+    policy: optional(request<BackupPolicy>("GET", "/backup-policy"), previous.backupPolicy),
+    rollouts: admin ? request<{ data: ApiRollout[] }>("GET", "/rollouts").then((r) => r.data) : Promise.resolve([] as ApiRollout[]),
+    servers: admin ? request<{ data: ApiServer[] }>("GET", "/servers").then((r) => r.data) : Promise.resolve([] as ApiServer[]),
+    setup: admin ? optional(request<SetupChecklist>("GET", "/setup"), undefined) : Promise.resolve(undefined),
+    tokens: optional(request<{ data: ApiToken_[] }>("GET", "/tokens").then((r) => r.data), []),
+    users: optional(request<{ data: ApiUser[] }>("GET", "/users").then((r) => r.data), []),
+    websites: all<ApiWebsite>("/websites"),
+  });
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
   await Promise.all(dns.data.filter((z) => shownZones.has(z.id)).map(async (z) => {

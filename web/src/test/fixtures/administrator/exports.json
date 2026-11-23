@@ -14,8 +14,8 @@
                     "complete": 2,
                     "total": 2
                 },
-                "receivedBytes": 904,
-                "sizeBytes": 16896,
+                "receivedBytes": 979,
+                "sizeBytes": 17408,
                 "warnings": [
                     {
                         "item": "websites/events.harbourbooks.example.net",
@@ -43,8 +43,8 @@
                     "complete": 13,
                     "total": 13
                 },
-                "receivedBytes": 7134,
-                "sizeBytes": 66048,
+                "receivedBytes": 7808,
+                "sizeBytes": 66560,
                 "warnings": [
                     {
                         "item": "websites/api.acme.example.com/databases/apiacme_97c4_queue",
