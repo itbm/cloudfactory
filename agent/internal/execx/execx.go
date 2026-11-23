@@ -247,7 +247,9 @@ type Fake struct {
 	Calls  []string
 	Inputs []string
 	// Envs has the extra environment of each command.
-	Envs  [][]string
+	Envs [][]string
+	// Sizes has the sizes of each terminal (Terminal): the first size and each change.
+	Sizes []TerminalSize
 	Rules []Rule
 	// MakeDirs makes the fake do the command "install -d": it makes each directory, with no
 	// change of the owner. A test sets it when the code that it examines writes a file in a

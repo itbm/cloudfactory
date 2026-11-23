@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Agent\AgentController;
 use App\Http\Controllers\Agent\JoinController;
+use App\Http\Controllers\Agent\TerminalController;
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
@@ -48,6 +49,7 @@ use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
 use App\Http\Controllers\Api\SsoController;
+use App\Http\Controllers\Api\TerminalSessionController;
 use App\Http\Controllers\Api\TrustedKeyController;
 use App\Http\Controllers\Api\UptimeController;
 use App\Http\Controllers\Api\UsageController;
@@ -182,6 +184,11 @@ Route::prefix('v1')->group(function () {
             Route::get('websites/{websiteId}/commands', [WebsiteCommandController::class, 'index']);
             Route::post('websites/{websiteId}/commands', [WebsiteCommandController::class, 'store'])->middleware('throttle:30,1,post-websites-x-commands');
             Route::get('websites/{websiteId}/commands/{commandId}', [WebsiteCommandController::class, 'show']);
+            // The web terminal. The browser then connects to the terminal relay with the ticket.
+            Route::get('websites/{websiteId}/terminal-sessions', [TerminalSessionController::class, 'index']);
+            Route::post('websites/{websiteId}/terminal-sessions', [TerminalSessionController::class, 'store'])->middleware('throttle:30,1,post-websites-x-terminal-sessions');
+            Route::get('websites/{websiteId}/terminal-sessions/{sessionId}', [TerminalSessionController::class, 'show']);
+            Route::get('websites/{websiteId}/terminal-sessions/{sessionId}/recording', [TerminalSessionController::class, 'recording']);
 
             // Deploys from a Git repository.
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);
@@ -440,6 +447,8 @@ Route::prefix('agent/v1')->group(function () {
     Route::middleware('agent')->group(function () {
         Route::post('jobs/{id}/events', [AgentController::class, 'jobEvent']);
         Route::post('report', [AgentController::class, 'report']);
+        Route::post('terminal-sessions/{id}/commands', [TerminalController::class, 'commands']);
+        Route::post('terminal-sessions/{id}/end', [TerminalController::class, 'end']);
         // The uploaded archive of an import, for a server with a download job of the import.
         Route::get('imports/{id}/archive', [ImportController::class, 'archive']);
     });

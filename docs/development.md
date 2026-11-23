@@ -134,6 +134,32 @@ add the name of the database server to `/etc/hosts`, for example
 `127.0.0.1 shop-db.internal`.
 
 
+### The web terminal in development
+
+The demo agent cannot run a shell. In the demonstration mode, the job `OpenTerminal` fails
+with the message "The demonstration has no terminal relay". The sample data has one closed
+terminal session with its commands and its recording, on the website `api.acme.example.com`.
+
+To see the browser side of the terminal, do these steps:
+
+1. Set `CF_DEMO_TERMINAL=true` in `api/.env`. The demo agent then completes the job
+   `OpenTerminal`, and the session stays open.
+2. Start the terminal relay with the `APP_KEY` of the API. The development server of the web
+   panel sends `/api/terminal/` to port 8091 (`web/vite.config.ts`):
+
+   ```sh
+   cd agent
+   APP_KEY=$(grep '^APP_KEY=' ../api/.env | cut -d= -f2-) go run ./cmd/cf-terminal-relay --listen 127.0.0.1:8091
+   ```
+
+3. Open the terminal in the web panel. The browser connects to the relay and waits for the
+   agent for 1 minute.
+
+The relay waits for an agent. No agent connects in the demonstration mode, so the terminal
+closes after 1 minute. To test the agent side, use the tests of `agent/internal/actions`
+(`terminal_test.go`) and `agent/internal/relay`. They connect a test relay, a fake shell and a
+fake panel.
+
 ### Consoles for each role
 
 The web panel has one console for each role. `web/src/lib/roles.ts` has the menu, the first
