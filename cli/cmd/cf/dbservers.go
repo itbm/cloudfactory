@@ -162,8 +162,8 @@ func databaseServerLimits(base map[string]any, vcpus float64, memoryMB, diskGB i
 }
 
 // databaseServers manages the database servers of customers. A customer makes database
-// servers as it makes websites: each one is a container with one engine (MariaDB, PostgreSQL
-// or Valkey) and its own limits.
+// servers as it makes websites: each one is a container with one engine (MariaDB, PostgreSQL,
+// Valkey or the engine of a database pack) and its own limits.
 //
 //   - The plan of the customer gives the number of its database servers.
 //   - The plan of a database server gives its limits and the number of its databases.
@@ -174,7 +174,7 @@ func (a *app) databaseServers(ctx context.Context, sub string, args []string) er
 		fs := flag.NewFlagSet("list", flag.ContinueOnError)
 		customer := fs.String("customer", "", "show the database servers of this customer ID")
 		server := fs.String("server", "", "show the database servers on this server")
-		engine := fs.String("engine", "", "mariadb, postgresql or valkey")
+		engine := fs.String("engine", "", "mariadb, postgresql, valkey or the engine of a database pack")
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
@@ -200,15 +200,37 @@ func (a *app) databaseServers(ctx context.Context, sub string, args []string) er
 			return a.printJSON(rows)
 		}
 		for _, s := range rows {
+			s["engine"] = engineText(s)
 			s["address"] = address(s)
 			s["limits"] = limitsText(s["limits"])
 			s["databases"] = fmt.Sprintf("%s of %s", cell(s["databases"]), cell(s["maxDatabases"]))
 		}
 		a.table(rows, []string{"name", "engine", "status", "address", "limits", "databases", "customerId", "id"})
 		return nil
+	case "engines":
+		// The built-in engines and the engines of the database packs.
+		var out struct {
+			Data []map[string]any `json:"data"`
+		}
+		if err := a.api.Do(ctx, http.MethodGet, "/database-engines", nil, nil, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out.Data)
+		}
+		for _, e := range out.Data {
+			e["versions"] = packVersions(e["versions"])
+			e["from"] = "built-in"
+			if p, ok := e["pack"].(map[string]any); ok {
+				e["from"] = fmt.Sprintf("pack %s %s", cell(p["slug"]), cell(p["version"]))
+			}
+		}
+		a.table(out.Data, []string{"engine", "name", "port", "versions", "from"})
+		return nil
 	case "create":
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
-		engine := fs.String("engine", "", "mariadb, postgresql or valkey")
+		engine := fs.String("engine", "", "mariadb, postgresql, valkey or the engine of a database pack: see cf database-servers engines")
+		version := fs.String("version", "", "the version of the engine of a database pack. With none, it is the newest version of the pack.")
 		name := fs.String("name", "", `a name. With no name, the panel gives one, for example "mariadb-2".`)
 		customer := fs.String("customer", "", "the customer ID. With none, it is your customer.")
 		plan := fs.String("plan", "", "a plan ID. The plan gives the limits and the number of databases. With none, it is the plan of the customer.")
@@ -220,10 +242,10 @@ func (a *app) databaseServers(ctx context.Context, sub string, args []string) er
 			return err
 		}
 		if *engine == "" {
-			return errors.New("give --engine mariadb, postgresql or valkey")
+			return errors.New("give --engine mariadb, postgresql, valkey or the engine of a database pack")
 		}
 		body := map[string]any{"engine": *engine}
-		for k, v := range map[string]string{"name": *name, "customerId": *customer, "planId": *plan} {
+		for k, v := range map[string]string{"name": *name, "customerId": *customer, "planId": *plan, "version": *version} {
 			if v != "" {
 				body[k] = v
 			}
@@ -258,7 +280,7 @@ func (a *app) databaseServers(ctx context.Context, sub string, args []string) er
 				return a.printJSON(s)
 			}
 			fmt.Fprintf(a.out, "Name:       %s\nID:         %s\nEngine:     %s\nStatus:     %s\nCustomer:   %s\nServer:     %s\nPlan:       %s\nAddress:    %s\nLimits:     %s\nDatabases:  %s of %s\n",
-				cell(s["name"]), cell(s["id"]), cell(s["engine"]), cell(s["status"]), cell(s["customerId"]), cell(s["serverId"]), cell(s["planId"]), address(s), limitsText(s["limits"]), cell(s["databases"]), cell(s["maxDatabases"]))
+				cell(s["name"]), cell(s["id"]), engineText(s), cell(s["status"]), cell(s["customerId"]), cell(s["serverId"]), cell(s["planId"]), address(s), limitsText(s["limits"]), cell(s["databases"]), cell(s["maxDatabases"]))
 			if local := localAddress(s); local != address(s) {
 				fmt.Fprintf(a.out, "Also:       %s for the websites on the same server\n", local)
 			}
@@ -316,4 +338,13 @@ func (a *app) databaseServers(ctx context.Context, sub string, args []string) er
 		return a.change(ctx, http.MethodPatch, path, body)
 	}
 	return fmt.Errorf("unknown command database-servers %s", sub)
+}
+
+// engineText gives the engine of a database server, with the version of a pack engine:
+// "mariadb" or "mysql 8.4".
+func engineText(s map[string]any) string {
+	if v, ok := s["engineVersion"].(string); ok && v != "" {
+		return cell(s["engine"]) + " " + v
+	}
+	return cell(s["engine"])
 }

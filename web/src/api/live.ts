@@ -17,6 +17,7 @@ import type {
   CustomerCertificate,
   Database,
   DatabaseGrant,
+  DatabaseEngineInfo,
   DatabaseServer,
   MailAlias,
   MailDomain,
@@ -191,7 +192,7 @@ interface ApiPanelCertificate {
   domain: string; method: PanelCertificate["method"]; state: PanelCertificate["state"]; expiresAt: string | null; caCertificate: string | null; caSha256: string | null;
   reportedAt: string | null; letsEncryptAvailable: boolean; serversWithoutCa: string[]; job: ApiJob | null;
 }
-interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt"> { usage: DatabaseServer["usage"] | null; createdAt: string | null }
+interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt" | "engineVersion"> { usage: DatabaseServer["usage"] | null; createdAt: string | null; engineVersion?: string | null }
 interface ApiDnsRecord extends Omit<DnsRecord, "priority" | "managed"> { priority: number | null; managed: DnsRecord["managed"] | null }
 interface ApiDnsZoneProvider extends Omit<DnsZoneProvider, "error" | "syncedAt" | "changes" | "imported" | "handover"> {
   error: string | null; syncedAt: string | null; changes: DnsZoneProvider["changes"] | null; imported: DnsZoneProvider["imported"] | null; handover: { endsAt: string | null } | null;
@@ -335,7 +336,7 @@ interface ApiMailDomain extends Omit<MailDomain, "dnsCheckedAt"> { dnsCheckedAt:
 interface ApiMailbox extends Omit<Mailbox, "usedBytes"> { usedBytes: number | null }
 export const toMailDomain = (d: ApiMailDomain): MailDomain => ({ ...d, records: d.records ?? [], dnsCheckedAt: d.dnsCheckedAt ?? undefined });
 export const toMailbox = (m: ApiMailbox): Mailbox => ({ ...m, usedBytes: m.usedBytes ?? 0 });
-export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
+export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, engineVersion: s.engineVersion ?? null, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
 
 export const toDnsRecord = (r: ApiDnsRecord): DnsRecord => ({ id: r.id, name: r.name, type: r.type, value: r.value, ttl: r.ttl, priority: r.priority ?? undefined, managed: r.managed ?? undefined });
 
@@ -476,7 +477,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates, exports] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, databaseEngines, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates, exports] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -493,6 +494,8 @@ export async function load(previous: State): Promise<State> {
     admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
     // The database servers of the customers that the user can see.
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
+    // The engines of the database packs. A panel API of an earlier release has the built-in engines only.
+    optional(request<{ data: DatabaseEngineInfo[] }>("GET", "/database-engines").then((r) => r.data), previous.databaseEngines),
     // The DNS zones, and the name servers that a customer gives to the registrar of a domain.
     optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
     // The accounts at external DNS providers, and the providers of the plugins.
@@ -564,6 +567,7 @@ export async function load(previous: State): Promise<State> {
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
     databaseServers: databaseServers.map(toDatabaseServer),
+    databaseEngines,
     dnsZones: dns.data.map((z) => zoneDetails.get(z.id) ?? { ...toDnsZone(z), records: previous.dnsZones.find((x) => x.id === z.id && x.serial === z.serial)?.records }),
     nameServers: dns.nameServers ?? [],
     dnsAccounts: dnsAccounts.data.map(toDnsAccount),
@@ -819,14 +823,16 @@ export function signOut() {
 /**
  * Waits until the agent finishes the job. It reads only the job from the API, each 1.5 seconds
  * for the first minute and then each 5 seconds. Batch 1, finding 9: it does not load all data
- * again while it waits.
+ * again while it waits. The wait stops when active() is false, for example after a sign-out.
+ * Then the promise gives the job as the panel read it last.
  */
-export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void): Promise<Job> {
+export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void, active: () => boolean = () => true): Promise<Job> {
   let current = toJob(job as ApiJob);
   const started = Date.now();
   // A job can run for up to 3 hours (CheckJobsAndServers). Then the API marks it failed.
   while ((current.state === "queued" || current.state === "running") && Date.now() - started < 3.5 * 3600_000) {
     await new Promise((r) => setTimeout(r, Date.now() - started < 60_000 ? 1500 : 5000));
+    if (!active()) return current;
     try {
       current = toJob((await request<{ data: ApiJob }>("GET", `/jobs/${current.id}`)).data);
     } catch (e) {

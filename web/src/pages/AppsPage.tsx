@@ -5,7 +5,7 @@ import { addImage } from "../api/store";
 import type { UpdatePolicy } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, Modal, PageHeader, Status, TableWrap } from "../components/ui";
-import { jobActive, POLICY_LABEL } from "../lib/labels";
+import { jobActive, PHP_FAMILIES, phpFamilyName, POLICY_LABEL } from "../lib/labels";
 
 // The API of this release has no Git deploys or build containers.
 const CATALOGUE = [
@@ -23,8 +23,9 @@ export function AppsPage() {
   const state = useStore();
   const isAdmin = state.session.user.role === "administrator";
   const custom = state.images.filter((i) => i.custom);
-  // The runtimes from packs: one tile for each pack, with the versions of its images.
-  const packs = [...new Map(state.images.filter((i) => i.pack && !i.custom).map((i) => [i.pack!.id, i.pack!])).values()];
+  // The packs: one tile for each pack, with the versions of its images. A PHP pack adds
+  // versions of PHP to a built-in PHP runtime, so its tile names that runtime.
+  const packs = [...new Map(state.images.filter((i) => i.pack && !i.custom).map((i) => [i.pack!.id, { ...i.pack!, family: i.family }])).values()];
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", reference: "", tag: "latest", policy: "manual" as UpdatePolicy, containerPort: "", command: "" });
   const add = useAction(addImage);
@@ -45,7 +46,18 @@ export function AppsPage() {
             </section>
           ))}
           {packs.map((p) => {
-            const versions = state.images.filter((i) => i.pack?.id === p.id).map((i) => i.version ?? i.running);
+            const versions = state.images.filter((i) => i.pack?.id === p.id).map((i) => i.phpVersion ?? i.version ?? i.running)
+              .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            if (PHP_FAMILIES.includes(p.family)) {
+              return (
+                <section key={p.id} className="card app-tile" aria-labelledby={`pack-${p.id}`}>
+                  <h2 id={`pack-${p.id}`}>{p.name}</h2>
+                  <span className="tag" style={{ alignSelf: "flex-start" }}>{phpFamilyName(p.family)} · PHP {versions.join(", ")}</span>
+                  <p>Older versions of PHP from a pack, for a website that needs one, for example a website from cPanel. The website uses the PHP settings of {phpFamilyName(p.family)}. Change to a newer version before the support ends.</p>
+                  <Link className="btn" to="/websites/new">New website</Link>
+                </section>
+              );
+            }
             return (
               <section key={p.id} className="card app-tile" aria-labelledby={`pack-${p.id}`}>
                 <h2 id={`pack-${p.id}`}>{p.name}</h2>
@@ -57,7 +69,7 @@ export function AppsPage() {
           })}
         </div>
         {isAdmin && (
-          <p className="muted small mt">To add a runtime, for example Go, install a signed pack on the <Link to="/packs">Packs</Link> page.</p>
+          <p className="muted small mt">To add a runtime, for example Go, or an older version of PHP, install a signed pack on the <Link to="/packs">Packs</Link> page.</p>
         )}
         <Card title="Own images" className="mt">
           <TableWrap>
