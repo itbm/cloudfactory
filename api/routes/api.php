@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\TrustedKeyController;
 use App\Http\Controllers\Api\UptimeController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WebsiteCommandController;
 use App\Http\Controllers\Api\WebsiteController;
 use Illuminate\Support\Facades\Route;
 
@@ -171,6 +172,10 @@ Route::prefix('v1')->group(function () {
             Route::delete('websites/{websiteId}/uptime-checks/{checkId}', [UptimeController::class, 'destroy']);
             // Each request starts a request from the panel to the website.
             Route::post('websites/{websiteId}/uptime-checks/{checkId}/run', [UptimeController::class, 'run'])->middleware('throttle:10,1,post-websites-x-uptime-checks-x-run');
+            // Run a command in the container of the website, and the command log (FR-802).
+            Route::get('websites/{websiteId}/commands', [WebsiteCommandController::class, 'index']);
+            Route::post('websites/{websiteId}/commands', [WebsiteCommandController::class, 'store'])->middleware('throttle:30,1,post-websites-x-commands');
+            Route::get('websites/{websiteId}/commands/{commandId}', [WebsiteCommandController::class, 'show']);
 
             // Deploys from a Git repository.
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);
