@@ -174,8 +174,10 @@ php artisan demo:fixtures
 
 The API test `DemoTest` fails when the files do not agree with the API.
 
-The command gives the same IDs and random strings each time. Each table has its own sequence
-of IDs. Thus a new row changes only the IDs of the rows that come after it in the same table.
+The command gives the same files each time. It gives the same IDs, random strings, keys and
+certificates on each run. Each table has its own sequence of IDs. Thus a new row changes only
+the IDs of the rows that come after it in the same table.
+
 Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
 is `password`. The sample users have no TOTP, so leave the code empty. In the
 demonstration mode, the panel does not ask the sample administrator and the sample reseller
@@ -346,8 +348,10 @@ A new key or a new value needs a new contract, for example `cf-pack/2`. Refer to
 
 ## Continuous integration
 
-The workflow [`ci.yml`](../.github/workflows/ci.yml) runs for each pull request. It has these
-jobs:
+The workflow [`ci.yml`](../.github/workflows/ci.yml) runs for each pull request. On a pull
+request, a job runs only when the files that it tests change. For example, a change in `web/`
+runs only the job **web**. A change to the workflow, and a push to `main`, run all jobs. The
+workflow has these jobs:
 
 - **web**: type check, tests and build.
 - **api**: tests and Pint on PHP 8.4. The tests run with SQLite and with
@@ -357,8 +361,10 @@ jobs:
 - **cli**: tests and build.
 - **install**: ShellCheck and the script tests with `sh` and `dash`.
 
-The workflow [`images.yml`](../.github/workflows/images.yml) builds each image and scans it with
-Trivy when a pull request changes `images/`.
+The workflow [`images.yml`](../.github/workflows/images.yml) builds an image and scans it with
+Trivy when a pull request changes the files of that image. For example, a change in `api/`
+builds only the image `panel-api`. A change to the workflow builds all images. A new push to
+the pull request stops the builds of the earlier push.
 
 Dependabot ([`dependabot.yml`](../.github/dependabot.yml)) proposes updates each week for the
 GitHub actions, the Composer, npm and Go packages, and the base images in `images/`.

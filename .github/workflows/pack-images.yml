@@ -1,0 +1,137 @@
+# Builds the images of the first-party PHP packs (plugins/packs/php-legacy-*) on a pull request
+# that changes them. The release workflow publishes them and signs the packs. These images have
+# their own workflow, so that a change to the panel does not build four more PHP images.
+name: Pack images
+
+on:
+  pull_request:
+    paths:
+      - images/frankenphp/**
+      - images/apache-php-fpm/**
+      - plugins/packs/php-legacy-*/**
+      - .github/workflows/pack-images.yml
+
+permissions:
+  contents: read
+
+# A new push to a pull request stops the builds of the earlier push.
+concurrency:
+  group: pack-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Each image builds only when its files change. A change to this workflow builds all images.
+  changes:
+    name: Select the images
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.select.outputs.images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The merge commit of the pull request and its first parent, the base branch.
+          fetch-depth: 2
+      - name: Select the images with changed files
+        id: select
+        env:
+          # The files of each image are the paths that start with an item of "paths".
+          IMAGES: |
+            [
+              { "image": "frankenphp-php8.2", "context": "images/frankenphp", "file": "images/frankenphp/Containerfile", "php": "8.2", "pack": "php-legacy-frankenphp", "paths": ["images/frankenphp/", "plugins/packs/php-legacy-frankenphp/"] },
+              { "image": "frankenphp-php8.3", "context": "images/frankenphp", "file": "images/frankenphp/Containerfile", "php": "8.3", "pack": "php-legacy-frankenphp", "paths": ["images/frankenphp/", "plugins/packs/php-legacy-frankenphp/"] },
+              { "image": "apache-php8.2", "context": "images/apache-php-fpm", "file": "images/apache-php-fpm/Containerfile", "php": "8.2", "pack": "php-legacy-apache", "paths": ["images/apache-php-fpm/", "plugins/packs/php-legacy-apache/"] },
+              { "image": "apache-php8.3", "context": "images/apache-php-fpm", "file": "images/apache-php-fpm/Containerfile", "php": "8.3", "pack": "php-legacy-apache", "paths": ["images/apache-php-fpm/", "plugins/packs/php-legacy-apache/"] }
+            ]
+        run: |
+          set -eu
+          git diff --name-only HEAD^1 HEAD >"$RUNNER_TEMP/changed"
+          images=$(jq -c --rawfile changed "$RUNNER_TEMP/changed" '
+            ($changed | split("\n") | map(select(. != ""))) as $files
+            | map((.paths + [".github/workflows/pack-images.yml"]) as $paths
+              | select(any($files[]; . as $file | any($paths[]; . as $path | $file | startswith($path))))
+              | del(.paths))' <<<"$IMAGES")
+          echo "Images to build: $(jq -r 'map(.image) | join(", ")' <<<"$images")"
+          echo "images=$images" >>"$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.image }}
+    needs: changes
+    if: needs.changes.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.images) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The pack must have the image and its version, as the release workflow reads them.
+      - name: Check that the pack has the image
+        env:
+          IMAGE: ${{ matrix.image }}
+          PHP: ${{ matrix.php }}
+          PACK: ${{ matrix.pack }}
+        run: |
+          set -eu
+          jq -e --arg image "$IMAGE" --arg php "$PHP" \
+            '.images | map(select((.ref | split("/") | last | split(":") | first) == $image and .version == $php)) | length == 1' \
+            "plugins/packs/$PACK/pack.json"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          build-args: PHP_VERSION=${{ matrix.php }}
+          load: true
+          tags: ${{ matrix.image }}:test
+      # The contract cf-php/1 (docs/packs.md): the image has the version of PHP of the pack, and
+      # each extension of the largest plan loads when the php.ini file of the agent turns it on.
+      # The agent writes "zend_extension=opcache" for a PHP version before 8.5.
+      - name: Check the PHP version and the extensions
+        env:
+          IMAGE: ${{ matrix.image }}
+          PHP: ${{ matrix.php }}
+        run: |
+          set -eu
+          got=$(docker run --rm --user 1001:1001 "$IMAGE:test" php -r 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;')
+          echo "PHP $got"
+          [ "$got" = "$PHP" ]
+          ini="$RUNNER_TEMP/zz-cloudfactory.ini"
+          {
+            echo 'zend_extension=opcache'
+            for ext in intl gd zip exif bcmath mysqli pdo_mysql pdo_pgsql redis imagick soap; do echo "extension=$ext"; done
+          } > "$ini"
+          modules=$(docker run --rm --user 1001:1001 -v "$ini:/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro" "$IMAGE:test" php -m)
+          for ext in 'Zend OPcache' intl gd zip exif bcmath mysqli pdo_mysql pdo_pgsql redis imagick soap; do
+            printf '%s\n' "$modules" | grep -qx "$ext" || { echo "::error::The extension $ext does not load."; exit 1; }
+          done
+          # With no php.ini of the agent, the image turns no extension on.
+          plain=$(docker run --rm --user 1001:1001 "$IMAGE:test" php -m)
+          if printf '%s\n' "$plain" | grep -qx 'redis'; then echo "::error::The image turns on an extension by itself."; exit 1; fi
+      # The settings of quadlet.ContainerUnit for a PHP website: a read-only root file system,
+      # no capabilities and the Unix user of the website.
+      - name: Start the image with no capabilities
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -eu
+          docker run -d --name smoke --cap-drop=all --security-opt no-new-privileges -p 127.0.0.1:18080:8080 --read-only --tmpfs /tmp --user 1001:1001 "$IMAGE:test"
+          code=000
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/ || true)
+            # Apache can answer 503 before php-fpm opens its socket.
+            [ "$code" = 200 ] && break
+            sleep 2
+          done
+          docker logs smoke
+          docker inspect -f '{{.State.Running}}' smoke | grep -q true
+          [ "$code" = 200 ]
+      - name: Scan for known vulnerabilities (FR-1102)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:test
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'

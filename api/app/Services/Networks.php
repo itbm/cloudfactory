@@ -201,7 +201,7 @@ class Networks
     /** The port that a network member answers on: the usual port of its engine. */
     public static function portOf(string $engine): int
     {
-        return DatabaseServer::FIRST_PORT[$engine];
+        return DatabaseEngines::port($engine);
     }
 
     /**

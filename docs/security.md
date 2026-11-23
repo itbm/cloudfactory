@@ -942,8 +942,9 @@ What the boundary does not protect:
 
 ## Packs
 
-A pack adds a website runtime ([packs.md](packs.md)). A pack is data: names, usual commands
-and images with digests. The panel and the agent never run a program that a manifest names.
+A pack adds a website runtime or a database engine ([packs.md](packs.md)). A pack is data:
+names, usual commands, a port, a data directory and images with digests. The panel and the
+agent never run a program that a manifest names.
 
 - **Approval.** Only an administrator installs, updates or removes a pack, adds a trusted key
   or turns on the developer mode for packs. An install, an update and the developer mode need
@@ -969,14 +970,28 @@ and images with digests. The panel and the agent never run a program that a mani
 - **Isolation.** A website of a pack runtime has the same unit and the same isolation as each
   other website: gVisor, a read-only root file system, no capabilities and its own network
   namespace.
-- **Removal.** The panel refuses to remove a pack that websites use, and refuses to remove a
-  trusted key that signed an installed pack. The agent also refuses to remove a pack whose
-  runtime a website of its server uses.
+- **Database engines.** A database server of a pack engine has the same unit and the same
+  isolation as a built-in database server: gVisor, the user 999, a read-only root file
+  system, no capabilities and the limits of its plan. The root helper makes the unit from the
+  pack that it checked: the worker of the agent sends only the version. The agent runs only
+  `/cf/manage` of the image, with `podman exec` in that container. It puts in the input only
+  names and passwords that it checked. The password of the administrator of the engine is in
+  a file that only root and the Unix user of the database server can read.
+- **Ports.** Each database pack gets its own block of host ports. The agent publishes a port
+  only on the private address of the customer, and the host firewall lets only the websites
+  of the customer connect to it.
+- **Removal.** The panel refuses to remove a pack that websites or database servers use, and
+  refuses to remove a trusted key that signed an installed pack. The agent also refuses to
+  remove a pack whose runtime a website of its server uses, or whose engine a database server
+  of its server uses.
 
 Known limits:
 
 - The image of a pack runs the code of each website of its runtime, so it can do all that
   such a website can do.
+- The image of a database pack has all the data of its database servers. A publisher that you
+  do not trust can read or change that data. Install only the database packs of publishers
+  that you trust.
 - A person who gets the private key of a publisher can sign a new version of its packs. Do
   not install a new version until the publisher has a new key. To stop trusting the old key,
   remove its packs, then remove the key.

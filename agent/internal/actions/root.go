@@ -356,7 +356,7 @@ func containerOf(unixUser, name string) bool {
 	if !ok || host.CheckDatabaseUser(unixUser) != nil {
 		return false
 	}
-	for _, engine := range Engines {
+	for _, engine := range engines() {
 		if name == quadlet.DatabaseContainer(engine, id) {
 			return true
 		}
@@ -569,6 +569,10 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			if err := checkPrepare(in); err != nil {
 				return false, err
 			}
+			// The image of a pack engine comes from the packs that root checked and saved.
+			if err := d.checkEngineVersion(in.Record.Engine, in.Record.Version); err != nil {
+				return false, err
+			}
 			return d.prepareServer(ctx, in.Server, in.Customer, in.Address, in.Record)
 		}),
 		opDBRemoveData: none(func(ctx context.Context, in serverIn) error {
@@ -743,6 +747,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 
 		// The packs and the image policy of Podman. The helper checks each pack and each
 		// signature again (packs.go), and makes each path from its own settings.
+		// Root loads the packs too: it makes the units of the database servers of pack engines.
 		opPacksSet: none(func(ctx context.Context, in packsIn) error { return d.savePacks(ctx, in.Packs) }),
 
 		// The mark of a reboot job, and the state of the worker. The files stay where an

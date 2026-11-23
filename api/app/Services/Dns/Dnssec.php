@@ -2,6 +2,7 @@
 
 namespace App\Services\Dns;
 
+use OpenSSLAsymmetricKey;
 use RuntimeException;
 
 /**
@@ -23,14 +24,14 @@ class Dnssec
     public const DIGEST_TYPE = 2;
 
     /**
-     * Makes a new key.
+     * Makes a new key, or uses the given ECDSA P-256 key.
      *
      * @return array{key: string, publicKey: string, keyTag: int} The private key in the PKCS #8
      *                                                            PEM format, the public key in Base64, and the key tag.
      */
-    public static function generate(): array
+    public static function generate(?OpenSSLAsymmetricKey $key = null): array
     {
-        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $key ??= openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
         if ($key === false || ! openssl_pkey_export($key, $pem)) {
             throw new RuntimeException('OpenSSL did not make a DNSSEC key.');
         }

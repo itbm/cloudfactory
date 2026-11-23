@@ -13,5 +13,8 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // Each test file runs in its own VM context in a shared process. A new process for each
+    // file made the tests 2.5 times slower. The files still do not share modules or a DOM.
+    pool: "vmForks",
   },
 });

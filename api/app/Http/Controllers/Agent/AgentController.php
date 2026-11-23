@@ -14,6 +14,7 @@ use App\Models\Domain;
 use App\Models\Mailbox;
 use App\Models\Server;
 use App\Services\Certificates\Certificates;
+use App\Services\DatabaseEngines;
 use App\Services\Dns\Secondaries;
 use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
@@ -109,7 +110,7 @@ class AgentController extends Controller
             'domains.*.expiresAt' => ['nullable', 'date'],
             // Batch 1, finding 12: the size of each database.
             'databases' => ['nullable', 'array', 'max:1000000'],
-            'databases.*.engine' => ['required', Rule::in(Database::ENGINES)],
+            'databases.*.engine' => ['required', Rule::in(DatabaseEngines::all())],
             'databases.*.name' => ['required', 'string', 'max:64'],
             'databases.*.sizeBytes' => ['integer', 'min:0'],
             // Valkey: the database number and the number of keys.

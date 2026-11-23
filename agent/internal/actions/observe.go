@@ -187,7 +187,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	}
 	r.Databases = o.dbSizes
 	r.DatabaseServers = d.databaseServerUse(ctx, walk)
-	r.DatabaseEngines = Engines
+	r.DatabaseEngines = engines()
 	for _, rt := range quadlet.Runtimes() {
 		r.Runtimes = append(r.Runtimes, rt.Name)
 	}

@@ -113,12 +113,14 @@ Usage:
   cf previews create WEBSITE --number N --branch BRANCH [--title TITLE] [--url URL]
                                                        Make the preview of a pull request, or deploy it again. For a CI pipeline.
   cf previews remove WEBSITE NUMBER                    Remove the preview website of a pull request.
-  cf database-servers list [--customer ID] [--server SERVER] [--engine mariadb|postgresql|valkey]
+  cf database-servers list [--customer ID] [--server SERVER] [--engine ENGINE]
   cf database-servers get DATABASE_SERVER
-  cf database-servers create --engine mariadb|postgresql|valkey [--name NAME] [--customer ID] [--plan ID] [--server SERVER]
+  cf database-servers engines                          The engines: mariadb, postgresql, valkey and the engines of database packs.
+  cf database-servers create --engine ENGINE [--version VERSION] [--name NAME] [--customer ID] [--plan ID] [--server SERVER]
                              [--vcpus N --memory-mb N --disk-gb N]
                                                        A database server is one container with its own limits. The plan gives the
                                                        limits and the number of databases. Only an administrator sets limits.
+                                                       --version: a version of a pack engine. The database server keeps it.
   cf database-servers set DATABASE_SERVER [--name NAME] [--plan ID] [--vcpus N] [--memory-mb N] [--disk-gb N]
                                                        New limits restart the database server.
   cf database-servers retry DATABASE_SERVER            Make a database server again after the first job failed.
@@ -128,7 +130,7 @@ Usage:
                                                        data moves through the tunnel between the two servers.
   cf database-servers delete DATABASE_SERVER           Remove a database server that has no databases.
   cf databases list WEBSITE
-  cf databases create WEBSITE --engine mariadb|postgresql|valkey --name NAME [--no-user] [--database-server DATABASE_SERVER]
+  cf databases create WEBSITE --engine ENGINE --name NAME [--no-user] [--database-server DATABASE_SERVER]
                                                        A Valkey database has a database number, and always a user with the same name.
                                                        With no database server, the panel uses the first one of the engine with space.
   cf databases delete WEBSITE DATABASE
@@ -136,7 +138,7 @@ Usage:
                                                        database user that expires after 60 minutes. The command writes an
                                                        HTML file that signs you in: open it in your browser.
   cf database-users list WEBSITE
-  cf database-users create WEBSITE --engine mariadb|postgresql --name NAME [--grant DATABASE=readonly|readwrite]...
+  cf database-users create WEBSITE --engine ENGINE --name NAME [--grant DATABASE=readonly|readwrite]...
                            [--database-server DATABASE_SERVER]
   cf database-users set WEBSITE USER [--grant DATABASE=readonly|readwrite]... [--no-grants]
                         [--access website|anywhere] [--reset-password]
@@ -329,14 +331,14 @@ Usage:
   cf plugins keys remove ID            The panel refuses to remove a key that signed an installed pack.
   cf plugins developer-mode on|off [--totp CODE]
                        Changes that give a plugin access need your password from CF_PASSWORD or stdin.
-  cf packs list                        The packs: signed manifests that add a website runtime, for example Go.
+  cf packs list                        The packs: signed manifests that add a website runtime or a database engine.
   cf packs get PACK                    A PACK is a slug (for example golang) or an ID. Shows the images and the state on each web server.
   cf packs preview [--manifest pack.json] [--signature pack.json.sig]
                        Checks the manifest and the signature, and shows what the pack adds. It changes nothing.
   cf packs install [--manifest pack.json] [--signature pack.json.sig] [--totp CODE]
   cf packs upgrade PACK [--manifest pack.json] [--signature pack.json.sig] [--totp CODE]
                        A new version. A new digest for an image that websites use waits for a rollout.
-  cf packs remove PACK                 The panel refuses to remove a pack that websites use.
+  cf packs remove PACK                 The panel refuses to remove a pack that websites or database servers use.
   cf packs sync                        Sends all packs to each web server again.
   cf packs keys list|add|remove        The same as cf plugins keys.
   cf packs developer-mode on|off [--totp CODE]
@@ -1213,7 +1215,7 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
-		engine := fs.String("engine", "mariadb", "mariadb, postgresql or valkey")
+		engine := fs.String("engine", "mariadb", "mariadb, postgresql, valkey or the engine of a database pack")
 		name := fs.String("name", "", "the database name, with or without the prefix of the website")
 		noUser := fs.Bool("no-user", false, "do not make a user with the same name")
 		server := fs.String("database-server", "", "the database server for the database. With none, the panel uses the first one of the engine with space, or makes the first one.")
@@ -1426,7 +1428,7 @@ func (a *app) databaseUsers(ctx context.Context, sub string, args []string) erro
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
-		engine := fs.String("engine", "mariadb", "mariadb or postgresql. A Valkey database comes with its user.")
+		engine := fs.String("engine", "mariadb", "mariadb, postgresql or the engine of a database pack. A Valkey database comes with its user.")
 		name := fs.String("name", "", "the user name, with or without the prefix of the website")
 		access := fs.String("access", "website", "website or anywhere")
 		server := fs.String("database-server", "", "the database server of the user. It is necessary only for a user with no database, when the customer has more than one database server of the engine.")

@@ -23,7 +23,7 @@ class Fixtures
     /** The requests that the web panel sends when it loads (web/src/api/live.ts). */
     public const PATHS = [
         '/me', '/me/passkeys', '/me/identities', '/websites?perPage=100&page=1', '/jobs?perPage=50', '/customers', '/plans', '/tokens', '/backup-policy', '/servers', '/images',
-        '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/dns-zones', '/dns-accounts', '/dns-secondaries', '/mesh', '/networks', '/usage-alerts',
+        '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/database-engines', '/dns-zones', '/dns-accounts', '/dns-secondaries', '/mesh', '/networks', '/usage-alerts',
         '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
         '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
         '/plugin-pages', '/plugin-actions', '/plugins', '/trusted-keys', '/plugin-settings', '/packs', '/pack-settings', '/imports',

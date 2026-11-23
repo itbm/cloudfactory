@@ -84,6 +84,72 @@ describe("the runtime of a pack", () => {
   });
 });
 
+/** The sample data also has the pack "php-legacy-apache": PHP 8.3 and 8.2 for Apache + PHP-FPM. */
+describe("a PHP pack", () => {
+  it("adds its versions to the PHP runtime, with no start command", async () => {
+    const api = await signedIn("owner");
+    let php82 = "";
+    api.change<{ data: ApiRuntimeImage[] }>("/runtime-images", (answer) => { php82 = answer.data.find((i) => i.name === "Apache + PHP-FPM · PHP 8.2")!.id; });
+    api.on("POST /websites", () => [202, { website: { id: "w-new" }, job: apiJob() }]);
+    render(<MemoryRouter initialEntries={["/websites/new"]}><App /></MemoryRouter>);
+    fireEvent.change(await screen.findByLabelText("Primary domain"), { target: { value: "old-shop.example.com" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Apache + PHP-FPM" }));
+    const versions = screen.getByRole("group", { name: "Version" });
+    expect(within(versions).getAllByRole("radio").map((r) => r.closest("label")?.textContent)).toEqual(["PHP 8.2", "PHP 8.3", "PHP 8.4", "PHP 8.5"]);
+    expect(screen.queryByRole("radio", { name: "Older PHP for Apache + PHP-FPM" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Apache + PHP-FPM · PHP 8.2" }));
+    expect(screen.getByText(/comes from the pack Older PHP for Apache \+ PHP-FPM/)).toBeTruthy();
+    expect(screen.queryByLabelText("Start command")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create website" }));
+    await waitFor(() => expect(api.changes.find((c) => c.path === "/websites")).toBeTruthy());
+    const body = api.changes.find((c) => c.path === "/websites")!.body as Record<string, unknown>;
+    expect(body).toMatchObject({ imageId: php82, name: "old-shop.example.com" });
+    // A PHP website has no start command and no install command.
+    expect(body.command).toBeUndefined();
+    expect(body.installCommand).toBeUndefined();
+  });
+
+  it("shows a tile on the Apps page with the PHP runtime and its versions", async () => {
+    await signedIn("administrator");
+    render(<MemoryRouter initialEntries={["/apps"]}><App /></MemoryRouter>);
+    const tile = (await screen.findByRole("heading", { name: "Older PHP for Apache + PHP-FPM" })).closest("section")!;
+    expect(tile.textContent).toContain("Apache + PHP-FPM · PHP 8.2, 8.3");
+    expect(within(tile).getByRole("link", { name: "New website" })).toBeTruthy();
+  });
+
+  it("shows the PHP runtime and the versions on the Packs page, not commands", async () => {
+    await signedIn("administrator");
+    render(<MemoryRouter initialEntries={["/packs"]}><App /></MemoryRouter>);
+    const card = (await screen.findByRole("heading", { name: "Older PHP for Apache + PHP-FPM 0.1.9" })).closest(".card") as HTMLElement;
+    expect(within(card).getByText("Signed by the Cloudfactory release key")).toBeTruthy();
+    expect(card.textContent).toContain("cf-php/1: adds PHP 8.3 and 8.2");
+    expect(within(card).queryByText("Commands")).toBeNull();
+    expect(within(card).getByText("ghcr.io/itbm/apache-php8.2:0.1.9")).toBeTruthy();
+  });
+
+  it("shows what a PHP pack adds before the install", async () => {
+    const api = await signedIn("administrator");
+    api.on("POST /packs/preview", () => ({
+      manifest: {
+        contract: "cf-pack/1", kind: "runtime", slug: "php-legacy-frankenphp", name: "Older PHP for FrankenPHP", version: "0.2.0", publisher: "Cloudfactory", description: "",
+        runtime: { contract: "cf-php/1", type: "", defaultCommand: "", defaultInstall: "", family: "frankenphp" },
+        images: ["8.3", "8.2"].map((v) => ({ version: v, ref: `ghcr.io/itbm/frankenphp-php${v}:0.2.0`, repository: `ghcr.io/itbm/frankenphp-php${v}`, tag: "0.2.0", digest: `sha256:${"b".repeat(64)}`, supportEndsAt: null })),
+      },
+      signedBy: { name: "Cloudfactory release key", fingerprint: null, release: true }, installed: null, developerMode: false,
+    }));
+    render(<MemoryRouter initialEntries={["/packs"]}><App /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Install pack" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Manifest (pack.json)"), { target: { value: "{}" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Check the manifest" }));
+    expect(await within(dialog).findByText("Older PHP for FrankenPHP 0.2.0")).toBeTruthy();
+    expect(dialog.textContent).toContain("The pack adds PHP 8.3 and 8.2 to FrankenPHP.");
+    expect(dialog.textContent).not.toContain("start command");
+    expect(within(dialog).getByText("PHP 8.2")).toBeTruthy();
+  });
+});
+
 describe("the Packs page", () => {
   it("shows each pack with its signature, its images and its state on each web server", async () => {
     await signedIn("administrator");
@@ -126,6 +192,48 @@ describe("the Packs page", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Install pack" }));
     await waitFor(() => expect(api.changes.find((c) => c.method === "POST" && c.path === "/packs")).toBeTruthy());
     expect(api.changes.find((c) => c.method === "POST" && c.path === "/packs")!.body).toMatchObject({ manifest, signature: "c2lnbmF0dXJl", password: "password" });
+  });
+
+  it("shows a database pack with its engine, its block of ports and its database servers", async () => {
+    await signedIn("administrator");
+    render(<MemoryRouter initialEntries={["/packs"]}><App /></MemoryRouter>);
+    const card = (await screen.findByRole("heading", { name: "MySQL 1.0.0" })).closest(".card") as HTMLElement;
+    expect(card.textContent).toContain("cf-database/1, port 3306, data in /var/lib/mysql");
+    expect(card.textContent).toContain("20000 to 20049");
+    expect(within(card).queryByText("Commands")).toBeNull();
+    expect(within(card).getByText("ghcr.io/example-packs/cf-mysql:8.4")).toBeTruthy();
+    const head = within(card).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(head).toContain("Database servers");
+    expect(card.textContent).toContain("In use1 database server");
+    // The sample MySQL database server uses the pack, so the pack cannot go.
+    fireEvent.click(within(card).getByRole("button", { name: "Actions for MySQL" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove pack" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("1 database server of MySQL uses this pack.");
+    expect(within(dialog).getByRole("button", { name: "Remove pack" })).toHaveProperty("disabled", true);
+  });
+
+  it("shows what a database pack adds before the install", async () => {
+    const api = await signedIn("administrator");
+    api.on("POST /packs/preview", () => ({
+      manifest: {
+        contract: "cf-pack/2", kind: "database", slug: "mongodb", name: "MongoDB", version: "1.0.0", publisher: "Example Packs Ltd", description: "",
+        runtime: { contract: "", type: "", defaultCommand: "", defaultInstall: "", family: "" },
+        database: { contract: "cf-database/1", port: 27017, dataDir: "/data/db" },
+        images: [{ version: "8.0", ref: "ghcr.io/example-packs/cf-mongodb:8.0", repository: "ghcr.io/example-packs/cf-mongodb", tag: "8.0", digest: `sha256:${"c".repeat(64)}`, supportEndsAt: null }],
+      },
+      signedBy: { name: "Example Packs Ltd", fingerprint: null, release: false }, installed: null, developerMode: false,
+    }));
+    render(<MemoryRouter initialEntries={["/packs"]}><App /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Install pack" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Manifest (pack.json)"), { target: { value: "{}" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Check the manifest" }));
+    expect(await within(dialog).findByText("MongoDB 1.0.0")).toBeTruthy();
+    expect(dialog.textContent).toContain("Customers can make database servers of MongoDB, with the version 8.0.");
+    expect(dialog.textContent).toContain("listens on port 27017");
+    expect(dialog.textContent).toContain("as all database servers do");
+    expect(dialog.textContent).not.toContain("start command");
   });
 
   it("does not remove a pack that websites use", async () => {
