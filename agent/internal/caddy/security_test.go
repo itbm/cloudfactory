@@ -36,10 +36,12 @@ func subroutes(t *testing.T, route map[string]any) []map[string]any {
 		} `json:"handle"`
 	}
 	json.Unmarshal(b, &r)
-	if len(r.Handle) != 1 || r.Handle[0].Handler != "subroute" {
-		t.Fatalf("the route has no subroute: %s", b)
+	// The route first adds the website to the access log (logField), also for a request that
+	// the protection blocks.
+	if len(r.Handle) != 2 || r.Handle[0].Handler != "log_append" || r.Handle[1].Handler != "subroute" {
+		t.Fatalf("the route has no subroute after the log field: %s", b)
 	}
-	return r.Handle[0].Routes
+	return r.Handle[1].Routes
 }
 
 func handlerOf(route map[string]any, i int) map[string]any {
@@ -195,7 +197,7 @@ func TestEnsureBaseAddsTheFirewallLog(t *testing.T) {
 		t.Errorf("logging = %v", fake.logging)
 	}
 	calls := len(fake.calls)
-	if err := c.EnsureBase(context.Background()); err != nil || fake.calls[len(fake.calls)-1] != "GET /config/logging/logs/firewall" || len(fake.calls) != calls+2 {
+	if err := c.EnsureBase(context.Background()); err != nil || fake.calls[len(fake.calls)-1] != "GET /config/logging" || len(fake.calls) != calls+2 {
 		t.Errorf("second EnsureBase: %v, calls %v", err, fake.calls[calls:])
 	}
 }

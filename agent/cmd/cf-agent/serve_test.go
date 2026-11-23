@@ -61,6 +61,31 @@ func TestTheWorkerOwnsTheRecordsOfTheJobs(t *testing.T) {
 	}
 }
 
+// The worker owns the directory of the access logs, and only the worker can open it.
+func TestTheWorkerOwnsTheAccessLogs(t *testing.T) {
+	uid, gid := workerID()
+	data := t.TempDir()
+	if err := ownLogs(data, uid, gid); err != nil {
+		t.Fatal(err)
+	}
+	logs := filepath.Join(data, logsDir)
+	if fi, err := os.Stat(logs); err != nil || fi.Mode().Perm() != 0o700 || owner(t, logs) != uid {
+		t.Errorf("logs: %v, owner %d", err, owner(t, logs))
+	}
+	// Again: no change.
+	if err := ownLogs(data, uid, gid); err != nil {
+		t.Fatal(err)
+	}
+	// A file in place of the directory is an error.
+	data = t.TempDir()
+	if err := os.WriteFile(filepath.Join(data, logsDir), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ownLogs(data, uid, gid); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("file = %v", err)
+	}
+}
+
 // After the first start, the worker can write in the directory of the records. Root then
 // changes only a file of root with one name, and never the target of a link.
 func TestRootDoesNotFollowTheLinksOfTheWorker(t *testing.T) {

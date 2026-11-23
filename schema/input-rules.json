@@ -393,6 +393,35 @@
       "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$",
       "message": "Use up to 16 letters, digits and the characters . + _ -, for example 1.25."
     },
+    "logSearch": {
+      "what": "search text of the logs",
+      "doc": "The words of a search in the logs of a website. It is on one line and has no control characters. A word that starts with \"-\" must not be in an entry, and words in double quotation marks are one word.",
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "maxLength": 200,
+      "message": "Enter at most 200 characters on one line."
+    },
+    "logCursor": {
+      "what": "log cursor",
+      "doc": "The value \"next\" of a search in the logs, which the agent makes. The search then gives the older entries.",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "maxLength": 512,
+      "echo": false,
+      "message": "Use the value next of an earlier search."
+    },
+    "httpStatus": {
+      "what": "HTTP status",
+      "go": "HTTPStatus",
+      "doc": "An HTTP status code from 100 to 599, for example \"404\", or a class of status codes, for example \"5xx\".",
+      "pattern": "^[1-5]([0-9][0-9]|xx)$",
+      "message": "Enter a status code such as 404, or a class such as 5xx."
+    },
+    "httpMethod": {
+      "what": "HTTP method",
+      "go": "HTTPMethod",
+      "doc": "An HTTP method in upper case, for example \"POST\".",
+      "pattern": "^[A-Z]{1,16}$",
+      "message": "Enter a method in upper-case letters, for example POST."
+    },
     "phpVersion": {
       "what": "PHP version",
       "doc": "The version of PHP in one image of a PHP pack (cf-php/1): the major version and the minor version, for example \"8.3\".",
@@ -552,6 +581,14 @@
     "packManifestBytes": {
       "doc": "The largest size of a pack manifest, in bytes.",
       "value": 32768
+    },
+    "logEntries": {
+      "doc": "The largest number of entries in one page of a search in the logs.",
+      "value": 1000
+    },
+    "logFilters": {
+      "doc": "The largest number of status codes or of methods in a search in the logs.",
+      "value": 10
     },
     "certificatesPerServer": {
       "doc": "The largest number of certificates from the panel on one server.",

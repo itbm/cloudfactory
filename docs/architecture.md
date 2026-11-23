@@ -415,6 +415,38 @@ The route sends traffic to `169.254.77.1:<port>`. Caddy gets the TLS certificate
 automatically. The agent starts the edge container before it adds the first route, also
 during the panel installation.
 
+### The access log of the edge proxy
+
+The edge proxy writes one entry for each request. The agent keeps the entries of each website
+for the log search of the panel.
+
+```text
+ Caddy (cf-edge) ──► TCP 169.254.77.1:19514 ──► agent worker ──► <dataDir>/logs/<website ID>/*.log
+```
+
+- The first handler of each website route is `log_append`. It adds the field `cf_website`,
+  with the ID of the website, to the entry of the request. A request that no website route
+  answers has no ID: the panel, the webmail, the host name of the mail server and the host
+  names that have no website. These entries go to the server log, `<dataDir>/logs/server`.
+- The logger `access` of Caddy has the `net` writer. It sends each entry as one line of JSON
+  to `169.254.77.1:19514` (`quadlet.EdgeLogPort`). The agent sets this logger with the
+  admin API (`caddy.LoggingConfig`), and `images/edge/base.json` has the same logger for
+  the first start. With `soft_start`, Caddy starts when the agent does not listen. It then
+  writes the entries to its standard error and connects again every 10 seconds.
+- The worker of the agent receives the entries (`sitelogs.Receiver`). It never stops Caddy:
+  when the disk is slow, it drops new entries after 20,000 entries in its queue. It reads at
+  most 4 connections at a time, and it ignores an entry of more than 1 MiB.
+- The agent keeps only these fields of an entry: the time, the client address, the method,
+  the host, the URI, the protocol, the status, the size of the answer, the duration, the
+  user agent and the referrer. It removes the control characters. Caddy removes the
+  `Cookie` and `Authorization` headers from its entries, and the agent does not keep the
+  other headers.
+- The worker writes the entries to files of at most 8 MiB, and starts a new file each day.
+  It removes the files that are older than 30 days. It also removes the oldest files of a
+  website when the website has more than 64 MiB, and the oldest files of all websites when
+  the logs directory has more than 4 GiB. The worker owns the directory (mode `0700`).
+- The agent removes the access log of a website when it removes the website.
+
 ### Protection of a website
 
 The edge proxy can protect a website that has domains. The protection has four parts: a
@@ -1075,9 +1107,25 @@ An archive can take a long time, so the panel makes a job for each archive opera
   entries. The web panel and `cf files archive` and `cf files extract` show the summary.
 - The unit of a website container has the log driver `k8s-file`. The container writes its
   standard output and its standard error to `website.log` in the home directory of the
-  website user. Podman starts a new file at 10 MB. For the logs, the agent reads the last
-  lines of this file as the website user. A line from standard output has the stream
-  `access`, and a line from standard error has the stream `error`.
+  website user. Podman starts a new file at 10 MB.
+- The log search (`SearchLogs`) covers three sources: `access`, the access log of the edge
+  proxy (refer to [The access log of the edge proxy](#the-access-log-of-the-edge-proxy)),
+  and `output` and `error`, the standard output and the standard error of the containers.
+  The worker searches the access log itself. For the containers, it starts
+  `cf-agent log-search <file>` as the website user, because only that user can read the
+  file. The agent then merges the two results, the newest entry first.
+- A search has words, status codes or classes (`404`, `5xx`), methods, a client address or
+  network, and a time range. A word that starts with `-` must not be in the entry, and a
+  phrase in double quotes is one word. A filter of the access log gives no lines of the
+  containers. The agent reads at most 16 MiB of each file for one search.
+- The answer has at most 1000 entries and a cursor for the next page. The cursor has the
+  position in each source: the file and the offset in the access log, and the inode and the
+  offset in the file of the containers. When Podman starts a new file, a cursor of the old
+  file has no more lines. With `summary`, the agent also counts all the entries that agree
+  with the search: the sources, the status classes, the size of the answers, and the 5
+  paths and the 5 clients with the most requests.
+- An administrator can search the server log, the requests that are not for a website
+  (`GET /api/v1/servers/{id}/access-log`).
 
 ### Cron jobs
 
