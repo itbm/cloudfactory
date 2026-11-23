@@ -33,6 +33,12 @@ Schedule::command('cloudfactory:prune-plugin-deliveries')->daily()->withoutOverl
 // Email notifications: the TLS certificates that expire soon. One email for each certificate.
 Schedule::command('cloudfactory:check-certificates')->dailyAt('08:00')->withoutOverlapping();
 
+// Uptime checks: the checks that are due go to the queue. The queue requests the addresses.
+Schedule::command('cloudfactory:uptime')->everyMinute()->withoutOverlapping();
+
+// Uptime checks: the panel keeps the results for 8 days and the closed incidents for 90 days.
+Schedule::command('cloudfactory:prune-uptime')->daily()->withoutOverlapping();
+
 // The certificates with DNS validation: the renewals, and the stages of the ACME orders. The
 // command runs for up to 50 seconds, so it runs in the background.
 Schedule::command('cloudfactory:certificates')->everyMinute()->withoutOverlapping()->runInBackground();

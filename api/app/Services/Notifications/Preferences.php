@@ -18,7 +18,7 @@ class Preferences
         }
         $choices = $user->notification_preferences ?? [];
 
-        return (bool) ($choices[$event->value] ?? $event->defaultOn());
+        return (bool) ($choices[$event->value] ?? $event->defaultOn($user->role));
     }
 
     /**

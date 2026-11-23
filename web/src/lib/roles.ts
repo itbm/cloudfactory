@@ -20,7 +20,7 @@ export interface NavEntry {
   to: string;
   label: string;
   /** The name of the icon (components/Layout.tsx). */
-  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "email" | "dns" | "certificates" | "networks" | "backups" | "apps" | "jobs" | "alerts" | "account" | "brand" | "settings" | "plugins" | "packs" | "imports";
+  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "email" | "dns" | "certificates" | "networks" | "backups" | "apps" | "jobs" | "alerts" | "uptime" | "account" | "brand" | "settings" | "plugins" | "packs" | "imports";
 }
 
 export interface NavSection {
@@ -41,6 +41,7 @@ const hosting = (websites: string, jobs: string): NavEntry[] => [
   { to: "/apps", label: "Apps", icon: "apps" },
   { to: "/jobs", label: jobs, icon: "jobs" },
   { to: "/alerts", label: "Usage alerts", icon: "alerts" },
+  { to: "/uptime", label: "Uptime checks", icon: "uptime" },
 ];
 
 const account: NavSection = {
