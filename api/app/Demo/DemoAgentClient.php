@@ -5,6 +5,7 @@ namespace App\Demo;
 use App\Models\AgentJob;
 use App\Models\Server;
 use App\Models\Website;
+use App\Services\AgentCallException;
 use App\Services\AgentClient;
 
 /**
@@ -25,6 +26,13 @@ class DemoAgentClient extends AgentClient
      */
     public function call(Server $server, string $method, array $payload, int $timeout = 75): array
     {
+        if ($method === 'SearchLogs') {
+            // An empty website ID is the access log of the server.
+            $website = ($payload['websiteId'] ?? '') === '' ? null : (Website::find($payload['websiteId']) ?? throw new AgentCallException('not_found', 'the agent does not know this website'));
+
+            return DemoLogs::search($server, $website, $payload);
+        }
+
         if ($method === 'CheckBranches') {
             return ['heads' => array_map(fn (array $check) => array_filter([
                 'websiteId' => $check['websiteId'] ?? '',

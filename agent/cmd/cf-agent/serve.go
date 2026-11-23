@@ -38,6 +38,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 	"github.com/itbm/cloudfactory/agent/internal/server"
 	"github.com/itbm/cloudfactory/agent/internal/signature"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/status"
 )
 
@@ -345,34 +346,51 @@ func prepareWorker(cfg config.Config, uid, gid int) error {
 	if err := ownJobs(cfg.DataDir, uid, gid); err != nil {
 		return err
 	}
+	if err := ownLogs(cfg.DataDir, uid, gid); err != nil {
+		return err
+	}
 	return ownImports(cfg.DataDir, uid, gid)
+}
+
+// logsDir is the directory of the access logs of the websites in the data directory. Only the
+// worker can open it (sitelogs.Store).
+const logsDir = "logs"
+
+// ownLogs gives the directory of the access logs to the worker.
+func ownLogs(dataDir string, uid, gid int) error {
+	return ownWorkerDir(dataDir, logsDir, uid, gid)
 }
 
 // ownImports gives the directory of the import archives to the worker (actions.ImportsDir).
 // The worker reads the archives as streams: root never opens them.
 func ownImports(dataDir string, uid, gid int) error {
+	return ownWorkerDir(dataDir, "imports", uid, gid)
+}
+
+// ownWorkerDir makes the directory name in the data directory for the worker, or gives it to
+// the worker when root owns it.
+func ownWorkerDir(dataDir, name string, uid, gid int) error {
 	data, err := safefs.Open(dataDir)
 	if err != nil {
 		return err
 	}
 	defer data.Close()
-	const importsDir = "imports"
-	fi, err := data.Lstat(importsDir)
+	fi, err := data.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
-		return data.Mkdir(importsDir, 0o700, uid, gid)
+		return data.Mkdir(name, 0o700, uid, gid)
 	}
 	if err != nil {
 		return err
 	}
 	if !fi.IsDir() {
-		return fmt.Errorf("%s is not a directory", filepath.Join(dataDir, importsDir))
+		return fmt.Errorf("%s is not a directory", filepath.Join(dataDir, name))
 	}
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != uid {
 		// Root made the directory, for example while the agent operated as one process.
-		if err := data.ChownTree(importsDir, uid, gid); err != nil {
+		if err := data.ChownTree(name, uid, gid); err != nil {
 			return err
 		}
-		return data.SetDir(importsDir, 0o700, uid, gid)
+		return data.SetDir(name, 0o700, uid, gid)
 	}
 	return nil
 }
@@ -596,6 +614,11 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	if deps.DBQuotaMount = deps.DatabaseQuotaMount(ctx); deps.DBQuotaMount == "" {
 		slog.Info("user quotas are off on the file system of the database servers; a new database server with a disk limit gets a disk image", "dir", deps.DatabaseDir())
 	}
+	// The access log of the edge proxy. The receiver listens before the edge proxy starts, so
+	// that Caddy can send the first entries.
+	deps.AccessLogs = &sitelogs.Store{Dir: filepath.Join(cfg.DataDir, logsDir)}
+	receiver := &sitelogs.Receiver{Addr: net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(quadlet.EdgeLogPort)), Store: deps.AccessLogs}
+	go receiver.Run(ctx)
 	// The edge proxy operates in gVisor like all other containers. Its image is signed (FR-1101).
 	if err := deps.EnsureEdge(ctx, deps.EdgeImage, cfg.DataDir); err != nil {
 		slog.Error("start edge proxy", "err", err)

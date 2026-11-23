@@ -16,6 +16,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -173,7 +174,7 @@ func wpError(args []string, err error) error {
 	if message = strings.TrimSpace(message); message == "" {
 		return fmt.Errorf("wp %s: exit code %s", wpCommandName(args), status)
 	}
-	return fmt.Errorf("wp %s: %s", wpCommandName(args), lastLines(cleanText(message), 600))
+	return fmt.Errorf("wp %s: %s", wpCommandName(args), lastLines(sitelogs.Clean(message), 600))
 }
 
 // wpCommandName gives the WP-CLI command of a list of arguments, with no options and no
@@ -216,7 +217,7 @@ func jsonPart(out string) string {
 
 // wpText cleans a short text from WordPress for the panel.
 func wpText(s string, max int) string {
-	s = strings.TrimSpace(cleanText(s))
+	s = strings.TrimSpace(sitelogs.Clean(s))
 	if len(s) > max {
 		s = strings.ToValidUTF8(s[:max], "")
 	}
@@ -830,7 +831,7 @@ func (d *Deps) RunWpCli(req *agentv1.RunWpCliRequest) (jobs.Job, error) {
 			case 126, 127:
 				return errNoWPCLI
 			}
-			output = lastLines(cleanText(output), wpCliOutputMax)
+			output = lastLines(sitelogs.Clean(output), wpCliOutputMax)
 			return nil
 		}},
 		{Name: "Check WordPress", Do: func(ctx context.Context) error {

@@ -256,6 +256,8 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 			body = map[string]string{"policy": *policy}
 		}
 		return a.change(ctx, http.MethodPost, path+"/install-updates", body)
+	case "access-log":
+		return a.searchLogs(ctx, path+"/access-log", false, args[1:])
 	case "reboot":
 		return a.change(ctx, http.MethodPost, path+"/reboot", nil)
 	case "update-agent":

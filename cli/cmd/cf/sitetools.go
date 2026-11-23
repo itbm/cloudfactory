@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/itbm/cloudfactory/cli/internal/client"
 )
@@ -277,39 +278,198 @@ func (a *app) archiveJob(ctx context.Context, path string, body map[string]any, 
 	return nil
 }
 
-// logs prints the last log lines of a website: "cf logs WEBSITE".
+// logs searches the logs of a website: "cf logs WEBSITE".
 func (a *app) logs(ctx context.Context, website string, args []string) error {
-	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
-	lines := fs.Int("lines", 200, "the number of lines, at most 2000")
-	stream := fs.String("type", "", "access or error")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
 	w, err := a.api.FindWebsite(ctx, website)
 	if err != nil {
 		return err
 	}
-	q := url.Values{"lines": {strconv.Itoa(*lines)}}
-	if *stream != "" {
-		q.Set("stream", *stream)
+	return a.searchLogs(ctx, "/websites/"+w.ID+"/logs", true, args)
+}
+
+// The limits of a log search: the API gives at most logPage entries in one answer, and the
+// command reads at most maxLogEntries entries.
+const (
+	logPage       = 1000
+	maxLogEntries = 10000
+)
+
+// logEntry is an entry of a log search: a request of the access log, or a line of a container.
+type logEntry struct {
+	At     string `json:"at"`
+	Source string `json:"source"`
+	Text   string `json:"text"`
+	Access *struct {
+		Client     string  `json:"client"`
+		Method     string  `json:"method"`
+		Host       string  `json:"host"`
+		URI        string  `json:"uri"`
+		Proto      string  `json:"proto"`
+		Status     int     `json:"status"`
+		SizeBytes  int64   `json:"sizeBytes"`
+		DurationMs float64 `json:"durationMs"`
+		UserAgent  string  `json:"userAgent"`
+		Referer    string  `json:"referer"`
+	} `json:"access"`
+}
+
+type logCount struct {
+	Value string `json:"value"`
+	Count int64  `json:"count"`
+}
+
+type logSummary struct {
+	Total      int64            `json:"total"`
+	Sources    map[string]int64 `json:"sources"`
+	Statuses   map[string]int64 `json:"statuses"`
+	TopPaths   []logCount       `json:"topPaths"`
+	TopClients []logCount       `json:"topClients"`
+	SizeBytes  int64            `json:"sizeBytes"`
+	Oldest     *string          `json:"oldest"`
+}
+
+type logResult struct {
+	Entries []logEntry  `json:"entries"`
+	Next    *string     `json:"next"`
+	Summary *logSummary `json:"summary"`
+}
+
+// searchLogs searches the logs of a website, or the access log of a server (no sources). It
+// reads the pages of the API until it has the number of entries, and shows the oldest entry
+// first, as a log file does.
+func (a *app) searchLogs(ctx context.Context, path string, sources bool, args []string) error {
+	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
+	source := new(string)
+	if sources {
+		source = fs.String("source", "", "access, output or error, with commas between them")
 	}
-	var out struct {
-		Lines []struct {
-			At     string `json:"at"`
-			Stream string `json:"stream"`
-			Text   string `json:"text"`
-		} `json:"lines"`
-	}
-	if err := a.api.Do(ctx, http.MethodGet, "/websites/"+w.ID+"/logs", q, nil, &out); err != nil {
+	search := fs.String("search", "", `the words that each entry must have. "-word" is a word that the entry must not have`)
+	status := fs.String("status", "", "status codes or classes, for example 404,5xx")
+	method := fs.String("method", "", "request methods, for example GET,POST")
+	clientIP := fs.String("client", "", "an IP address or a network, for example 203.0.113.0/24")
+	since := fs.String("since", "", "a duration such as 15m, 2h or 7d, or a time such as 2026-11-14T09:00:00Z")
+	until := fs.String("until", "", "a time such as 2026-11-14T10:00:00Z")
+	limit := fs.Int("limit", 100, fmt.Sprintf("the number of entries, at most %d", maxLogEntries))
+	summary := fs.Bool("summary", false, "also count all the entries that agree with the search")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if a.json {
-		return a.printJSON(out)
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected argument %q: give the words of the search with --search", fs.Arg(0))
 	}
-	for _, l := range out.Lines {
-		fmt.Fprintf(a.out, "%s %-6s %s\n", l.At, l.Stream, l.Text)
+	if *limit < 1 || *limit > maxLogEntries {
+		return fmt.Errorf("--limit must be from 1 to %d", maxLogEntries)
+	}
+	q := url.Values{}
+	for key, value := range map[string]string{"sources": *source, "q": *search, "status": *status, "method": *method, "client": *clientIP} {
+		if v := strings.TrimSpace(value); v != "" {
+			q.Set(key, v)
+		}
+	}
+	for key, value := range map[string]string{"from": *since, "to": *until} {
+		if value == "" {
+			continue
+		}
+		t, err := logTime(value, time.Now())
+		if err != nil {
+			return fmt.Errorf("--%s: %w", map[string]string{"from": "since", "to": "until"}[key], err)
+		}
+		q.Set(key, t.UTC().Format(time.RFC3339Nano))
+	}
+	var all logResult
+	for {
+		q.Set("limit", strconv.Itoa(min(*limit-len(all.Entries), logPage)))
+		if *summary && all.Next == nil {
+			q.Set("summary", "1")
+		} else {
+			q.Del("summary")
+		}
+		var page logResult
+		if err := a.api.Do(ctx, http.MethodGet, path, q, nil, &page); err != nil {
+			return err
+		}
+		all.Entries = append(all.Entries, page.Entries...)
+		all.Next = page.Next
+		if page.Summary != nil {
+			all.Summary = page.Summary
+		}
+		if all.Next == nil || len(all.Entries) >= *limit {
+			break
+		}
+		q.Set("cursor", *all.Next)
+	}
+	if a.json {
+		return a.printJSON(all)
+	}
+	if s := all.Summary; s != nil {
+		a.printLogSummary(s)
+	}
+	for i := len(all.Entries) - 1; i >= 0; i-- {
+		fmt.Fprintln(a.out, logLine(all.Entries[i]))
+	}
+	if all.Next != nil {
+		fmt.Fprintf(a.out, "There are older entries. Use --limit with a number larger than %d, or --until %s.\n", len(all.Entries), all.Entries[len(all.Entries)-1].At)
 	}
 	return nil
+}
+
+// logTime reads a time, or a duration before now such as 15m, 2h or 7d.
+func logTime(s string, now time.Time) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if days, ok := strings.CutSuffix(s, "d"); ok {
+		if n, err := strconv.Atoi(days); err == nil && n > 0 {
+			return now.AddDate(0, 0, -n), nil
+		}
+	} else if d, err := time.ParseDuration(s); err == nil && d > 0 {
+		return now.Add(-d), nil
+	}
+	return time.Time{}, fmt.Errorf("give a duration such as 15m, 2h or 7d, or a time such as 2026-11-14T09:00:00Z, not %q", s)
+}
+
+// logLine gives one entry as one line of text.
+func logLine(e logEntry) string {
+	a := e.Access
+	if a == nil {
+		return fmt.Sprintf("%s %-6s %s", e.At, e.Source, e.Text)
+	}
+	return fmt.Sprintf("%s %-6s %d %s %s%s %s %s %.1fms %q %q", e.At, e.Source, a.Status, a.Method, a.Host, a.URI, a.Client, logBytes(a.SizeBytes), a.DurationMs, a.Referer, a.UserAgent)
+}
+
+func (a *app) printLogSummary(s *logSummary) {
+	fmt.Fprintf(a.out, "Requests: %d (2xx %d, 3xx %d, 4xx %d, 5xx %d), %s sent\n", s.Sources["access"], s.Statuses["2xx"], s.Statuses["3xx"], s.Statuses["4xx"], s.Statuses["5xx"], logBytes(s.SizeBytes))
+	fmt.Fprintf(a.out, "Output lines: %d. Error lines: %d.\n", s.Sources["output"], s.Sources["error"])
+	counts := func(title string, list []logCount) {
+		if len(list) == 0 {
+			return
+		}
+		parts := make([]string, len(list))
+		for i, c := range list {
+			parts[i] = fmt.Sprintf("%s (%d)", c.Value, c.Count)
+		}
+		fmt.Fprintf(a.out, "%s: %s\n", title, strings.Join(parts, ", "))
+	}
+	counts("Top paths", s.TopPaths)
+	counts("Top clients", s.TopClients)
+	if s.Oldest != nil {
+		fmt.Fprintf(a.out, "The oldest entry is from %s.\n", *s.Oldest)
+	}
+	fmt.Fprintln(a.out)
+}
+
+// logBytes gives a size with a binary unit, for example "21.8MB".
+func logBytes(n int64) string {
+	units := []string{"B", "KB", "MB", "GB", "TB"}
+	v, i := float64(n), 0
+	for v >= 1024 && i < len(units)-1 {
+		v /= 1024
+		i++
+	}
+	if i == 0 {
+		return fmt.Sprintf("%dB", n)
+	}
+	return fmt.Sprintf("%.1f%s", v, units[i])
 }
 
 func (a *app) cron(ctx context.Context, sub string, args []string) error {

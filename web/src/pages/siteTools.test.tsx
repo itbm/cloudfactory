@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
-import type { CronJob, Deploy, WebsiteCommand } from "../api/types";
+import type { CronJob, Deploy, LogEntry, LogSearchResult, WebsiteCommand } from "../api/types";
 import { toBase64 } from "../features/FileManager";
 import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelApi";
 
@@ -175,12 +175,93 @@ describe("the file manager", () => {
 });
 
 describe("the logs of a website", () => {
-  it("shows the log lines and filters them", async () => {
-    await open("shop.acme.example.com", "logs");
+  const request: LogEntry = {
+    at: "2026-11-14T09:58:52.757Z", source: "access", text: "",
+    access: { client: "198.51.100.250", method: "POST", host: "shop.acme.example.com", uri: "/wp-login.php", proto: "HTTP/2.0", status: 404, sizeBytes: 548, durationMs: 1.2, userAgent: "zgrab", referer: "" },
+  };
+  const line: LogEntry = { at: "2026-11-14T09:58:52.700Z", source: "error", text: "PHP Warning:  Undefined array key", access: null };
+
+  /**
+   * The first page of a search with no filters: 45 requests and 5 lines of the errors, the
+   * newest first, with a summary. The tests do not use the logs of the fixtures.
+   */
+  function firstPage(): LogSearchResult {
+    const entries: LogEntry[] = Array.from({ length: 50 }, (_, i) => {
+      const at = new Date(Date.UTC(2026, 10, 14, 10, 0) - i * 60_000).toISOString();
+      if (i % 10 === 9) return { ...line, at };
+      const client = i % 3 === 0 ? "198.51.100.250" : "203.0.113.7";
+      return { ...request, at, access: { ...request.access!, client, method: "GET", uri: i % 2 ? "/" : "/products", status: i % 7 === 0 ? 500 : 200 } };
+    });
+    return {
+      entries, next: "page-2",
+      summary: {
+        total: 120, sources: { access: 108, output: 0, error: 12 }, statuses: { "1xx": 0, "2xx": 96, "3xx": 0, "4xx": 4, "5xx": 8 },
+        topPaths: [{ value: "/products", count: 60 }, { value: "/", count: 48 }], topClients: [{ value: "203.0.113.7", count: 72 }, { value: "198.51.100.250", count: 36 }],
+        sizeBytes: 912_000, oldest: "2026-11-12T10:00:00Z",
+      },
+    };
+  }
+
+  /** Signs in as an owner and opens the logs of a website, with firstPage as the answer. */
+  async function openLogs(): Promise<{ api: PanelApi; id: string }> {
+    const api = await signedIn("owner");
+    const id = website("shop.acme.example.com").id;
+    api.on(`GET /websites/${id}/logs?*`, () => firstPage());
+    render(<MemoryRouter initialEntries={[`/websites/${id}/logs`]}><App /></MemoryRouter>);
+    return { api, id };
+  }
+
+  it("shows the requests, the lines and the summary of the search", async () => {
+    await openLogs();
     const view = await screen.findByLabelText("Log lines");
-    await waitFor(() => expect(view.querySelectorAll("div").length).toBeGreaterThan(5));
-    fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "no line has this text" } });
-    expect(view.textContent).toBe("No lines match the filter.");
+    await waitFor(() => expect(view.querySelectorAll(".log-row")).toHaveLength(50));
+    const summary = screen.getByRole("region", { name: "Summary of the search" });
+    expect(summary.textContent).toContain("Requests");
+    expect(within(summary).getByRole("img").getAttribute("aria-label")).toMatch(/^Status codes: 2xx \d/);
+    expect(screen.getByRole("button", { name: "Load older entries" })).toBeTruthy();
+  });
+
+  it("sends the search and the filters to the API, and loads older entries", async () => {
+    const { api, id } = await openLogs();
+    await screen.findByRole("button", { name: "Load older entries" });
+    const paths: string[] = [];
+    api.on(`GET /websites/${id}/logs?*`, (_body, path) => {
+      paths.push(path);
+      const first = !path.includes("cursor=");
+      return { entries: first ? [request] : [line], next: first ? "page-2" : null, summary: null };
+    });
+    const base = `/websites/${id}/logs`;
+
+    fireEvent.change(screen.getByLabelText("Search the logs"), { target: { value: " wp-login " } });
+    fireEvent.change(screen.getByLabelText("Client"), { target: { value: "198.51.100.0/24" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?q=wp-login&client=198.51.100.0%2F24&limit=50&summary=1`));
+    fireEvent.click(screen.getByRole("button", { name: "4xx" }));
+    fireEvent.change(screen.getByLabelText("Method"), { target: { value: "POST" } });
+    fireEvent.click(screen.getByRole("button", { name: "Output" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?sources=access%2Cerror&q=wp-login&status=4xx&method=POST&client=198.51.100.0%2F24&limit=50&summary=1`));
+    expect(screen.getByText(/filters apply only to requests/)).toBeTruthy();
+
+    const view = screen.getByLabelText("Log lines");
+    await waitFor(() => expect(view.textContent).toContain("/wp-login.php"));
+    fireEvent.click(screen.getByRole("button", { name: "Load older entries" }));
+    await waitFor(() => expect(view.querySelectorAll(".log-row")).toHaveLength(2));
+    expect(paths.at(-1)).toBe(`${base}?sources=access%2Cerror&q=wp-login&status=4xx&method=POST&client=198.51.100.0%2F24&cursor=page-2&limit=50`);
+    expect(view.querySelector(".log-row.err")?.textContent).toContain("PHP Warning");
+    expect(screen.queryByRole("button", { name: "Load older entries" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?limit=50&summary=1`));
+  });
+
+  it("filters by a top client of the summary, and shows the error of the API", async () => {
+    const { api, id } = await openLogs();
+    const top = (await screen.findAllByRole("button", { name: /^Show the requests of / }))[0];
+    const client = top.getAttribute("aria-label")!.replace("Show the requests of ", "");
+    api.on(`GET /websites/${id}/logs?*`, () => [422, { message: "Enter an IP address or a network, for example 203.0.113.7 or 203.0.113.0/24.", errors: { client: ["Enter an IP address or a network."] } }]);
+    fireEvent.click(top);
+    expect((screen.getByLabelText("Client") as HTMLInputElement).value).toBe(client);
+    expect((await screen.findByRole("alert")).textContent).toContain("Enter an IP address");
   });
 });
 

@@ -399,12 +399,12 @@ func (s *Service) SetFileMode(ctx context.Context, r *connect.Request[agentv1.Se
 	return connect.NewResponse(&agentv1.FileModeSet{File: actions.FileEntry(*resp.Entry), Changed: int64(resp.Changed)}), nil
 }
 
-func (s *Service) GetLogs(ctx context.Context, r *connect.Request[agentv1.GetLogsRequest]) (*connect.Response[agentv1.Logs], error) {
-	lines, err := s.Deps.Logs(ctx, r.Msg.GetWebsiteId(), int(r.Msg.GetLines()))
+func (s *Service) SearchLogs(ctx context.Context, r *connect.Request[agentv1.SearchLogsRequest]) (*connect.Response[agentv1.LogSearchResult], error) {
+	out, err := s.Deps.SearchLogs(ctx, r.Msg)
 	if err != nil {
 		return nil, fileError(err)
 	}
-	return connect.NewResponse(&agentv1.Logs{Lines: lines}), nil
+	return connect.NewResponse(out), nil
 }
 
 func (s *Service) GetFirewallEvents(ctx context.Context, r *connect.Request[agentv1.GetFirewallEventsRequest]) (*connect.Response[agentv1.FirewallEvents], error) {

@@ -589,8 +589,9 @@ func (d *Deps) RestoreLocalNames(ctx context.Context) error {
 		// Each website gets its route again: an edge proxy that lost its configuration has
 		// all routes again after a start of the agent, and a route from an earlier agent
 		// version gets the matcher of this version (adversarial review, findings G6-07 and
-		// G6-02). Caddy does nothing for a route that did not change.
-		errs = append(errs, d.Edge.Apply(ctx, d.edgeSite(s, s.Website)))
+		// G6-02). Caddy does nothing for a route that did not change. The access log of the
+		// website gets its directory before the first entry.
+		errs = append(errs, d.ensureAccessLog(s.Website.GetId()), d.Edge.Apply(ctx, d.edgeSite(s, s.Website)))
 	}
 	return errors.Join(errs...)
 }

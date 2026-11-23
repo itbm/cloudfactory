@@ -786,6 +786,11 @@ const (
 	PanelTerminalPort = 19082
 )
 
+// EdgeLogPort is the port on ServiceAddress on which the worker of the agent receives the
+// access log of the edge proxy. The host firewall lets only root and the edge user connect
+// to it, as to the other ports of ServiceAddress.
+const EdgeLogPort = 19514
+
 // PanelDatabaseContainer is the name of the container with the database of the panel.
 const PanelDatabaseContainer = "cf-panel-db"
 
