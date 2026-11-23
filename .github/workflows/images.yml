@@ -67,7 +67,8 @@ jobs:
               { "image": "valkey", "context": "images/valkey", "file": "images/valkey/Containerfile", "args": "", "paths": ["images/valkey/", "agent/internal/actions/valkey", "agent/internal/quadlet/quadlet.go"] },
               { "image": "mail", "context": "images/mail", "file": "images/mail/Containerfile", "args": "", "paths": ["images/mail/"] },
               { "image": "mail-keep", "context": "images/mail-keep", "file": "images/mail-keep/Containerfile", "args": "", "paths": ["images/mail-keep/"] },
-              { "image": "webmail", "context": "images/webmail", "file": "images/webmail/Containerfile", "args": "", "paths": ["images/webmail/"] }
+              { "image": "webmail", "context": "images/webmail", "file": "images/webmail/Containerfile", "args": "", "paths": ["images/webmail/"] },
+              { "image": "scan", "context": "images/scan", "file": "images/scan/Containerfile", "args": "", "paths": ["images/scan/"] }
             ]
         run: |
           set -eu
@@ -221,6 +222,30 @@ jobs:
             # The limits of quadlet.MailKeepUnit. A member needs the keys of the other members,
             # so this check starts the program only to print its options.
             docker run --rm --cap-drop=all --security-opt no-new-privileges --read-only mail-keep:test --help
+            exit 0
+          fi
+          if [ "$IMAGE" = scan ]; then
+            # The limits of a scan (actions.scanFiles): a user that is not root, no network, and
+            # the website and the signatures read-only. The check does not get the signatures
+            # from database.clamav.net. A signature of the hash of the EICAR test file finds it.
+            mkdir -p "$RUNNER_TEMP/scan/site/public" "$RUNNER_TEMP/scan/sigs"
+            # The text is in two parts, so that a scanner does not find this workflow file.
+            printf '%s%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR' '-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' >"$RUNNER_TEMP/scan/site/public/eicar.php"
+            echo '<?php echo "ok";' >"$RUNNER_TEMP/scan/site/public/index.php"
+            echo "$(md5sum <"$RUNNER_TEMP/scan/site/public/eicar.php" | cut -d' ' -f1):68:Cf.Test.Eicar" >"$RUNNER_TEMP/scan/sigs/test.hdb"
+            chmod -R a+rX "$RUNNER_TEMP/scan"
+            set +e
+            out=$(docker run --rm --user 1001:1001 --network=none --cap-drop=all --security-opt no-new-privileges --read-only --tmpfs /tmp \
+              -v "$RUNNER_TEMP/scan/site:/scan:ro" -v "$RUNNER_TEMP/scan/sigs:/var/lib/clamav:ro" \
+              scan:test clamscan --recursive --infected --stdout --tempdir=/tmp --database=/var/lib/clamav /scan)
+            code=$?
+            set -e
+            echo "$out"
+            # clamscan ends with 1 when it finds malware.
+            [ "$code" = 1 ]
+            echo "$out" | grep -qx '/scan/public/eicar.php: Cf.Test.Eicar.UNOFFICIAL FOUND'
+            echo "$out" | grep -qx 'Infected files: 1'
+            docker run --rm --user 1001:1001 --network=none --read-only scan:test freshclam --version
             exit 0
           fi
           if [ "$IMAGE" = webmail ]; then

@@ -234,6 +234,25 @@
                     "minutes",
                     "ip"
                 ]
+            },
+            {
+                "event": "malware.found",
+                "label": "Malware found",
+                "description": "A malware scan found infected files in a website.",
+                "subject": "Malware found in {{website}}",
+                "body": "Hello {{name}},\n\nThe malware scan of {{website}} at {{time}} found {{count}} infected files:\n\n{{files}}\n\nThe scan did not change the files. Open the Security tab of the website to remove the files, then scan again. Also change the passwords of the website, and update its software:\n{{panelUrl}}/websites",
+                "changed": false,
+                "originalSubject": "Malware found in {{website}}",
+                "originalBody": "Hello {{name}},\n\nThe malware scan of {{website}} at {{time}} found {{count}} infected files:\n\n{{files}}\n\nThe scan did not change the files. Open the Security tab of the website to remove the files, then scan again. Also change the passwords of the website, and update its software:\n{{panelUrl}}/websites",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "website",
+                    "count",
+                    "files",
+                    "time"
+                ]
             }
         ]
     }

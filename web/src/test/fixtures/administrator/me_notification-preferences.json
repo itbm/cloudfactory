@@ -65,6 +65,13 @@
                 "description": "Someone asked for a link to set a new password for your user.",
                 "email": true,
                 "required": true
+            },
+            {
+                "event": "malware.found",
+                "label": "Malware found",
+                "description": "A malware scan found infected files in a website.",
+                "email": true,
+                "required": false
             }
         ]
     }

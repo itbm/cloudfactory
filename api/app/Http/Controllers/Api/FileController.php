@@ -7,6 +7,7 @@ use App\Models\Website;
 use App\Services\AgentCallException;
 use App\Services\AgentClient;
 use App\Services\Audit;
+use App\Services\MalwareScans;
 use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -114,6 +115,8 @@ class FileController extends Controller
         }
         $this->call($website, 'DeleteFile', ['path' => $path]);
         Audit::record($request, 'Deleted file', "{$website->name}: {$path}", $website->customer_id);
+        // A file that the last malware scan found is gone.
+        MalwareScans::fileRemoved($website, $path);
 
         return response()->json(null, 204);
     }
