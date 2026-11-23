@@ -65,6 +65,7 @@ use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Signatures;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
+use App\Services\WebsiteSecurity;
 use CBOR\ByteStringObject;
 use CBOR\MapObject;
 use CBOR\NegativeIntegerObject;
@@ -616,8 +617,18 @@ class DemoSeeder extends Seeder
         $key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGh0dHBzOi8vY2xvdWRmYWN0b3J5LmV4YW1wbGUvZGVtbw olu@laptop';
         // name, application, customer, server, image, status, days since creation, use (CPU %, memory MB, disk MB, processes), more
         $rows = [
-            ['acme.example.com', 'WordPress', 'acme', 'web-1', 'frankenphp-8.4', 'running', 380, [18, 412, 6200, 24], ['sftp_enabled' => true, 'sftp_keys' => [$key]]],
-            ['shop.acme.example.com', 'WooCommerce', 'acme', 'web-1', 'frankenphp-8.4', 'running', 210, [61, 1730, 21400, 58], []],
+            // The protection of a website: the firewall of the WordPress website only detects,
+            // and the firewall of the shop blocks.
+            ['acme.example.com', 'WordPress', 'acme', 'web-1', 'frankenphp-8.4', 'running', 380, [18, 412, 6200, 24], ['sftp_enabled' => true, 'sftp_keys' => [$key], 'security' => [
+                'firewall' => 'detect', 'firewallExclusions' => [], 'firewallSkipPaths' => [],
+                'allow' => [], 'block' => ['198.51.100.23', '203.0.113.0/24'],
+                'protectedPaths' => [['path' => '/reports/', 'users' => [['name' => 'acme', 'passwordHash' => password_hash('demo-password', PASSWORD_BCRYPT, ['cost' => 10])]]]],
+                'signInLimit' => 10, 'signInPaths' => WebsiteSecurity::WORDPRESS_SIGN_IN_PATHS,
+            ]]],
+            ['shop.acme.example.com', 'WooCommerce', 'acme', 'web-1', 'frankenphp-8.4', 'running', 210, [61, 1730, 21400, 58], ['security' => [
+                'firewall' => 'block', 'firewallExclusions' => [942100], 'firewallSkipPaths' => ['/wp-admin/'],
+                'allow' => [], 'block' => [], 'protectedPaths' => [], 'signInLimit' => 0, 'signInPaths' => [],
+            ]]],
             ['api.acme.example.com', 'Laravel', 'acme', 'web-1', 'frankenphp-8.5', 'running', 95, [9, 300, 840, 12], ['worker_mode' => true]],
             ['storefront.acme.example.com', 'Node.js app', 'acme', 'web-2', 'node', 'running', 20, [5, 210, 380, 9], []],
             ['old.acme.example.com', 'Website', 'acme', 'web-1', 'apache-8.4', 'stopped', 390, [0, 0, 1900, 0], []],

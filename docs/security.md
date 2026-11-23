@@ -453,6 +453,15 @@ not trust it:
 - For a stopped website, the route gives a fixed page with the status 503 ("This website is
   not available"). The proxy does not connect to the port of the stopped website, and the
   page shows no data of the server.
+- The edge proxy can protect a website with a firewall, IP address rules, password-protected
+  paths and a sign-in limit. Refer to
+  [architecture.md](architecture.md#protection-of-a-website).
+- The API never gives the password hashes of the protected paths. The audit log records each
+  change of the protection with the parts that changed, but not the addresses or the
+  passwords.
+- The root helper reads the firewall log of the edge proxy only as a regular file of the user
+  `cf-edge`, with no symbolic links. The worker gives only the ID of a website that the agent
+  knows, and gets only the events of that website.
 
 ## The agent
 
@@ -1285,6 +1294,16 @@ These items stay open in release 0.1:
   installer writes the rule that refuses the connections of the Unix users of the database
   servers. A server that you installed with an earlier release gets the rule when you run
   the installer again.
+- **Client addresses behind a CDN.** The IP address rules and the sign-in limit use the
+  address that connects to the edge proxy. When a website is behind a CDN or a proxy, for
+  example Cloudflare, all requests come from the addresses of the CDN. The edge proxy does
+  not read `X-Forwarded-For`, because each client can set it.
+- **IPv6 addresses for the sign-in limit.** The sign-in limit counts the requests of each
+  address. A client with an IPv6 network can use many addresses, and gets the limit for each
+  address. Add the network to the block list to stop it.
+- **The firewall is not complete protection.** The firewall uses paranoia level 1, examines
+  only the first 1 MiB of a request body and does not examine the responses. It cannot see an
+  attack in a part that it does not examine. Keep the software of each website up to date.
 - **Rights of the worker of the agent.** The worker is not root, but it can act as each
   website user, it manages each database server, and it has the full admin API of the edge
   proxy. Refer to [The root helper of the agent](#the-root-helper-of-the-agent). A possible
