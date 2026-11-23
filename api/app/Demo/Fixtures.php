@@ -129,8 +129,8 @@ class Fixtures
                 $paths[] = "/imports/{$id}";
             }
         }
-        // The autoresponder dialog of a mailbox reads the autoresponder from the mail server.
-        // The fixtures have the mailboxes of the first mail domain of the user.
+        // The dialogs of a mailbox read these answers. The fixtures have the mailboxes of the first
+        // mail domain of the user.
         $domain = MailDomain::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->first();
         foreach (Mailbox::where('mail_domain_id', $domain?->id)->orderBy('local_part')->pluck('id') as $id) {
             $paths[] = "/mail/mailboxes/{$id}/autoresponder";
