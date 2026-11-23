@@ -213,6 +213,8 @@ export interface Website {
   lastChange: LastChange;
   /** A staging copy points to its source website (FR-205). */
   stagingOf?: string;
+  /** A preview website points to its pull request and to the website of the Git source. */
+  previewOf?: PreviewOf;
   managedByTerraform: boolean;
   /** The image tag that the website uses. When it is not set, the website uses the running tag of its image. */
   imageTag?: string;
@@ -1247,6 +1249,55 @@ export interface Release {
 export interface Deploy {
   source: GitSource | null;
   releases: Release[];
+}
+
+/** The pull request of a preview website. The panel removes the preview when the pull request closes. */
+export interface PreviewOf {
+  /** The website of the Git source. */
+  websiteId: string;
+  number: number;
+  branch: string;
+  title: string;
+  /** The page of the pull request on the Git host. */
+  url: string | null;
+}
+
+export interface PreviewSettings {
+  enabled: boolean;
+  /** Each preview gets the name pr-<number>.<domain>. */
+  domain: string | null;
+  /** The largest number of previews at the same time. */
+  limit: number;
+  /** True: the previews get the environment variables and the build secrets of the website. */
+  copyEnvironment: boolean;
+}
+
+export type PreviewState = "creating" | "deploying" | "live" | "failed" | "removing";
+
+/** The preview website of one pull request. */
+export interface Preview {
+  number: number;
+  title: string;
+  /** The head branch of the pull request. */
+  branch: string;
+  url: string | null;
+  /** The preview website. Null when the panel could not make it: "error" has the cause. */
+  websiteId: string | null;
+  name: string | null;
+  state: PreviewState;
+  /** The last deploy of the preview. */
+  release: Release | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Previews {
+  /** Null when the website has no Git source, or is a preview itself. */
+  settings: PreviewSettings | null;
+  suggestedDomain: string | null;
+  maxLimit: number;
+  previews: Preview[];
 }
 
 // Plugins: programs outside the panel with their own token (docs/plugins.md). The panel

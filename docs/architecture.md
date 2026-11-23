@@ -930,6 +930,65 @@ The trigger of the Git source is `manual`, `webhook` or `schedule`.
   one time: when the deploy of a commit fails, the next check does not deploy it again. The
   panel records the time and the error of the last check in `checked_at` and `check_error`.
 
+### Previews of pull requests
+
+A public website that deploys from Git can have previews. A preview is a website of the plan
+for one pull request to the branch of the Git source. The panel makes the preview when the
+pull request opens. It deploys the preview again for each new commit. It removes the preview
+when the pull request closes or merges.
+
+The settings are on the Git source (table `git_sources`):
+
+- `previews`: on or off.
+- `preview_domain`: the domain of the previews. Each preview gets the name
+  `pr-<number>.<domain>`, for example `pr-42.preview.example.com`.
+- `preview_limit`: the number of previews at the same time, from 1 to 10. The default is 3.
+- `preview_environment`: give the environment variables and the build secrets of the website
+  to the previews. The default is off.
+
+The table `previews` keeps one row for each pull request: the number, the branch, the title,
+the address of the pull request, the preview website, and the last error.
+
+To turn on the previews:
+
+1. Open the Deploys tab of the website.
+2. Select **Turn on previews**.
+3. Type the domain of the previews.
+4. Add a DNS record `*.<domain>` that points to the server of the website.
+5. On the Git host, send the pull request events to the webhook address of the website, with
+   the webhook secret.
+
+How the panel makes a preview:
+
+1. The webhook gets a pull request event with a correct signature. The panel reads the event
+   of GitHub, GitLab, Gitea, Forgejo, Gogs and Bitbucket Cloud.
+2. The panel copies the website to a new website. The copy has the same server, plan, image,
+   runtime and limits. It does not get the files, the databases, the SFTP access or the
+   cron jobs of the website.
+3. The panel gives the preview its own Git source: the same repository, deploy key, web
+   directory and build commands, with the branch of the pull request. The source has its own
+   webhook token and secret, and the trigger `manual`. A preview does not run the migration
+   command, because the code of a pull request is not reviewed.
+4. The job `CreateWebsite` makes the container. When the job succeeds, the panel starts the
+   first deploy.
+5. For each new commit, the panel starts a deploy. If a deploy runs, the panel starts the
+   deploy again after it ends.
+6. When the pull request closes, the panel removes the preview website with its files.
+
+- The domain of the previews must be in a verified domain of the customer, or in a DNS zone
+  of the customer in the panel. Thus the panel verifies the name of each preview at once.
+- The panel ignores a pull request from a fork, and a pull request to a different branch.
+- When the number of previews is at the limit, or the customer is at the website limit of
+  the plan, the panel does not make the preview. It keeps the cause on the row of the pull
+  request. The next commit tries again.
+- A preview takes its deploy settings from the website of the pull request. The panel
+  refuses a change of the Git source and the secrets of a preview.
+- When the previews go off, when the Git source disconnects, or when the website goes, the
+  panel removes all preview websites.
+- A CI pipeline can make a preview with `POST /api/v1/websites/<id>/previews`, or with
+  `cf previews create`. This is for a Git host that the panel does not read.
+- The plugin events `website.created` and `website.removed` also occur for a preview.
+
 ## Databases
 
 A customer makes database servers as it makes websites. A database server is one container
