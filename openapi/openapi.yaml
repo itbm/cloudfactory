@@ -65,8 +65,8 @@ tags:
   - name: Customers
   - name: Imports
     description: >-
-      The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP. Administrators only.
-      Refer to docs/imports.md.
+      The import of an account from cPanel, DirectAdmin, Plesk, HestiaCP or a different
+      Cloudfactory panel. Administrators only. Refer to docs/imports.md.
   - name: Users
     description: The users who can sign in. These routes need the users scope.
   - name: Audit

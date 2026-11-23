@@ -342,7 +342,8 @@ Route::prefix('v1')->group(function () {
             Route::get('setup', [SetupController::class, 'show']);
         });
 
-        // The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP (docs/imports.md).
+        // The import of an account from cPanel, DirectAdmin, Plesk, HestiaCP or a different
+        // Cloudfactory panel (docs/imports.md).
         // The import makes websites, databases, mail and DNS zones, so only an administrator
         // imports.
         Route::middleware(['admin', 'scope:websites'])->group(function () {

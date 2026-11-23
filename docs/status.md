@@ -173,7 +173,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `api/app/Console/Commands/`
 
-- Account import from cPanel, DirectAdmin, Plesk and HestiaCP (and VestaCP): the agent reads a backup (an upload in parts, or a download from an HTTPS URL) and gives a plan. An administrator selects the parts, and the panel makes the websites, domains, databases with their dumps, cron jobs (turned off), mail domains, mailboxes with their password hashes and messages, aliases, forwarders and DNS records with its own API. The page **Imports**, `cf imports` and `/v1/imports`. Not done yet: CyberPanel and Virtualmin backups, Plesk for Windows backups, and PostgreSQL databases. Not tested on a real server: refer to [imports.md](imports.md#not-tested-on-a-real-server)
+- Account import from cPanel, DirectAdmin, Plesk and HestiaCP (and VestaCP), and from the account export of a different Cloudfactory panel: the agent reads a backup (an upload in parts, or a download from an HTTPS URL) and gives a plan. An administrator selects the parts, and the panel makes the websites, domains, databases with their dumps, cron jobs (turned off), mail domains, mailboxes with their password hashes and messages, aliases, forwarders and DNS records with its own API. The page **Imports**, `cf imports` and `/v1/imports`. Not done yet: CyberPanel and Virtualmin backups, Plesk for Windows backups, and PostgreSQL databases. Not tested on a real server: refer to [imports.md](imports.md#not-tested-on-a-real-server)
 
   Where: `agent/internal/migrate`, `agent/internal/actions/imports.go`, `api/app/Services/Imports`, `api/app/Http/Controllers/Api/ImportController.php`, `web/src/pages/ImportsPage.tsx`, `cli/cmd/cf/imports.go`, [imports.md](imports.md)
 

@@ -1,25 +1,27 @@
 # Import an account from a different panel
 
 This guide is for an administrator. It tells you how to move a hosting account from cPanel,
-DirectAdmin, Plesk or HestiaCP to Cloudfactory. The import reads the backup of the account and
-makes its websites, databases, cron jobs, mailboxes and DNS zones for a customer of the panel.
+DirectAdmin, Plesk, HestiaCP or a different Cloudfactory panel to Cloudfactory. The import reads
+the backup of the account and makes its websites, databases, cron jobs, mailboxes and DNS zones
+for a customer of the panel.
 
 The old panel continues to operate during the import. The websites and the mail move to
 Cloudfactory only when you change the DNS of their domains.
 
 ## The backups that the panel reads
 
-| Panel       | Backup                                                                                                             |
-| ----------- | ------------------------------------------------------------------------------------------------------------------ |
-| cPanel      | The account backup of `pkgacct` or of **Backup** in cPanel, for example `cpmove-USER.tar.gz` or `backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz` |
-| DirectAdmin | The user backup of DirectAdmin, for example `user.admin.USER.tar.gz` or `user.admin.USER.tar.zst`                  |
-| Plesk       | A backup of a subscription or a customer from **Backup Manager** or `pleskbackup`, downloaded as one file, for example `backup_example.com_2311221200.tar` |
-| HestiaCP    | A user backup from **Backups** in HestiaCP or from `v-backup-user`, for example `USER.2026-11-22_05-00-00.tar`. The agent also reads a VestaCP backup, which has the same layout. |
+| Panel        | Backup                                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| cPanel       | The account backup of `pkgacct` or of **Backup** in cPanel, for example `cpmove-USER.tar.gz` or `backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz` |
+| DirectAdmin  | The user backup of DirectAdmin, for example `user.admin.USER.tar.gz` or `user.admin.USER.tar.zst`                  |
+| Plesk        | A backup of a subscription or a customer from **Backup Manager** or `pleskbackup`, downloaded as one file, for example `backup_example.com_2311221200.tar` |
+| HestiaCP     | A user backup from **Backups** in HestiaCP or from `v-backup-user`, for example `USER.2026-11-22_05-00-00.tar`. The agent also reads a VestaCP backup, which has the same layout. |
+| Cloudfactory | An account export (`cf-export/1`) of a different Cloudfactory panel, for example `corner-bakery-export-20261122-2103.tar`. Refer to [An account export of Cloudfactory](#an-account-export-of-cloudfactory). |
 
 The file can be a tar archive with no compression, or with gzip, bzip2 or zstd compression. The
 agent finds the type from the content of the file, not from its name. It also reads an archive
 in the archive, for example `homedir.tar` of cPanel, `backup_user-data_2311221200.tgz` of
-Plesk or `domain_data.tar.zst` of HestiaCP.
+Plesk, `domain_data.tar.zst` of HestiaCP or `files.tar.gz` of a Cloudfactory account export.
 
 For Plesk, make the backup with no password protection, or with password protection off for
 the download. The backup of Plesk for Windows (a ZIP file) is not supported.
@@ -53,6 +55,38 @@ The import does not copy these parts. The plan shows a warning for each one that
   crontab of the system user;
 - the SOA and NS records of a zone, and the records of the cPanel services, for example
   `cpanel`, `whm` and `webmail`.
+
+## An account export of Cloudfactory
+
+The import reads the description of the account (`account.json`) and the parts of an account
+export ([account-export.md](account-export.md)). To make the export, open **My account** on the
+old panel, select **Export account**, and download the archive. Keep the files and the dumps of
+the databases in the export.
+
+The import of an export is different from the import of a backup of a different panel:
+
+- It makes the public websites with a PHP image or a static image. It gives a warning for each
+  private website, worker, and website with a different runtime, for example Node.js, Python
+  or a pack. Make these websites again, and copy their files from `files.tar.gz` in the export.
+- A website gets the Apache image with the same PHP version. A static website gets the newest
+  Apache image. To use a FrankenPHP image, select it for the website in the plan.
+- It copies all files of each website from `files.tar.gz`, with the document root and the
+  excluded paths of the old website.
+- A database gets the Unix user of the new website in place of the Unix user of the old
+  website: `shop_x7k2_wp` becomes `<unix-user>_wp`.
+- The export has no messages and no passwords of the mailboxes. The import makes each mailbox
+  with a new password and no messages.
+- It adds only the DNS records of the user. The panel makes its own name servers and the
+  records of its websites.
+
+The import does not copy these parts of an export. The plan shows a warning for each one:
+
+- the environment variables, the deploy from Git, the SFTP keys, the PHP extensions and the PHP
+  settings of each website;
+- the PostgreSQL databases (make the database, then load its dump from the export with
+  `pg_restore`) and the Valkey databases;
+- the database servers and the private networks of the account;
+- the users of the account.
 
 ## Before you start
 
@@ -181,3 +215,6 @@ items are not tested on a real server yet:
   references). Test an import of a Plesk backup before you move many accounts.
 - a backup from a real HestiaCP or VestaCP server. The agent reads the layout that the backup
   script of HestiaCP (`v-backup-user`) writes.
+- an account export from a real server. The tests use an archive with the layout of
+  [account-export.md](account-export.md). The agent also read an export of the demonstration
+  panel correctly.

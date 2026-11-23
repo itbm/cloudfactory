@@ -101,8 +101,9 @@ The demo agent does not read the archive of an import. Each import gets the same
 account (`api/app/Demo/DemoImport.php`). A file name with `directadmin`, or a file name that
 starts with `user.`, gives a DirectAdmin backup. A file name with `plesk`, or a file name that
 starts with `backup_`, gives a Plesk backup. A file name with `hestia`, or a file name of the
-form `USER.2026-11-22_05-00-00.tar`, gives a HestiaCP backup. Each other name gives a cPanel
-backup.
+form `USER.2026-11-22_05-00-00.tar`, gives a HestiaCP backup. A file name with `cf-export`, or
+a file name of the form `NAME-export-20261122-2103.tar`, gives a Cloudfactory account export.
+Each other name gives a cPanel backup.
 
 The demonstration mode sends no request for an uptime check. Each sample website answers with
 HTTP status 200 and a page with its name. A check with `fail` in its path gets no answer, and a

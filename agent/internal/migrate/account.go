@@ -26,7 +26,7 @@ type Account struct {
 
 // Source tells where the description comes from.
 type Source struct {
-	// Panel is "cpanel", "directadmin", "plesk" or "hestia".
+	// Panel is "cpanel", "directadmin", "plesk", "hestia" or "cloudfactory".
 	Panel   string `json:"panel"`
 	Version string `json:"version,omitempty"`
 	// Account is the name of the account on the old panel.
@@ -216,10 +216,10 @@ type adapter interface {
 }
 
 // ErrUnknown is the error of an archive that no adapter knows.
-var ErrUnknown = errors.New("the archive is not a cPanel, DirectAdmin, Plesk or HestiaCP account backup")
+var ErrUnknown = errors.New("the archive is not a cPanel, DirectAdmin, Plesk or HestiaCP account backup, or a Cloudfactory account export")
 
 func adapters() []adapter {
-	return []adapter{newCpanel(), newDirectAdmin(), newPlesk(), newHestia()}
+	return []adapter{newCfExport(), newCpanel(), newDirectAdmin(), newPlesk(), newHestia()}
 }
 
 // Inspect reads the archive one time and gives the description of the account. With no
@@ -278,15 +278,16 @@ func Inspect(ctx context.Context, a *Archive) (Account, error) {
 
 // InspectExpand selects the nested archives of the known backup formats: the home directory
 // of an older cPanel backup ("cpmove-USER/homedir.tar"), the archives of the files and the
-// mailboxes of a Plesk backup ("backup_user-data_2311221200.tgz"), and the archives of the
-// files and the mailboxes of a HestiaCP backup ("web/DOMAIN/domain_data.tar.zst").
+// mailboxes of a Plesk backup ("backup_user-data_2311221200.tgz"), the archives of the files
+// and the mailboxes of a HestiaCP backup ("web/DOMAIN/domain_data.tar.zst"), and the archives
+// of the files of a Cloudfactory account export ("websites/WEBSITE/files.tar.gz").
 func InspectExpand(name string) bool {
 	top, rest, ok := strings.Cut(name, "/")
 	if ok && top != "" && rest == "homedir.tar" {
 		return true
 	}
 	_, _, nested := nestedOf(name)
-	return !nested && (pleskContentArchive(name) || hestiaContentArchive(name))
+	return !nested && (pleskContentArchive(name) || hestiaContentArchive(name) || cfFilesArchive(name))
 }
 
 // bound keeps a description in the limits, with a warning for each part that it leaves out.

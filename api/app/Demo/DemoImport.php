@@ -8,7 +8,9 @@ namespace App\Demo;
  * The name of the file or the address selects the panel: a name with "directadmin" or a name
  * that starts with "user." is a DirectAdmin backup. A name with "plesk" or a name that starts
  * with "backup_" is a Plesk backup. A name with "hestia" or a name of the form
- * "USER.2026-11-22_05-00-00.tar" is a HestiaCP backup. Each other name is a cPanel backup.
+ * "USER.2026-11-22_05-00-00.tar" is a HestiaCP backup. A name with "cf-export" or a name of the
+ * form "NAME-export-20261122-2103.tar" is an account export of Cloudfactory. Each other name is
+ * a cPanel backup.
  */
 final class DemoImport
 {
@@ -17,25 +19,35 @@ final class DemoImport
     {
         $base = strtolower(basename((string) parse_url($name, PHP_URL_PATH)));
         $panel = match (true) {
+            str_contains($base, 'cf-export') || preg_match('/-export-\d{8}-\d{4}\.tar$/', $base) === 1 => 'cloudfactory',
             str_contains($base, 'directadmin') || str_starts_with($base, 'user.') => 'directadmin',
             str_contains($base, 'plesk') || str_starts_with($base, 'backup_') => 'plesk',
             str_contains($base, 'hestia') || preg_match('/\.\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.tar$/', $base) === 1 => 'hestia',
             default => 'cpanel',
         };
-        $home = ['cpanel' => 'cpmove-bakery/homedir', 'directadmin' => 'domains', 'plesk' => 'clients/bakery/domains/bakeryclub.example.org', 'hestia' => 'web'][$panel];
+        $home = ['cloudfactory' => 'websites', 'cpanel' => 'cpmove-bakery/homedir', 'directadmin' => 'domains', 'plesk' => 'clients/bakery/domains/bakeryclub.example.org', 'hestia' => 'web'][$panel];
         $docroot = fn (string $domain, string $dir) => match ($panel) {
+            'cloudfactory' => "{$home}/{$domain}/files.tar.gz",
             'cpanel' => "{$home}/{$dir}",
             'directadmin' => "{$home}/{$domain}/public_html",
             'plesk' => "{$home}/backup_user-data_2611221200.tgz/".str_replace('public_html', 'httpdocs', $dir),
             'hestia' => "{$home}/{$domain}/domain_data.tar.zst/public_html",
         };
-        $dump = fn (string $db) => match ($panel) {
+        $dump = fn (string $db, string $website) => match ($panel) {
+            // The dump has the full name: the Unix user of the old website, "_" and the name.
+            'cloudfactory' => "{$home}/{$website}/databases/mariadb-".substr(explode('.', $website)[0], 0, 8)."_k3m9_{$db}.sql.gz",
             'cpanel' => "cpmove-bakery/mysql/{$db}.sql",
             'directadmin' => "backup/{$db}.sql.gz",
             'plesk' => "{$home}/databases/{$db}_1/backup_sqldump_2611221200.tzst",
             'hestia' => "db/{$db}/{$db}.mysql.sql.zst",
         };
+        // The agent removes the Unix user of the old website from the name of each database of
+        // an account export.
+        $db = fn (string $name) => $panel === 'cloudfactory' ? substr($name, strlen('bakery_')) : $name;
+        // A website of an account export has the PHP version of an image of Cloudfactory.
+        $php = fn (string $version) => $panel === 'cloudfactory' ? '8.4' : $version;
         $maildir = fn (string $local) => match ($panel) {
+            'cloudfactory' => null,
             'cpanel' => "{$home}/mail/bakeryclub.example.org/{$local}",
             'directadmin' => "imap/bakeryclub.example.org/{$local}/Maildir",
             'plesk' => "{$home}/mailnames/{$local}/backup_mailbox_2611221200.tgz",
@@ -44,21 +56,21 @@ final class DemoImport
 
         return [
             'format' => 'cf-account/1',
-            'source' => ['panel' => $panel, 'version' => ['cpanel' => '11.130.0.15', 'directadmin' => '1.680', 'plesk' => '18.0.60', 'hestia' => ''][$panel], 'account' => 'bakery'],
+            'source' => ['panel' => $panel, 'version' => ['cloudfactory' => '0.1.0', 'cpanel' => '11.130.0.15', 'directadmin' => '1.680', 'plesk' => '18.0.60', 'hestia' => ''][$panel], 'account' => $panel === 'cloudfactory' ? 'Corner Bakery' : 'bakery'],
             'customer' => ['name' => 'Corner Bakery', 'email' => 'hello@cornerbakery.example.org'],
             'websites' => [
-                self::website('bakeryclub.example.org', '8.1', $docroot('bakeryclub.example.org', 'public_html'), 1_240 * 1024 ** 2, ['orders'], [
+                self::website('bakeryclub.example.org', $php('8.1'), $docroot('bakeryclub.example.org', 'public_html'), 1_240 * 1024 ** 2, $panel === 'cloudfactory' ? [] : ['orders'], [
                     ['name' => 'www.bakeryclub.example.org', 'kind' => 'alias'],
                     ['name' => 'bakery-club.example.net', 'kind' => 'redirect'],
-                ], [['bakery_wp', 48 * 1024 ** 2]], $dump, 'bakery_wp', [['schedule' => '*/15 * * * *', 'command' => 'php /home/bakery/public_html/wp-cron.php']]),
-                self::website('orders.bakeryclub.example.org', '7.4', $docroot('orders.bakeryclub.example.org', 'public_html/orders'), 220 * 1024 ** 2, [], [], [['bakery_orders', 12 * 1024 ** 2]], $dump),
+                ], [[$db('bakery_wp'), 48 * 1024 ** 2]], $dump, $db('bakery_wp'), [['schedule' => '*/15 * * * *', 'command' => 'php /home/bakery/public_html/wp-cron.php']]),
+                self::website('orders.bakeryclub.example.org', $php('7.4'), $docroot('orders.bakeryclub.example.org', 'public_html/orders'), 220 * 1024 ** 2, [], [], [[$db('bakery_orders'), 12 * 1024 ** 2]], $dump),
                 // The panel has a website with this name: the plan shows the conflict.
-                self::website('cornerbakery.example.org', '8.2', $docroot('cornerbakery.example.org', 'cornerbakery'), 310 * 1024 ** 2, [], [], [], $dump),
+                self::website('cornerbakery.example.org', $php('8.2'), $docroot('cornerbakery.example.org', 'cornerbakery'), 310 * 1024 ** 2, [], [], [], $dump),
             ],
             'dnsZones' => [
-                ['name' => 'bakeryclub.example.org', 'zoneFile' => self::zone('bakeryclub.example.org')],
+                ['name' => 'bakeryclub.example.org', 'zoneFile' => self::zone('bakeryclub.example.org', $panel)],
                 // The customer has this zone: the import adds the records that it does not have.
-                ['name' => 'cornerbakery.example.org', 'zoneFile' => self::zone('cornerbakery.example.org')],
+                ['name' => 'cornerbakery.example.org', 'zoneFile' => self::zone('cornerbakery.example.org', $panel)],
             ],
             'mail' => ['domains' => [[
                 'name' => 'bakeryclub.example.org',
@@ -74,7 +86,11 @@ final class DemoImport
                     ['localPart' => 'owner', 'kind' => 'forwarder', 'destinations' => ['bea.baker@mail.example.com']],
                 ],
             ]]],
-            'warnings' => [
+            'warnings' => $panel === 'cloudfactory' ? [
+                ['item' => 'website:bakeryclub.example.org', 'message' => 'The import does not copy the environment variables and the deploy from Git of the website. Set them again after the import.'],
+                ['item' => 'mail', 'message' => 'The export has no messages and no passwords of the mailboxes. Each mailbox gets a new password.'],
+                ['item' => 'users', 'message' => 'The import does not make the users of the account. Invite them again.'],
+            ] : [
                 ['item' => 'files', 'message' => 'The import copies the document root of each website. Copy other files of the home directory with SFTP.'],
                 ['item' => 'certificates', 'message' => 'The import does not copy the TLS certificates. The panel gets a certificate for each domain when its DNS points to the new server.'],
                 ['item' => 'ftp', 'message' => 'The panel has no FTP accounts. Use SFTP with an SSH key in place of FTP.'],
@@ -97,7 +113,7 @@ final class DemoImport
             'runtime' => ['family' => 'php', 'phpVersion' => $php, 'documentRoot' => '.'],
             'domains' => [['name' => $name, 'kind' => 'primary'], ...$domains],
             'cronJobs' => array_map(fn ($c) => $c + ['enabled' => true], $cron),
-            'databases' => array_map(fn ($db) => ['engine' => 'mariadb', 'name' => $db[0], 'content' => ['path' => $dump($db[0]), 'bytes' => $db[1]]], $databases),
+            'databases' => array_map(fn ($db) => ['engine' => 'mariadb', 'name' => $db[0], 'content' => ['path' => $dump($db[0], $name), 'bytes' => $db[1]]], $databases),
             'databaseUsers' => array_map(fn ($db) => ['engine' => 'mariadb', 'name' => $db[0], 'access' => 'website', 'grants' => [['database' => $db[0], 'privileges' => 'readwrite']]], $databases),
             'content' => ['files' => ['path' => $path, 'bytes' => $bytes, 'exclude' => $exclude]],
             'diskBytes' => $bytes,
@@ -108,14 +124,31 @@ final class DemoImport
     /** @return array<string, mixed> */
     private static function mailbox(string $local, int $quota, int $messages, int $bytes, callable $maildir): array
     {
+        // An account export has no messages and no passwords.
+        if ($maildir($local) === null) {
+            return ['localPart' => $local, 'quotaBytes' => $quota, 'messages' => 0];
+        }
         // A SHA-512-crypt hash with the form of a real hash. It is not the hash of a password.
         $hash = '$6$'.substr(md5($local), 0, 16).'$'.substr(strtr(base64_encode(hash('sha512', $local, true)), '+', '.'), 0, 86);
 
         return ['localPart' => $local, 'quotaBytes' => $quota, 'passwordHash' => $hash, 'content' => ['path' => $maildir($local), 'bytes' => $bytes], 'messages' => $messages];
     }
 
-    private static function zone(string $name): string
+    private static function zone(string $name, string $panel): string
     {
+        // An account export has the records of the user only, as the adapter writes them.
+        if ($panel === 'cloudfactory') {
+            return <<<ZONE
+                \$ORIGIN {$name}.
+                \$TTL 3600
+                @ 3600 IN MX 0 {$name}.
+                @ 3600 IN TXT "v=spf1 +a +mx ~all"
+                _dmarc 3600 IN TXT "v=DMARC1; p=none"
+                google._domainkey 3600 IN TXT "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC3demo"
+
+                ZONE;
+        }
+
         return <<<ZONE
             \$ORIGIN {$name}.
             \$TTL 14400

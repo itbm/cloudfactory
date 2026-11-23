@@ -423,8 +423,8 @@ The product specification, section 6.4, gives the requirements.
 
 ## Account imports
 
-An administrator can import the backup of an account from cPanel, DirectAdmin, Plesk or
-HestiaCP ([imports.md](imports.md)). The backup can come from the customer, so the agent does
+An administrator can import the backup of an account from cPanel, DirectAdmin, Plesk,
+HestiaCP or a different Cloudfactory panel ([imports.md](imports.md)). The backup can come from the customer, so the agent does
 not trust it:
 
 - Only an administrator can import an account. The import makes each record with the API, as

@@ -11,7 +11,9 @@ An account export is one archive of the account of a customer. The archive has:
 
 Use an export to keep a copy of an account, to move an account to a different Cloudfactory
 panel, or to move an account to a different provider. The import of an account reads the same
-description format (`cf-account/1`).
+description format (`cf-account/1`). To move an account to a different Cloudfactory panel,
+import the archive on that panel. Refer to
+[imports.md](imports.md#an-account-export-of-cloudfactory).
 
 ## Who can export an account
 
