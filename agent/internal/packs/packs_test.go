@@ -83,13 +83,145 @@ func TestTheExamplePackFollowsTheContract(t *testing.T) {
 	}
 }
 
+// phpPack gives the manifest of a first-party PHP pack in the repository.
+func phpPack(t *testing.T, slug string) []byte {
+	t.Helper()
+	b, err := os.ReadFile("../../../plugins/packs/" + slug + "/pack.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestThePHPPacksFollowTheContract(t *testing.T) {
+	for slug, family := range map[string]string{"php-legacy-apache": "apache-php-fpm", "php-legacy-frankenphp": "frankenphp"} {
+		m, err := Parse(phpPack(t, slug))
+		if err != nil {
+			t.Fatalf("%s: %v", slug, err)
+		}
+		if !m.PHP() || m.Slug != slug || m.Runtime.Family != family || m.Runtime.DefaultCommand != "" {
+			t.Errorf("%s: manifest = %+v", slug, m)
+		}
+		if len(m.Images) != 2 || m.Images[0].Version != "8.3" || m.Images[1].Version != "8.2" || m.Images[1].SupportEndsAt != "2026-12-31" {
+			t.Errorf("%s: images = %+v", slug, m.Images)
+		}
+	}
+	m, _ := Parse(example(t))
+	if m.PHP() {
+		t.Error("the Go pack is a PHP pack")
+	}
+}
+
+func TestAPHPPackThatIsNotValidIsRefused(t *testing.T) {
+	php := func(fn func(rt, img map[string]any)) []byte {
+		var m map[string]any
+		if err := json.Unmarshal(phpPack(t, "php-legacy-apache"), &m); err != nil {
+			t.Fatal(err)
+		}
+		fn(m["runtime"].(map[string]any), img(m))
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	for name, c := range map[string]struct {
+		fn   func(rt, img map[string]any)
+		want string
+	}{
+		"a runtime that is not PHP": {func(rt, _ map[string]any) { rt["family"] = "node" }, "not a built-in PHP runtime"},
+		"the name of the pack":      {func(rt, _ map[string]any) { rt["family"] = "php-legacy-apache" }, "not a built-in PHP runtime"},
+		"no family":                 {func(rt, _ map[string]any) { delete(rt, "family") }, "not a built-in PHP runtime"},
+		"a start command":           {func(rt, _ map[string]any) { rt["defaultCommand"] = "php artisan serve" }, `key "defaultCommand"`},
+		"a type":                    {func(rt, _ map[string]any) { rt["type"] = "php" }, `key "type"`},
+		"a version that is not PHP": {func(_, i map[string]any) { i["version"] = "8.3-fpm" }, "PHP version"},
+		"a version with a patch":    {func(_, i map[string]any) { i["version"] = "8.3.14" }, "PHP version"},
+		"a family that is a number": {func(rt, _ map[string]any) { rt["family"] = 8 }, "must be a string"},
+	} {
+		_, err := Parse(php(c.fn))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want an error with %q", name, err, c.want)
+		}
+	}
+	// A runtime of cf-runtime/1 cannot have the key of cf-php/1.
+	if _, err := Parse(change(t, func(m map[string]any) { m["runtime"].(map[string]any)["family"] = "frankenphp" })); err == nil || !strings.Contains(err.Error(), `key "family"`) {
+		t.Errorf("a family in cf-runtime/1: %v", err)
+	}
+}
+
+func TestTheDatabasePackFollowsTheContract(t *testing.T) {
+	m, err := Parse(phpPack(t, "mysql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.IsDatabase() || m.Contract != Contract2 || m.Slug != "mysql" || m.PHP() {
+		t.Errorf("manifest = %+v", m)
+	}
+	if m.Database.Contract != DatabaseContract || m.Database.Port != "3306" || m.Database.PortNumber() != 3306 || m.Database.DataDir != "/var/lib/mysql" {
+		t.Errorf("database = %+v", m.Database)
+	}
+	if img, ok := m.Image("8.4"); !ok || img.Repository() != "ghcr.io/example/cf-mysql" {
+		t.Errorf("image 8.4 = %+v %v", img, ok)
+	}
+	if _, ok := m.Image("9.0"); ok {
+		t.Error("the pack has the version 9.0")
+	}
+	// A runtime pack can use cf-pack/2.
+	rt, err := Parse(change(t, func(m map[string]any) { m["contract"] = Contract2 }))
+	if err != nil || rt.IsDatabase() || rt.Database != nil {
+		t.Errorf("a runtime pack of cf-pack/2: %+v %v", rt, err)
+	}
+}
+
+func TestADatabasePackThatIsNotValidIsRefused(t *testing.T) {
+	db := func(fn func(m, db map[string]any)) []byte {
+		var m map[string]any
+		if err := json.Unmarshal(phpPack(t, "mysql"), &m); err != nil {
+			t.Fatal(err)
+		}
+		fn(m, m["database"].(map[string]any))
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	for name, c := range map[string]struct {
+		fn   func(m, db map[string]any)
+		want string
+	}{
+		"cf-pack/1":                  {func(m, _ map[string]any) { m["contract"] = Contract }, `key "database"`},
+		"a runtime":                  {func(m, _ map[string]any) { m["runtime"] = map[string]any{"contract": "cf-runtime/1"} }, "cannot have the key runtime"},
+		"no database":                {func(m, _ map[string]any) { delete(m, "database") }, "needs the key database"},
+		"a database in a runtime":    {func(m, _ map[string]any) { m["kind"] = KindRuntime }, "needs the key runtime"},
+		"a later contract":           {func(_, d map[string]any) { d["contract"] = "cf-database/9" }, `database contract "cf-database/9" is not known`},
+		"an unknown key":             {func(_, d map[string]any) { d["user"] = "999" }, `key "user"`},
+		"no port":                    {func(_, d map[string]any) { delete(d, "port") }, "database.port is necessary"},
+		"a port that is a number":    {func(_, d map[string]any) { d["port"] = 3306 }, "must be a string"},
+		"a port below 1024":          {func(_, d map[string]any) { d["port"] = "80" }, "database.port"},
+		"a port above 65535":         {func(_, d map[string]any) { d["port"] = "70000" }, "1024 to 65535"},
+		"no data directory":          {func(_, d map[string]any) { delete(d, "dataDir") }, "database.dataDir is necessary"},
+		"a relative data directory":  {func(_, d map[string]any) { d["dataDir"] = "var/lib/mysql" }, "database.dataDir"},
+		"a data directory in /tmp":   {func(_, d map[string]any) { d["dataDir"] = "/tmp/mysql" }, "/tmp belongs to the container"},
+		"a data directory in /cf":    {func(_, d map[string]any) { d["dataDir"] = "/cf" }, "/cf belongs to the container"},
+		"a data directory with ..":   {func(_, d map[string]any) { d["dataDir"] = "/var/../etc" }, "database.dataDir"},
+		"the name of a built-in":     {func(m, _ map[string]any) { m["slug"] = "postgresql" }, "built-in runtime"},
+		"an engine version with ':'": {func(m, _ map[string]any) { img(m)["version"] = "8.4:latest" }, "version of a pack image"},
+	} {
+		_, err := Parse(db(c.fn))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want an error with %q", name, err, c.want)
+		}
+	}
+}
+
 func TestAManifestThatIsNotValidIsRefused(t *testing.T) {
 	for name, c := range map[string]struct {
 		fn   func(m map[string]any)
 		want string
 	}{
-		"a later contract":      {func(m map[string]any) { m["contract"] = "cf-pack/2" }, `contract "cf-pack/2" is not known`},
-		"a database pack":       {func(m map[string]any) { m["kind"] = "database" }, "runtime packs only"},
+		"a later contract":      {func(m map[string]any) { m["contract"] = "cf-pack/9" }, `contract "cf-pack/9" is not known`},
+		"a database pack":       {func(m map[string]any) { m["kind"] = "database" }, `needs the contract "cf-pack/2"`},
 		"an unknown kind":       {func(m map[string]any) { m["kind"] = "theme" }, `kind "theme"`},
 		"an unknown key":        {func(m map[string]any) { m["exec"] = "sh -c id" }, `key "exec"`},
 		"an unknown image key":  {func(m map[string]any) { img(m)["pull"] = "always" }, `key "pull"`},

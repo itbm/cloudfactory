@@ -174,8 +174,10 @@ php artisan demo:fixtures
 
 The API test `DemoTest` fails when the files do not agree with the API.
 
-The command gives the same IDs and random strings each time. Each table has its own sequence
-of IDs. Thus a new row changes only the IDs of the rows that come after it in the same table.
+The command gives the same files each time. It gives the same IDs, random strings, keys and
+certificates on each run. Each table has its own sequence of IDs. Thus a new row changes only
+the IDs of the rows that come after it in the same table.
+
 Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
 is `password`. The sample users have no TOTP, so leave the code empty. In the
 demonstration mode, the panel does not ask the sample administrator and the sample reseller

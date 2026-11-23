@@ -5,13 +5,11 @@ import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase,
 import type { Database, DatabaseEngine, DatabasePrivileges, DatabaseServer, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal, RowMenu, TableWrap } from "../components/ui";
 import { bytes, count } from "../lib/format";
-import { DATABASE_HOST, DATABASE_PORT, ENGINE_NAME as ENGINE, jobActive } from "../lib/labels";
+import { engineHost, engineInfo, engineName, jobActive } from "../lib/labels";
 
-const ENGINE_RELEASE: Record<DatabaseEngine, string> = { mariadb: "MariaDB 12.3", postgresql: "PostgreSQL 18", valkey: "Valkey 9.1" };
+/** The release of a built-in engine comes with the agent. A database server of a pack engine has its own version. */
+const ENGINE_RELEASE: Record<string, string> = { mariadb: "MariaDB 12.3", postgresql: "PostgreSQL 18", valkey: "Valkey 9.1" };
 const PRIVILEGES: Record<DatabasePrivileges, string> = { readonly: "Read only", readwrite: "Read and write" };
-/** A database user has an SQL engine. The user of a Valkey database comes with the database. */
-const SQL_ENGINES: DatabaseEngine[] = ["mariadb", "postgresql"];
-const ALL_ENGINES: DatabaseEngine[] = [...SQL_ENGINES, "valkey"];
 
 /**
  * Databases and database users (FR-501, FR-502). With websiteId, it shows one website only.
@@ -35,11 +33,17 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const [asking, setAsking] = useState<{ user: DatabaseUser; action: "password" | "remove" } | null>(null);
   // The database that opens in Adminer now, or the error of the last attempt.
   const [adminer, setAdminer] = useState<{ id: string; error?: string } | null>(null);
+  const engines = state.databaseEngines;
+  const ENGINE = (e: DatabaseEngine) => engineName(engines, e);
+  const allEngines = engines.map((e) => e.engine);
+  // A database user has an engine with users: SQL, or a pack engine. The user of a Valkey database comes with the database.
+  const userEngines = engines.filter((e) => e.users).map((e) => e.engine);
   const createDb = useAction(createDatabase);
   const createUser = useAction(createDatabaseUser);
   const changeUser = useAction(setDatabaseUser);
   const siteName = (id: string) => sites.find((w) => w.id === id)?.name ?? "Removed website";
   const serverName = (id?: string) => state.databaseServers.find((x) => x.id === id)?.name;
+  const versionOf = (id?: string) => state.databaseServers.find((x) => x.id === id)?.engineVersion;
   // The database servers that the selected website can use: those of its customer on its server,
   // and those on a different server that are in a network with the website.
   const website = sites.find((w) => w.id === site);
@@ -52,12 +56,16 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
     return server ? `on the server ${server}` : "on a different server";
   };
   const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
-  // The reason when a website cannot have a Valkey database: an agent of an earlier release
-  // cannot operate Valkey. When the panel does not know the server, the API makes the check.
-  const noValkey = (id: string) => {
+  // The reason when a website cannot have a database of an engine: an agent of an earlier
+  // release cannot operate Valkey, and a server that did not load a database pack cannot
+  // operate its engine. When the panel does not know the server, the API makes the check.
+  const unavailable = (id: string) => (e: DatabaseEngine) => {
     const website = sites.find((w) => w.id === id);
     const server = state.servers.find((s) => s.id === website?.serverId);
-    return server?.databaseEngines && !server.databaseEngines.includes("valkey") ? `The agent on the server ${server.name} cannot operate Valkey. Update the agent of the server.` : undefined;
+    if (!server?.databaseEngines || server.databaseEngines.includes(e) || (e !== "valkey" && !engineInfo(engines, e).pack)) return undefined;
+    return engineInfo(engines, e).pack
+      ? `The server ${server.name} did not load the pack of ${ENGINE(e)}. Update the agent of the server, or send the packs to the servers again.`
+      : `The agent on the server ${server.name} cannot operate ${ENGINE(e)}. Update the agent of the server.`;
   };
   const pending = state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Create ") && j.title.includes("database") && (!websiteId || j.websiteId === websiteId));
 
@@ -115,7 +123,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                 return (
                   <tr key={d.id}>
                     <td><code>{d.name}</code></td>
-                    <td>{ENGINE[d.engine]}</td>
+                    <td>{ENGINE(d.engine)}{versionOf(d.databaseServerId) && ` ${versionOf(d.databaseServerId)}`}</td>
                     {!websiteId && <td><Link to={`/websites/${d.websiteId}/databases`}>{siteName(d.websiteId)}</Link></td>}
                     <td>
                       {access.length
@@ -124,13 +132,13 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                     </td>
                     <td>{d.engine === "valkey" ? (d.keys === undefined ? <span className="muted">No report</span> : `${count(d.keys)} ${d.keys === 1 ? "key" : "keys"}`) : bytes(d.sizeBytes)}</td>
                     <td>
-                      <code>{d.host ?? DATABASE_HOST[d.engine]}:{d.port ?? DATABASE_PORT[d.engine]}</code>
+                      <code>{d.host ?? engineHost(d.engine)}:{d.port ?? engineInfo(engines, d.engine).port}</code>
                       <span className="cell-sub">{serverName(d.databaseServerId) ?? "Database server"}</span>
                       {d.engine === "valkey" && <span className="cell-sub">{d.number === undefined ? "The number comes when the job is complete" : <>Database number <strong>{d.number}</strong></>}</span>}
                     </td>
                     <td className="cell-actions" style={{ width: 260 }}>
                       <div className="cell-buttons">
-                      {d.engine !== "valkey" && (
+                      {engineInfo(engines, d.engine).adminer && (
                         <button type="button" className="btn btn-sm" disabled={adminer?.id === d.id && !adminer.error} onClick={() => openAdminer(d)}>
                           {adminer?.id === d.id && !adminer.error ? "Opening…" : "Open in Adminer"}
                         </button>
@@ -149,7 +157,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           </table>
         </TableWrap>
         {!websiteId && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Open a website to see its databases.</p>}
-        {dbs.some((d) => d.engine !== "valkey") && (
+        {dbs.some((d) => engineInfo(engines, d.engine).adminer) && (
           <p className="card-body muted small" style={{ paddingTop: 12 }}>
             <strong>Open in Adminer</strong> opens the database in Adminer, a web tool for databases, in a new window. The panel signs you in with a temporary database user for that one database, so you type no password. The user stops after 60 minutes: then open the database again.
           </p>
@@ -173,7 +181,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
               {users.map((u) => (
                 <tr key={u.id}>
                   <td><code>{u.name}</code>{!websiteId && <span className="cell-sub">{siteName(u.websiteId)}</span>}</td>
-                  <td>{ENGINE[u.engine]}{u.databaseServerId && <span className="cell-sub">{serverName(u.databaseServerId) ?? "Database server"}</span>}</td>
+                  <td>{ENGINE(u.engine)}{u.databaseServerId && <span className="cell-sub">{serverName(u.databaseServerId) ?? "Database server"}</span>}</td>
                   <td>
                     {u.grants.length
                       ? u.grants.map((g) => <span key={g.databaseId} className="grant"><code>{g.database}</code> <span className={`badge ${g.privileges === "readonly" ? "badge-neutral" : "badge-info"}`}>{PRIVILEGES[g.privileges]}</span></span>)
@@ -185,7 +193,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                         <label className="visually-hidden" htmlFor={`access-${u.id}`}>Can connect from</label>
                         <select id={`access-${u.id}`} className="select" style={{ maxWidth: 210 }} value={u.access} onChange={(e) => void changeUser.run(u.id, { access: e.target.value as "website" | "anywhere" })}>
                           <option value="website">Website container only</option>
-                          {(u.engine !== "postgresql" || u.access === "anywhere") && <option value="anywhere">{u.engine === "postgresql" ? "Anywhere" : "Anywhere, with TLS"}</option>}
+                          {(engineInfo(engines, u.engine).anywhere || u.access === "anywhere") && <option value="anywhere">{u.engine === "mariadb" ? "Anywhere, with TLS" : "Anywhere"}</option>}
                         </select>
                       </>
                     )}
@@ -246,18 +254,18 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             }
           }}>
             <FormError error={createDb.error} />
-            <DbFields engines={ALL_ENGINES} noValkey={noValkey(site)} engine={engine} setEngine={(e) => { setEngine(e); setDbServer(""); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setDbServer(""); if (engine === "valkey" && noValkey(s)) setEngine("mariadb"); }} showSite={!websiteId} prefix={prefix(site)} error={createDb.error?.fields.name} engineError={createDb.error?.fields.engine}>
+            <DbFields engines={allEngines} unavailable={unavailable(site)} engine={engine} setEngine={(e) => { setEngine(e); setDbServer(""); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setDbServer(""); if (unavailable(s)(engine)) setEngine("mariadb"); }} showSite={!websiteId} prefix={prefix(site)} error={createDb.error?.fields.name} engineError={createDb.error?.fields.engine}>
               <div style={{ marginTop: 14 }}>
                 <Field
                   label="Database server"
                   hint={usable.length === 0
-                    ? <>The website can use no {ENGINE[engine]} database server of its customer. The panel makes one on the server of the website, with the plan of the customer.</>
+                    ? <>The website can use no {ENGINE(engine)} database server of its customer. The panel makes one on the server of the website, with the plan of the customer.</>
                     : <>The websites of the customer can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
                   error={createDb.error?.fields.databaseServerId}
                 >
                   {(p) => (
                     <select {...p} className="select" value={dbServer} onChange={(e) => setDbServer(e.target.value)}>
-                      <option value="">{usable.length === 0 ? `New ${ENGINE[engine]} database server` : "Automatic: the first database server with space"}</option>
+                      <option value="">{usable.length === 0 ? `New ${ENGINE(engine)} database server` : "Automatic: the first database server with space"}</option>
                       {usable.map((x) => <option key={x.id} value={x.id} disabled={x.databases >= x.maxDatabases}>{x.name} · {where(x)} · {x.databases} of {x.maxDatabases} databases</option>)}
                     </select>
                   )}
@@ -288,7 +296,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             if (result.ok) { close(); setPassword({ user: full, value: result.value }); }
           }}>
             <FormError error={createUser.error} />
-            <DbFields engines={SQL_ENGINES} engine={engine} setEngine={(e) => { setEngine(e); setDbServer(""); setGrants([]); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setDbServer(""); setGrants([]); }} showSite={!websiteId} prefix={prefix(site)} error={createUser.error?.fields.name} engineError={createUser.error?.fields.engine}>
+            <DbFields engines={userEngines} unavailable={unavailable(site)} engine={engine} setEngine={(e) => { setEngine(e); setDbServer(""); setGrants([]); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setDbServer(""); setGrants([]); }} showSite={!websiteId} prefix={prefix(site)} error={createUser.error?.fields.name} engineError={createUser.error?.fields.engine}>
               {usable.length > 1 && (
                 <div style={{ marginTop: 14 }}>
                   <Field label="Database server" hint="A user is in one database server. It can have access only to the databases in it." error={createUser.error?.fields.databaseServerId}>
@@ -345,6 +353,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
  */
 function GrantEditor({ websiteId, engine, databaseServerId, grants, setGrants }: { websiteId: string; engine: DatabaseEngine; databaseServerId?: string; grants: GrantInput[]; setGrants: (g: GrantInput[]) => void }) {
   const state = useStore();
+  const pack = engineInfo(state.databaseEngines, engine).pack;
   const dbs = state.databases.filter((d) => d.websiteId === websiteId && d.engine === engine && (!databaseServerId || d.databaseServerId === databaseServerId));
   const set = (databaseId: string, value: DatabasePrivileges | "") => {
     const rest = grants.filter((g) => g.databaseId !== databaseId);
@@ -353,7 +362,7 @@ function GrantEditor({ websiteId, engine, databaseServerId, grants, setGrants }:
   return (
     <fieldset className="grant-list" style={{ marginTop: 14 }}>
       <legend>Permissions</legend>
-      {dbs.length === 0 && <p className="muted small">This website has no {ENGINE[engine]} databases{databaseServerId ? " in this database server" : ""}.</p>}
+      {dbs.length === 0 && <p className="muted small">This website has no {engineName(state.databaseEngines, engine)} databases{databaseServerId ? " in this database server" : ""}.</p>}
       {dbs.map((d) => (
         <div key={d.id} className="grant-row">
           <label htmlFor={`grant-${d.id}`}><code>{d.name}</code></label>
@@ -364,13 +373,13 @@ function GrantEditor({ websiteId, engine, databaseServerId, grants, setGrants }:
           </select>
         </div>
       ))}
-      <p className="hint" style={{ marginTop: 8 }}>Read only: SELECT and SHOW VIEW. Read and write: all permissions on the database.</p>
+      <p className="hint" style={{ marginTop: 8 }}>{pack ? <>Read only: the user can read the data. Read and write: the user can read and change the data. The pack of {engineName(state.databaseEngines, engine)} gives the permissions of each level.</> : "Read only: SELECT and SHOW VIEW. Read and write: all permissions on the database."}</p>
     </fieldset>
   );
 }
 
 /** The fields of a new database or a new user. The children come after the engine, before the name. */
-function DbFields(props: { engines: DatabaseEngine[]; noValkey?: string; engine: DatabaseEngine; setEngine: (e: DatabaseEngine) => void; name: string; setName: (n: string) => void; site: string; setSite: (s: string) => void; showSite: boolean; prefix: string; error?: string; engineError?: string; children?: ReactNode }) {
+function DbFields(props: { engines: DatabaseEngine[]; unavailable: (e: DatabaseEngine) => string | undefined; engine: DatabaseEngine; setEngine: (e: DatabaseEngine) => void; name: string; setName: (n: string) => void; site: string; setSite: (s: string) => void; showSite: boolean; prefix: string; error?: string; engineError?: string; children?: ReactNode }) {
   const state = useStore();
   return (
     <>
@@ -386,16 +395,16 @@ function DbFields(props: { engines: DatabaseEngine[]; noValkey?: string; engine:
       <fieldset className="radio-cards" style={{ marginTop: 14, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
         <legend>Engine</legend>
         {props.engines.map((e) => {
-          const disabled = e === "valkey" && !!props.noValkey;
+          const disabled = !!props.unavailable(e);
           return (
             <label className={`radio-card${disabled ? " radio-card-disabled" : ""}`} key={e}>
               <input type="radio" name="engine" checked={props.engine === e} disabled={disabled} onChange={() => props.setEngine(e)} />
-              <span><strong>{ENGINE[e]}</strong><span>{ENGINE_RELEASE[e]}</span></span>
+              <span><strong>{engineName(state.databaseEngines, e)}</strong><span>{ENGINE_RELEASE[e] ?? "From a pack"}</span></span>
             </label>
           );
         })}
       </fieldset>
-      {props.engines.includes("valkey") && props.noValkey && <p className="muted small" style={{ marginTop: 6 }}>{props.noValkey}</p>}
+      {props.engines.map((e) => props.unavailable(e)).filter(Boolean).map((text) => <p key={text} className="muted small" style={{ marginTop: 6 }}>{text}</p>)}
       {props.engineError && <p className="text-danger small" role="alert" style={{ marginTop: 6 }}>{props.engineError}</p>}
       {props.children}
       <div style={{ marginTop: 14 }}>
