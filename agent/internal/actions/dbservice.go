@@ -14,9 +14,10 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
 
-// Engines are the database engines of the database containers (quadlet.Engines). Each one
-// has a driver in engineDrivers.
-var Engines = quadlet.EngineNames()
+// engines gives the database engines of the database containers (quadlet.Engines): the
+// built-in engines, each with a driver in engineDrivers, and the engines of the database packs
+// of the server.
+func engines() []string { return quadlet.EngineNames() }
 
 // dbHome holds the data of the database servers. Root owns it.
 //
@@ -40,13 +41,16 @@ func (d *Deps) dbUserHome(s dbServer) string {
 	return filepath.Join(d.dbHome(), "homes", dbUser(s))
 }
 
-// serviceImages gives the images of the database engines of this agent version.
+// serviceImages gives the images of the database engines of this agent version, and the
+// images of the database packs of the server.
 func (d *Deps) serviceImages() []string {
-	out := make([]string, 0, len(Engines))
-	for _, engine := range Engines {
-		out = append(out, d.serviceImage(engine))
+	var out []string
+	for _, engine := range engines() {
+		if !isManaged(engine) {
+			out = append(out, d.serviceImage(engine))
+		}
 	}
-	return out
+	return append(out, d.packEngineImages()...)
 }
 
 // serviceImage gives the signed image of a service of this agent version, for example
@@ -81,10 +85,16 @@ func (d *Deps) makeDataDir(ctx context.Context, dir, user string) error {
 // databaseUnit gives the input for the unit of a database server: the address of its
 // customer, its port and its limits (record).
 func (d *Deps) databaseUnit(s dbServer, customer, address string, record DatabaseServer) quadlet.Database {
+	image := d.serviceImage(s.Engine)
+	if isManaged(s.Engine) {
+		// The image of the version of the database server, from the verified pack. The
+		// request gives only the version.
+		image = d.packEngineImage(s.Engine, record.Version)
+	}
 	u := quadlet.Database{
 		Engine:    s.Engine,
 		ID:        s.ID,
-		Image:     d.serviceImage(s.Engine),
+		Image:     image,
 		DataDir:   d.dataDir(s),
 		EnvFile:   filepath.Join(d.dbDir(s), s.Engine+".env"),
 		Gvisor:    d.runtime(),
@@ -126,6 +136,9 @@ func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address 
 		return changed, err
 	}
 	u := d.databaseUnit(s, customer, address, record)
+	if u.Image == "" {
+		return false, fmt.Errorf("the server has no pack %s with the version %q", s.Engine, record.Version)
+	}
 	user := dbUser(s)
 	if err := d.prepareAccount(ctx, s); err != nil {
 		return false, err
@@ -149,7 +162,12 @@ func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address 
 		// The image is in the shared store of root, so it does not use the disk limit of the
 		// database server. With no shared store, the user of the database server pulls it
 		// (EnsureDatabaseService).
-		if err := d.Images.EnsureService(ctx, u.Image); err != nil {
+		ensure := d.Images.EnsureService
+		if isManaged(s.Engine) {
+			// The image of a pack has a digest, and the signature of its publisher.
+			ensure = d.Images.Ensure
+		}
+		if err := ensure(ctx, u.Image); err != nil {
 			return false, err
 		}
 	}
@@ -320,11 +338,18 @@ func (d *Deps) writeSuperuserSecret(ctx context.Context, s dbServer, path string
 		_, err := d.Run.Run(ctx, "chown", owner, path)
 		return err
 	}
-	drv, err := sqlOf(s.Engine)
-	if err != nil {
-		return err
+	pass := randomHex(48)
+	var content string
+	if isManaged(s.Engine) {
+		// cf-database/1: the image reads the password of its administrator from this variable.
+		content = superuserEnv + "=" + pass + "\n"
+	} else {
+		drv, err := sqlOf(s.Engine)
+		if err != nil {
+			return err
+		}
+		content = drv.superuserSecret(pass)
 	}
-	content := drv.superuserSecret(randomHex(48))
 	// The file has its final mode only after it has its owner.
 	if _, err := host.WriteFile(path, content, 0o600); err != nil {
 		return err

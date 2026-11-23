@@ -14,6 +14,7 @@ use App\Models\Plan;
 use App\Models\Server;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseEngines;
 use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
 use App\Services\Mesh;
@@ -54,7 +55,7 @@ class DatabaseServerController extends Controller
         $request->validate([
             'customerId' => ['nullable', 'string'],
             'serverId' => ['nullable', 'string'],
-            'engine' => ['nullable', Rule::in(Database::ENGINES)],
+            'engine' => ['nullable', Rule::in(DatabaseEngines::all())],
         ]);
 
         return response()->json(['data' => $this->visible($request)
@@ -72,7 +73,9 @@ class DatabaseServerController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'engine' => ['required', Rule::in(Database::ENGINES)],
+            'engine' => ['required', Rule::in(DatabaseEngines::all())],
+            // The version of a pack engine. The default is the first version of the pack.
+            'version' => ['sometimes', 'nullable', 'string', 'max:16'],
             'name' => ['sometimes', 'nullable', 'string', 'regex:'.DatabaseServers::NAME, Rule::notIn(Networks::RESERVED)],
             'customerId' => ['nullable', 'exists:customers,id'],
             'planId' => ['nullable', 'exists:plans,id'],
@@ -99,9 +102,14 @@ class DatabaseServerController extends Controller
             throw ValidationException::withMessages(['name' => 'This customer has a database server with this name.']);
         }
         self::refuseWebsiteName($customer, $name);
+        // A database server of a pack engine needs its network name: the websites connect to
+        // it by that name.
+        if ($name !== null && Networks::host($name) === null && DatabaseEngines::isPack($data['engine'])) {
+            throw ValidationException::withMessages(['name' => 'A database server of an engine of a pack needs a network name. Use a different name, for example '.$data['engine'].'-1.']);
+        }
         $host = self::host($request, $customer, $data['serverId'] ?? null);
 
-        $server = DatabaseServers::make($customer, $host, $data['engine'], Plan::findOrFail($planId), $name, $data['limits'] ?? null);
+        $server = DatabaseServers::make($customer, $host, $data['engine'], Plan::findOrFail($planId), $name, $data['limits'] ?? null, version: $data['version'] ?? null);
         $job = $this->jobs->dispatch($host, AgentAction::SetDatabaseServer, ['databaseServer' => $server->forAgent(), 'create' => true], "Create database server {$server->name}", databaseServer: $server);
         Audit::record($request, 'Created database server', "{$customer->name} {$server->name}", $customer->id);
 
@@ -158,6 +166,9 @@ class DatabaseServerController extends Controller
         }
         if (isset($data['name']) && $data['name'] !== $server->name) {
             self::refuseWebsiteName($server->customer, $data['name']);
+            if (Networks::host($data['name']) === null && DatabaseEngines::isPack($server->engine)) {
+                throw ValidationException::withMessages(['name' => 'A database server of an engine of a pack needs a network name. Use a different name.']);
+            }
         }
         self::refuseRemoved($server);
 
@@ -230,6 +241,7 @@ class DatabaseServerController extends Controller
         $to = Server::findOrFail($data['serverId']);
         $from = $databaseServer->server;
         self::refuseRemoved($databaseServer);
+        DatabaseEngines::refusePack($databaseServer->engine, 'A move to a different server', 'databaseServer');
         if (! in_array($databaseServer->status, [DatabaseServer::RUNNING, DatabaseServer::STOPPED], true)) {
             throw ValidationException::withMessages(['databaseServer' => 'Only a database server that the panel made can move. Make it again first.']);
         }
@@ -353,6 +365,8 @@ class DatabaseServerController extends Controller
             'id' => $s->id,
             'name' => $s->name,
             'engine' => $s->engine,
+            // The version of a pack engine, for example "8.4". Null for a built-in engine.
+            'engineVersion' => $s->engine_version,
             'customerId' => $s->customer_id,
             'serverId' => $s->server_id,
             // The server that receives the database server while its status is "moving".
@@ -360,9 +374,10 @@ class DatabaseServerController extends Controller
             'planId' => $s->plan_id,
             'status' => $s->status,
             // A website container of the customer on the same server connects to this host
-            // name and this port.
+            // name and this port. For a pack engine, they are the network name and the port
+            // of the engine.
             'host' => $s->host(),
-            'port' => $s->port,
+            'port' => DatabaseEngines::isPack($s->engine) ? Networks::portOf($s->engine) : $s->port,
             // Each website that is in a network with the database server connects to this
             // host name and this port, on the same server and on a different server. Null for
             // a database server with a name that an engine uses.

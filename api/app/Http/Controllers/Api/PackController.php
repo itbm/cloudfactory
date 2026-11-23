@@ -7,6 +7,7 @@ use App\Models\Image;
 use App\Models\Pack;
 use App\Models\Setting;
 use App\Services\Audit;
+use App\Services\DatabaseEngines;
 use App\Services\Packs\PackManifest;
 use App\Services\Packs\Packs;
 use App\Validation\InputRules;
@@ -14,10 +15,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Packs (docs/packs.md): signed manifests from publishers that add a website runtime. Only an
- * administrator installs, updates and removes a pack, with the password and the TOTP code.
- * The panel installs only a manifest that a trusted key signed, unless the developer mode for
- * packs is on.
+ * Packs (docs/packs.md): signed manifests from publishers that add a website runtime or a
+ * database engine. Only an administrator installs, updates and removes a pack, with the
+ * password and the TOTP code. The panel installs only a manifest that a trusted key signed,
+ * unless the developer mode for packs is on.
  */
 class PackController extends Controller
 {
@@ -129,6 +130,20 @@ class PackController extends Controller
     public static function present(Pack $p): array
     {
         $spec = $p->spec();
+        // A database pack has no image records: its images come from the manifest, with the
+        // number of database servers of each version.
+        $servers = $p->isDatabase() ? $p->databaseServers()->selectRaw('engine_version, count(*) as n')->groupBy('engine_version')->pluck('n', 'engine_version') : collect();
+        $images = $p->isDatabase()
+            ? array_map(fn (array $img) => [
+                'id' => null, 'name' => "{$p->name} {$img['version']}", 'version' => $img['version'], 'reference' => $img['repository'], 'tag' => $img['tag'],
+                'digest' => $img['digest'], 'availableDigest' => null, 'supportEndsAt' => $img['supportEndsAt'], 'websites' => 0,
+                'databaseServers' => (int) ($servers[$img['version']] ?? 0),
+            ], $spec['images'])
+            : $p->images->sort(fn (Image $a, Image $b) => version_compare((string) $b->runtime_version, (string) $a->runtime_version))->values()->map(fn (Image $i) => [
+                'id' => $i->id, 'name' => $i->name, 'version' => $i->runtime_version, 'reference' => $i->reference, 'tag' => $i->tag,
+                'digest' => $i->digest, 'availableDigest' => $i->available_digest, 'supportEndsAt' => $i->support_ends_at?->toDateString(),
+                'websites' => $i->websites_count ?? 0, 'databaseServers' => 0,
+            ])->all();
 
         return [
             'id' => $p->id,
@@ -139,12 +154,15 @@ class PackController extends Controller
             'description' => $p->description,
             'signed' => $p->signed(),
             'signedBy' => $p->signer ? ['name' => $p->signer, 'fingerprint' => $p->key?->fingerprint, 'release' => $p->signer === Pack::RELEASE_KEY && $p->plugin_key_id === null] : null,
+            'kind' => $p->kind,
             'runtime' => $spec['runtime'],
-            'images' => $p->images->sort(fn (Image $a, Image $b) => version_compare((string) $b->runtime_version, (string) $a->runtime_version))->values()->map(fn (Image $i) => [
-                'id' => $i->id, 'name' => $i->name, 'version' => $i->runtime_version, 'reference' => $i->reference, 'tag' => $i->tag,
-                'digest' => $i->digest, 'availableDigest' => $i->available_digest, 'supportEndsAt' => $i->support_ends_at?->toDateString(),
-                'websites' => $i->websites_count ?? 0,
-            ])->all(),
+            // The engine of a database pack, and the block of host ports of its database
+            // servers. Null for a runtime pack.
+            'database' => $p->isDatabase() ? [
+                ...$spec['database'], 'firstPort' => $p->database_port, 'lastPort' => $p->database_port + DatabaseEngines::PORTS - 1,
+                'databaseServers' => (int) $servers->sum(),
+            ] : null,
+            'images' => $images,
             'servers' => Packs::serverStates($p),
             'installedBy' => $p->user?->name,
             'installedAt' => $p->created_at?->toIso8601String(),

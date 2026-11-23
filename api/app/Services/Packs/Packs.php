@@ -6,6 +6,7 @@ use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\UpdatePolicy;
 use App\Models\AgentJob;
+use App\Models\Database;
 use App\Models\Image;
 use App\Models\Pack;
 use App\Models\PluginKey;
@@ -15,6 +16,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseEngines;
 use App\Services\JobDispatcher;
 use App\Services\Plugins\Signatures;
 use App\Validation\InputRules;
@@ -28,10 +30,11 @@ use Illuminate\Validation\ValidationException;
  * the same as the packs of the panel.
  *
  * The panel installs a pack only when a trusted key signed its manifest, unless the developer
- * mode for packs is on. Each version of the runtime of a pack becomes an image: customers
- * select it on the New website page. The panel sends all its packs to each web server with
- * one SetPacks job. The agent checks each signature again and lets Podman pull an image of a
- * pack only with a signature of the key of the publisher.
+ * mode for packs is on. Each version of the runtime of a runtime pack becomes an image:
+ * customers select it on the New website page. A database pack adds a database engine
+ * (DatabaseEngines), with a block of host ports for its database servers. The panel sends all
+ * its packs to each web server with one SetPacks job. The agent checks each signature again
+ * and lets Podman pull an image of a pack only with a signature of the key of the publisher.
  */
 class Packs
 {
@@ -115,11 +118,38 @@ class Packs
         if ($upgrade !== null && $spec['version'] === $upgrade->version) {
             throw ValidationException::withMessages(['manifest' => "The version {$spec['version']} is installed. Give a manifest with a new version."]);
         }
+        // The websites of the images keep their runtime: an update cannot change a pack of a
+        // new runtime into a PHP pack, or a PHP pack to a different PHP runtime. The database
+        // servers of a database pack keep their engine.
+        if ($upgrade !== null && $upgrade->kind !== $spec['kind']) {
+            throw ValidationException::withMessages(['manifest' => "The new version is a {$spec['kind']} pack, and the installed version is a {$upgrade->kind} pack. An update of a pack cannot change its kind."]);
+        }
+        if ($upgrade !== null) {
+            $before = $upgrade->spec()['runtime'];
+            if ($before['contract'] !== $spec['runtime']['contract'] || $before['family'] !== $spec['runtime']['family']) {
+                throw ValidationException::withMessages(['manifest' => 'The new version has a different runtime. An update of a pack cannot change its runtime contract or its PHP runtime.']);
+            }
+        }
         if ($upgrade === null && Pack::count() >= InputRules::MAX_PACKS) {
             throw ValidationException::withMessages(['manifest' => sprintf('The panel can have %d packs.', InputRules::MAX_PACKS)]);
         }
         // An image repository is in one pack only: the signature policy of a server has one
-        // key for each repository. An image of the panel cannot have the repository either.
+        // key for each repository. An image of the panel cannot have the repository either. A
+        // database pack has no image records, so the panel reads its manifest.
+        foreach (Pack::where('kind', PackManifest::KIND_DATABASE)->where('id', '!=', $upgrade?->id ?? '')->get() as $other) {
+            $repositories = array_column($other->spec()['images'], 'repository');
+            foreach ($spec['images'] as $img) {
+                if (in_array($img['repository'], $repositories, true)) {
+                    throw ValidationException::withMessages(['manifest' => "The image {$img['repository']} is in the pack {$other->slug}. An image repository can be in one pack only."]);
+                }
+            }
+        }
+        if (PackManifest::isDatabase($spec) && in_array($spec['slug'], Database::ENGINES, true)) {
+            throw ValidationException::withMessages(['manifest' => "The pack name \"{$spec['slug']}\" is the name of a built-in database engine."]);
+        }
+        if ($upgrade === null && PackManifest::isDatabase($spec) && DatabaseEngines::freeBlock() === null) {
+            throw ValidationException::withMessages(['manifest' => 'The panel has no free block of ports for a new database pack. Remove a database pack first.']);
+        }
         foreach ($spec['images'] as $img) {
             $other = Image::where('reference', $img['repository'])
                 ->where(fn ($q) => $q->whereNull('pack_id')->orWhere('pack_id', '!=', $upgrade?->id ?? ''))
@@ -130,6 +160,17 @@ class Packs
                     : "The image {$img['repository']} is the image {$other->name} of the panel. A pack needs its own image repository."]);
             }
         }
+        // A PHP pack adds a version of PHP only when the runtime does not have it, so that the
+        // New website page has one image for each version of each runtime.
+        if (PackManifest::isPhp($spec)) {
+            foreach ($spec['images'] as $img) {
+                $other = Image::where('family', $spec['runtime']['family'])->where('php_version', $img['version'])
+                    ->where(fn ($q) => $q->whereNull('pack_id')->orWhere('pack_id', '!=', $upgrade?->id ?? ''))->first();
+                if ($other !== null) {
+                    throw ValidationException::withMessages(['manifest' => "The panel has the image {$other->name} already. A PHP pack can add only a version of PHP that the runtime does not have."]);
+                }
+            }
+        }
         if ($upgrade !== null) {
             self::checkRemovedVersions($upgrade, $spec);
         }
@@ -138,13 +179,19 @@ class Packs
     }
 
     /**
-     * An upgrade can remove a version of the runtime only when no website uses it.
+     * An upgrade can remove a version of the runtime only when no website uses it, and a
+     * version of a database engine only when no database server uses it.
      *
      * @throws ValidationException
      */
     private static function checkRemovedVersions(Pack $pack, array $spec): void
     {
         $keep = array_column($spec['images'], 'version');
+        $servers = $pack->isDatabase() ? $pack->databaseServers()->whereNotIn('engine_version', $keep)->orderBy('name')->get() : collect();
+        if ($servers->isNotEmpty()) {
+            $first = $servers->first();
+            throw ValidationException::withMessages(['manifest' => "The new version has no image for {$pack->name} {$first->engine_version}, and the database server {$first->name} uses it. Remove the database servers of that version first."]);
+        }
         foreach ($pack->images()->whereNotIn('runtime_version', $keep)->get() as $image) {
             if ($image->websites()->exists()) {
                 throw ValidationException::withMessages(['manifest' => "The new version has no image for {$image->name}, and websites use it. Change the runtime of these websites first."]);
@@ -157,7 +204,11 @@ class Packs
     {
         [$spec, $signer] = self::check($manifest, $signature);
         $pack = DB::transaction(function () use ($manifest, $signature, $signer, $spec, $user) {
-            $pack = Pack::create([...self::fields($spec, $manifest, $signature, $signer), 'user_id' => $user?->id]);
+            $pack = Pack::create([
+                ...self::fields($spec, $manifest, $signature, $signer), 'user_id' => $user?->id,
+                // The database servers of the engine get the ports of this block.
+                'database_port' => PackManifest::isDatabase($spec) ? DatabaseEngines::freeBlock() : null,
+            ]);
             self::syncImages($pack, $spec);
 
             return $pack;
@@ -191,6 +242,9 @@ class Packs
      */
     public function remove(Pack $pack): void
     {
+        if ($pack->isDatabase() && ($servers = $pack->databaseServers()->count()) > 0) {
+            throw ValidationException::withMessages(['pack' => "{$servers} database ".($servers === 1 ? 'server uses' : 'servers use')." the engine {$pack->name}. Remove these database servers first."]);
+        }
         $ids = $pack->images()->pluck('id');
         $used = Website::whereIn('image_id', $ids)->count();
         if ($used > 0) {
@@ -208,23 +262,35 @@ class Packs
     private static function fields(array $spec, string $manifest, ?string $signature, ?array $signer): array
     {
         return [
-            'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'], 'kind' => $spec['kind'],
             'description' => $spec['description'] === '' ? null : $spec['description'], 'manifest' => $manifest,
             'signature' => $signer ? trim((string) $signature) : null, 'public_key' => $signer['publicKey'] ?? null,
             'plugin_key_id' => $signer['key']?->id ?? null, 'signer' => $signer['name'] ?? null,
         ];
     }
 
-    /** Makes the images of the pack agree with its manifest. */
-    private static function syncImages(Pack $pack, array $spec): void
+    /**
+     * Makes the images of the pack agree with its manifest. An image of a pack of a new runtime
+     * has the family of the pack. An image of a PHP pack has the family of its built-in PHP
+     * runtime, so that it is one more version of that runtime for the websites.
+     */
+    public static function syncImages(Pack $pack, array $spec): void
     {
+        // A database pack has no images for websites. Each database server keeps its version,
+        // and the agent takes the image of the version from the manifest.
+        if (PackManifest::isDatabase($spec)) {
+            return;
+        }
+        $php = PackManifest::isPhp($spec);
         $keep = [];
         foreach ($spec['images'] as $img) {
             $keep[] = $img['version'];
             $fields = [
-                'name' => "{$spec['name']} {$img['version']}", 'family' => $spec['slug'], 'reference' => $img['repository'],
-                'runtime_version' => $img['version'], 'support_ends_at' => $img['supportEndsAt'], 'custom' => false,
-                'default_command' => $spec['runtime']['defaultCommand'], 'default_install' => $spec['runtime']['defaultInstall'] ?: null,
+                'name' => $php ? Image::PHP_LABELS[$spec['runtime']['family']]." · PHP {$img['version']}" : "{$spec['name']} {$img['version']}",
+                'family' => $php ? $spec['runtime']['family'] : $spec['slug'], 'reference' => $img['repository'],
+                'runtime_version' => $img['version'], 'php_version' => $php ? $img['version'] : null,
+                'support_ends_at' => $img['supportEndsAt'], 'custom' => false,
+                'default_command' => $php ? null : $spec['runtime']['defaultCommand'], 'default_install' => $php ? null : ($spec['runtime']['defaultInstall'] ?: null),
                 // The signature of the manifest covers the digest. Each server checks the
                 // signature of the image with the key of the publisher when it pulls the image.
                 'signature_verified' => $pack->signed(),
