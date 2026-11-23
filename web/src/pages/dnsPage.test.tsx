@@ -102,7 +102,7 @@ describe("the page of a DNS zone", () => {
     const main = screen.getByRole("main");
     await waitFor(() => expect(main.textContent).toContain("mx1.mail.example"));
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("acme.example.com");
-    expect(within(main).getByLabelText("New DS record").textContent).toMatch(/^acme\.example\.com\. IN DS \d+ 13 2 [0-9A-F]{64}$/);
+    expect(within(main).getByLabelText(/DS record$/).textContent).toMatch(/^acme\.example\.com\. IN DS \d+ 13 2 [0-9A-F]{64}$/);
     expect(main.textContent).toContain("Uses these name servers");
     expect(main.textContent).toContain("Has the last change");
     expect(main.textContent).toContain("Priority 10");
@@ -177,11 +177,18 @@ describe("the page of a DNS zone", () => {
   });
 
   it("shows the change of the DNSSEC key, stops it and starts it again", async () => {
-    const api = await open("owner", () => `/dns/${zone("acme.example.com").id}`);
+    // The test gives its own key change, so it does not depend on the demo data of the fixtures.
+    const api = await signedIn("owner");
     const id = zone("acme.example.com").id;
-    const { newDs, oldDs } = zone("acme.example.com").dnssec.rollover!;
+    const ds = (keyTag: number) => ({ keyTag, algorithm: 13, digestType: 2, digest: `AB${keyTag}`, record: `acme.example.com. IN DS ${keyTag} 13 2 AB${keyTag}` });
+    const [oldDs, newDs] = [ds(11111), ds(22222)];
+    api.change<{ dnssec: object }>(`/dns-zones/${id}`, (z) => {
+      z.dnssec = { ...z.dnssec, ds: newDs, rollover: { step: "submit", startedAt: "2026-11-14T05:00:00+00:00", until: null, newDs, oldDs }, parent: { state: "ok", keyTags: [oldDs.keyTag], otherKeyTags: [], checkedAt: "2026-11-14T09:51:00+00:00" } };
+    });
+    render(<MemoryRouter initialEntries={[`/dns/${id}`]}><App /></MemoryRouter>);
     const card = screen.getByRole("heading", { name: "DNSSEC" }).closest("section")!;
-    // The demonstration waits for the new DS record at the registry.
+    // The panel waits for the new DS record at the registry.
+    await waitFor(() => expect(within(card).getByRole("list", { name: "Steps of the change of the key" })).toBeTruthy());
     const steps = within(card).getByRole("list", { name: "Steps of the change of the key" });
     expect(within(steps).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "Publish the new key on the DNS serversDone", "Give the new DS record to the registrarIn progress", "Sign with both keys, then remove the old keyNot started",

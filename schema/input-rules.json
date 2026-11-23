@@ -347,6 +347,28 @@
       "echo": false,
       "message": "Use 1 to 1024 letters, digits and the characters _ . , : / | @ + = ~ -."
     },
+    "securityPath": {
+      "what": "path",
+      "go": "SecurityPath",
+      "doc": "A path of the protection of a website in the edge proxy, for example \"/wp-login.php\" or \"/admin/\". A path that ends with \"/\" is the directory and all paths in it. The path has no empty part, no \".\" part and no \"..\" part. It has no \"%\" and no \"*\": the edge proxy compares the decoded path of a request.",
+      "pattern": "^/([A-Za-z0-9._~@:+,=-]+(/[A-Za-z0-9._~@:+,=-]+)*/?)?$",
+      "not": ["/\\.\\.?(/|$)"],
+      "maxLength": 200,
+      "message": "Enter a path that starts with /, for example /wp-login.php or /admin/. Use letters, digits and . _ ~ @ : + , = -. Do not use \"//\", \".\" or \"..\" parts."
+    },
+    "pathUser": {
+      "what": "user name",
+      "doc": "The user name of a password-protected path of a website. The edge proxy asks for it with HTTP basic authentication.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$",
+      "message": "Use 1 to 32 letters, digits, dots, underscores and hyphens. Start with a letter or a digit."
+    },
+    "pathPasswordHash": {
+      "what": "password hash",
+      "doc": "The bcrypt hash of the password of a user of a password-protected path. The panel makes it, and the agent gives it to the edge proxy. The agent never gets the password.",
+      "pattern": "^\\$2[aby]\\$1[0-4]\\$[./A-Za-z0-9]{53}$",
+      "echo": false,
+      "message": "Enter a bcrypt hash."
+    },
     "packSlug": {
       "what": "pack name",
       "doc": "The name of a pack, for example \"golang\". It is also the name of the runtime of the pack in the jobs of the agent.",
@@ -437,6 +459,43 @@
     "containerEnvironment": {
       "doc": "The largest number of environment variables of a container.",
       "value": 20
+    },
+    "firewallExclusions": {
+      "doc": "The largest number of firewall rules that a website can turn off.",
+      "value": 50
+    },
+    "firewallSkipPaths": {
+      "doc": "The largest number of paths that the firewall of a website does not examine.",
+      "value": 20
+    },
+    "firewallRuleId": {
+      "doc": "The largest ID of a firewall rule.",
+      "value": 999999
+    },
+    "ipRules": {
+      "doc": "The largest number of IP addresses and ranges in the allow list or in the block list of a website.",
+      "value": 200
+    },
+    "protectedPaths": {
+      "doc": "The largest number of password-protected paths of a website.",
+      "value": 20
+    },
+    "pathUsers": {
+      "doc": "The largest number of users of one password-protected path.",
+      "value": 10
+    },
+    "signInPaths": {
+      "doc": "The largest number of sign-in paths of a website.",
+      "value": 20
+    },
+    "signInLimit": {
+      "doc": "The largest sign-in limit of a website: POST requests in one minute from one IP address.",
+      "value": 600
+    },
+    "lowSignInLimit": {
+      "doc": "The smallest sign-in limit of a website that is not 0.",
+      "value": 3,
+      "smallest": true
     },
     "packImages": {
       "doc": "The largest number of images in one pack.",

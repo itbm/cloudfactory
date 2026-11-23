@@ -260,7 +260,11 @@ type Website struct {
 	// (EnvironmentFile in the unit), so the values are not in the unit or in a command line. The
 	// panel adds the variables of a website to the job each time that it sends it. A plugin that
 	// the panel runs (runtime "custom") gets its token this way too (docs/plugins.md).
-	Environment   map[string]string `protobuf:"bytes,18,rep,name=environment,proto3" json:"environment,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Environment map[string]string `protobuf:"bytes,18,rep,name=environment,proto3" json:"environment,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// The protection of the website in the edge proxy. The panel adds the current value each
+	// time that it sends a job with the website, as for the environment variables. No value
+	// means no protection.
+	Security      *WebsiteSecurity `protobuf:"bytes,19,opt,name=security,proto3" json:"security,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -421,6 +425,231 @@ func (x *Website) GetEnvironment() map[string]string {
 	return nil
 }
 
+func (x *Website) GetSecurity() *WebsiteSecurity {
+	if x != nil {
+		return x.Security
+	}
+	return nil
+}
+
+// The protection of a website in the edge proxy (docs/architecture.md#protection-of-a-website).
+// The edge proxy applies the parts in this order: the IP address rules, the sign-in limit, the
+// password-protected paths and the firewall. Each path starts with "/". A path that ends with
+// "/" is the directory and all paths in it. A different path is one exact path.
+type WebsiteSecurity struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "off", "detect" or "block". The firewall is Coraza with the OWASP Core Rule Set. "detect"
+	// records the requests that the firewall would block, and blocks nothing. Empty means "off".
+	Firewall string `protobuf:"bytes,1,opt,name=firewall,proto3" json:"firewall,omitempty"`
+	// The IDs of the rules of the firewall that do not apply to the website, for example 942100.
+	FirewallExclusions []int32 `protobuf:"varint,2,rep,packed,name=firewall_exclusions,json=firewallExclusions,proto3" json:"firewall_exclusions,omitempty"`
+	// The paths that the firewall does not examine.
+	FirewallSkipPaths []string `protobuf:"bytes,3,rep,name=firewall_skip_paths,json=firewallSkipPaths,proto3" json:"firewall_skip_paths,omitempty"`
+	// IP addresses and ranges, for example "203.0.113.0/24". When the allow list has values,
+	// only these addresses can open the website. The edge proxy refuses the block list first.
+	Allow []string `protobuf:"bytes,4,rep,name=allow,proto3" json:"allow,omitempty"`
+	Block []string `protobuf:"bytes,5,rep,name=block,proto3" json:"block,omitempty"`
+	// Paths that ask for a user name and a password (HTTP basic authentication).
+	ProtectedPaths []*ProtectedPath `protobuf:"bytes,6,rep,name=protected_paths,json=protectedPaths,proto3" json:"protected_paths,omitempty"`
+	// The largest number of POST requests in one minute from one IP address to the sign-in
+	// paths. The edge proxy answers more requests with status 429. 0 means no limit.
+	SignInLimit   int32    `protobuf:"varint,7,opt,name=sign_in_limit,json=signInLimit,proto3" json:"sign_in_limit,omitempty"`
+	SignInPaths   []string `protobuf:"bytes,8,rep,name=sign_in_paths,json=signInPaths,proto3" json:"sign_in_paths,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WebsiteSecurity) Reset() {
+	*x = WebsiteSecurity{}
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WebsiteSecurity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WebsiteSecurity) ProtoMessage() {}
+
+func (x *WebsiteSecurity) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WebsiteSecurity.ProtoReflect.Descriptor instead.
+func (*WebsiteSecurity) Descriptor() ([]byte, []int) {
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *WebsiteSecurity) GetFirewall() string {
+	if x != nil {
+		return x.Firewall
+	}
+	return ""
+}
+
+func (x *WebsiteSecurity) GetFirewallExclusions() []int32 {
+	if x != nil {
+		return x.FirewallExclusions
+	}
+	return nil
+}
+
+func (x *WebsiteSecurity) GetFirewallSkipPaths() []string {
+	if x != nil {
+		return x.FirewallSkipPaths
+	}
+	return nil
+}
+
+func (x *WebsiteSecurity) GetAllow() []string {
+	if x != nil {
+		return x.Allow
+	}
+	return nil
+}
+
+func (x *WebsiteSecurity) GetBlock() []string {
+	if x != nil {
+		return x.Block
+	}
+	return nil
+}
+
+func (x *WebsiteSecurity) GetProtectedPaths() []*ProtectedPath {
+	if x != nil {
+		return x.ProtectedPaths
+	}
+	return nil
+}
+
+func (x *WebsiteSecurity) GetSignInLimit() int32 {
+	if x != nil {
+		return x.SignInLimit
+	}
+	return 0
+}
+
+func (x *WebsiteSecurity) GetSignInPaths() []string {
+	if x != nil {
+		return x.SignInPaths
+	}
+	return nil
+}
+
+type ProtectedPath struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Users         []*PathUser            `protobuf:"bytes,2,rep,name=users,proto3" json:"users,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProtectedPath) Reset() {
+	*x = ProtectedPath{}
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProtectedPath) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtectedPath) ProtoMessage() {}
+
+func (x *ProtectedPath) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProtectedPath.ProtoReflect.Descriptor instead.
+func (*ProtectedPath) Descriptor() ([]byte, []int) {
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ProtectedPath) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ProtectedPath) GetUsers() []*PathUser {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+type PathUser struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The bcrypt hash of the password. The panel makes it. The agent never gets the password.
+	PasswordHash  string `protobuf:"bytes,2,opt,name=password_hash,json=passwordHash,proto3" json:"password_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PathUser) Reset() {
+	*x = PathUser{}
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PathUser) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PathUser) ProtoMessage() {}
+
+func (x *PathUser) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PathUser.ProtoReflect.Descriptor instead.
+func (*PathUser) Descriptor() ([]byte, []int) {
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *PathUser) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PathUser) GetPasswordHash() string {
+	if x != nil {
+		return x.PasswordHash
+	}
+	return ""
+}
+
 // A database server of a customer: one database container with one engine, in its own gVisor
 // sandbox, with its own data and its own limits. A customer can have more than one database
 // server on a server. Each database is in one database server.
@@ -445,7 +674,7 @@ type DatabaseServer struct {
 
 func (x *DatabaseServer) Reset() {
 	*x = DatabaseServer{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[4]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -457,7 +686,7 @@ func (x *DatabaseServer) String() string {
 func (*DatabaseServer) ProtoMessage() {}
 
 func (x *DatabaseServer) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[4]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -470,7 +699,7 @@ func (x *DatabaseServer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseServer.ProtoReflect.Descriptor instead.
 func (*DatabaseServer) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{4}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DatabaseServer) GetId() string {
@@ -520,7 +749,7 @@ type DatabaseServerRequest struct {
 
 func (x *DatabaseServerRequest) Reset() {
 	*x = DatabaseServerRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -532,7 +761,7 @@ func (x *DatabaseServerRequest) String() string {
 func (*DatabaseServerRequest) ProtoMessage() {}
 
 func (x *DatabaseServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -545,7 +774,7 @@ func (x *DatabaseServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseServerRequest.ProtoReflect.Descriptor instead.
 func (*DatabaseServerRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DatabaseServerRequest) GetJobId() string {
@@ -575,7 +804,7 @@ type SetMailServerRequest struct {
 
 func (x *SetMailServerRequest) Reset() {
 	*x = SetMailServerRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -587,7 +816,7 @@ func (x *SetMailServerRequest) String() string {
 func (*SetMailServerRequest) ProtoMessage() {}
 
 func (x *SetMailServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -600,7 +829,7 @@ func (x *SetMailServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMailServerRequest.ProtoReflect.Descriptor instead.
 func (*SetMailServerRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{6}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetMailServerRequest) GetJobId() string {
@@ -629,7 +858,7 @@ type PrepareMailNodeRequest struct {
 
 func (x *PrepareMailNodeRequest) Reset() {
 	*x = PrepareMailNodeRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -641,7 +870,7 @@ func (x *PrepareMailNodeRequest) String() string {
 func (*PrepareMailNodeRequest) ProtoMessage() {}
 
 func (x *PrepareMailNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -654,7 +883,7 @@ func (x *PrepareMailNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareMailNodeRequest.ProtoReflect.Descriptor instead.
 func (*PrepareMailNodeRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PrepareMailNodeRequest) GetJobId() string {
@@ -687,7 +916,7 @@ type MailClusterMember struct {
 
 func (x *MailClusterMember) Reset() {
 	*x = MailClusterMember{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -699,7 +928,7 @@ func (x *MailClusterMember) String() string {
 func (*MailClusterMember) ProtoMessage() {}
 
 func (x *MailClusterMember) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -712,7 +941,7 @@ func (x *MailClusterMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MailClusterMember.ProtoReflect.Descriptor instead.
 func (*MailClusterMember) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MailClusterMember) GetId() int32 {
@@ -799,7 +1028,7 @@ type SetMailNodeRequest struct {
 
 func (x *SetMailNodeRequest) Reset() {
 	*x = SetMailNodeRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +1040,7 @@ func (x *SetMailNodeRequest) String() string {
 func (*SetMailNodeRequest) ProtoMessage() {}
 
 func (x *SetMailNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +1053,7 @@ func (x *SetMailNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMailNodeRequest.ProtoReflect.Descriptor instead.
 func (*SetMailNodeRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SetMailNodeRequest) GetJobId() string {
@@ -903,7 +1132,7 @@ type MailDomainRequest struct {
 
 func (x *MailDomainRequest) Reset() {
 	*x = MailDomainRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -915,7 +1144,7 @@ func (x *MailDomainRequest) String() string {
 func (*MailDomainRequest) ProtoMessage() {}
 
 func (x *MailDomainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -928,7 +1157,7 @@ func (x *MailDomainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MailDomainRequest.ProtoReflect.Descriptor instead.
 func (*MailDomainRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{10}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *MailDomainRequest) GetJobId() string {
@@ -976,7 +1205,7 @@ type SetMailboxRequest struct {
 
 func (x *SetMailboxRequest) Reset() {
 	*x = SetMailboxRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -988,7 +1217,7 @@ func (x *SetMailboxRequest) String() string {
 func (*SetMailboxRequest) ProtoMessage() {}
 
 func (x *SetMailboxRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1001,7 +1230,7 @@ func (x *SetMailboxRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMailboxRequest.ProtoReflect.Descriptor instead.
 func (*SetMailboxRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SetMailboxRequest) GetJobId() string {
@@ -1080,7 +1309,7 @@ type MailAddressRequest struct {
 
 func (x *MailAddressRequest) Reset() {
 	*x = MailAddressRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1092,7 +1321,7 @@ func (x *MailAddressRequest) String() string {
 func (*MailAddressRequest) ProtoMessage() {}
 
 func (x *MailAddressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1105,7 +1334,7 @@ func (x *MailAddressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MailAddressRequest.ProtoReflect.Descriptor instead.
 func (*MailAddressRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *MailAddressRequest) GetJobId() string {
@@ -1143,7 +1372,7 @@ type SetMailAliasRequest struct {
 
 func (x *SetMailAliasRequest) Reset() {
 	*x = SetMailAliasRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[13]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1155,7 +1384,7 @@ func (x *SetMailAliasRequest) String() string {
 func (*SetMailAliasRequest) ProtoMessage() {}
 
 func (x *SetMailAliasRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[13]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1168,7 +1397,7 @@ func (x *SetMailAliasRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMailAliasRequest.ProtoReflect.Descriptor instead.
 func (*SetMailAliasRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{13}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SetMailAliasRequest) GetJobId() string {
@@ -1211,7 +1440,7 @@ type DeleteDatabaseServerRequest struct {
 
 func (x *DeleteDatabaseServerRequest) Reset() {
 	*x = DeleteDatabaseServerRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1223,7 +1452,7 @@ func (x *DeleteDatabaseServerRequest) String() string {
 func (*DeleteDatabaseServerRequest) ProtoMessage() {}
 
 func (x *DeleteDatabaseServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1236,7 +1465,7 @@ func (x *DeleteDatabaseServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDatabaseServerRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDatabaseServerRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{14}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DeleteDatabaseServerRequest) GetJobId() string {
@@ -1265,7 +1494,7 @@ type HealthCheck struct {
 
 func (x *HealthCheck) Reset() {
 	*x = HealthCheck{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1277,7 +1506,7 @@ func (x *HealthCheck) String() string {
 func (*HealthCheck) ProtoMessage() {}
 
 func (x *HealthCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1290,7 +1519,7 @@ func (x *HealthCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheck.ProtoReflect.Descriptor instead.
 func (*HealthCheck) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{15}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *HealthCheck) GetStatus() int32 {
@@ -1338,7 +1567,7 @@ type WebsiteRequest struct {
 
 func (x *WebsiteRequest) Reset() {
 	*x = WebsiteRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1350,7 +1579,7 @@ func (x *WebsiteRequest) String() string {
 func (*WebsiteRequest) ProtoMessage() {}
 
 func (x *WebsiteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1363,7 +1592,7 @@ func (x *WebsiteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebsiteRequest.ProtoReflect.Descriptor instead.
 func (*WebsiteRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *WebsiteRequest) GetJobId() string {
@@ -1451,7 +1680,7 @@ type DatabaseCopy struct {
 
 func (x *DatabaseCopy) Reset() {
 	*x = DatabaseCopy{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1463,7 +1692,7 @@ func (x *DatabaseCopy) String() string {
 func (*DatabaseCopy) ProtoMessage() {}
 
 func (x *DatabaseCopy) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1476,7 +1705,7 @@ func (x *DatabaseCopy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseCopy.ProtoReflect.Descriptor instead.
 func (*DatabaseCopy) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DatabaseCopy) GetEngine() string {
@@ -1529,7 +1758,7 @@ type DatabaseUserCopy struct {
 
 func (x *DatabaseUserCopy) Reset() {
 	*x = DatabaseUserCopy{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1541,7 +1770,7 @@ func (x *DatabaseUserCopy) String() string {
 func (*DatabaseUserCopy) ProtoMessage() {}
 
 func (x *DatabaseUserCopy) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1554,7 +1783,7 @@ func (x *DatabaseUserCopy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseUserCopy.ProtoReflect.Descriptor instead.
 func (*DatabaseUserCopy) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DatabaseUserCopy) GetEngine() string {
@@ -1599,7 +1828,7 @@ type DeleteWebsiteRequest struct {
 
 func (x *DeleteWebsiteRequest) Reset() {
 	*x = DeleteWebsiteRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1611,7 +1840,7 @@ func (x *DeleteWebsiteRequest) String() string {
 func (*DeleteWebsiteRequest) ProtoMessage() {}
 
 func (x *DeleteWebsiteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1624,7 +1853,7 @@ func (x *DeleteWebsiteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWebsiteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteWebsiteRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DeleteWebsiteRequest) GetJobId() string {
@@ -1675,7 +1904,7 @@ type SetWebsitePowerRequest struct {
 
 func (x *SetWebsitePowerRequest) Reset() {
 	*x = SetWebsitePowerRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1687,7 +1916,7 @@ func (x *SetWebsitePowerRequest) String() string {
 func (*SetWebsitePowerRequest) ProtoMessage() {}
 
 func (x *SetWebsitePowerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1700,7 +1929,7 @@ func (x *SetWebsitePowerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetWebsitePowerRequest.ProtoReflect.Descriptor instead.
 func (*SetWebsitePowerRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{20}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SetWebsitePowerRequest) GetJobId() string {
@@ -1731,6 +1960,75 @@ func (x *SetWebsitePowerRequest) GetPower() string {
 	return ""
 }
 
+type SetWebsiteSecurityRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	JobId     string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	WebsiteId string                 `protobuf:"bytes,2,opt,name=website_id,json=websiteId,proto3" json:"website_id,omitempty"`
+	UnixUser  string                 `protobuf:"bytes,3,opt,name=unix_user,json=unixUser,proto3" json:"unix_user,omitempty"`
+	// The panel adds the current value each time that it sends the job.
+	Security      *WebsiteSecurity `protobuf:"bytes,4,opt,name=security,proto3" json:"security,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetWebsiteSecurityRequest) Reset() {
+	*x = SetWebsiteSecurityRequest{}
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetWebsiteSecurityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetWebsiteSecurityRequest) ProtoMessage() {}
+
+func (x *SetWebsiteSecurityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetWebsiteSecurityRequest.ProtoReflect.Descriptor instead.
+func (*SetWebsiteSecurityRequest) Descriptor() ([]byte, []int) {
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SetWebsiteSecurityRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *SetWebsiteSecurityRequest) GetWebsiteId() string {
+	if x != nil {
+		return x.WebsiteId
+	}
+	return ""
+}
+
+func (x *SetWebsiteSecurityRequest) GetUnixUser() string {
+	if x != nil {
+		return x.UnixUser
+	}
+	return ""
+}
+
+func (x *SetWebsiteSecurityRequest) GetSecurity() *WebsiteSecurity {
+	if x != nil {
+		return x.Security
+	}
+	return nil
+}
+
 type SetLimitsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -1743,7 +2041,7 @@ type SetLimitsRequest struct {
 
 func (x *SetLimitsRequest) Reset() {
 	*x = SetLimitsRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1755,7 +2053,7 @@ func (x *SetLimitsRequest) String() string {
 func (*SetLimitsRequest) ProtoMessage() {}
 
 func (x *SetLimitsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1768,7 +2066,7 @@ func (x *SetLimitsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetLimitsRequest.ProtoReflect.Descriptor instead.
 func (*SetLimitsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{21}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SetLimitsRequest) GetJobId() string {
@@ -1813,7 +2111,7 @@ type DomainRequest struct {
 
 func (x *DomainRequest) Reset() {
 	*x = DomainRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1825,7 +2123,7 @@ func (x *DomainRequest) String() string {
 func (*DomainRequest) ProtoMessage() {}
 
 func (x *DomainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1838,7 +2136,7 @@ func (x *DomainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DomainRequest.ProtoReflect.Descriptor instead.
 func (*DomainRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{22}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DomainRequest) GetJobId() string {
@@ -1906,7 +2204,7 @@ type CreateDatabaseRequest struct {
 
 func (x *CreateDatabaseRequest) Reset() {
 	*x = CreateDatabaseRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1918,7 +2216,7 @@ func (x *CreateDatabaseRequest) String() string {
 func (*CreateDatabaseRequest) ProtoMessage() {}
 
 func (x *CreateDatabaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1931,7 +2229,7 @@ func (x *CreateDatabaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateDatabaseRequest.ProtoReflect.Descriptor instead.
 func (*CreateDatabaseRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{23}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateDatabaseRequest) GetJobId() string {
@@ -2017,7 +2315,7 @@ type DeleteDatabaseRequest struct {
 
 func (x *DeleteDatabaseRequest) Reset() {
 	*x = DeleteDatabaseRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2029,7 +2327,7 @@ func (x *DeleteDatabaseRequest) String() string {
 func (*DeleteDatabaseRequest) ProtoMessage() {}
 
 func (x *DeleteDatabaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2042,7 +2340,7 @@ func (x *DeleteDatabaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDatabaseRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDatabaseRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{24}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DeleteDatabaseRequest) GetJobId() string {
@@ -2112,7 +2410,7 @@ type DatabaseGrant struct {
 
 func (x *DatabaseGrant) Reset() {
 	*x = DatabaseGrant{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2124,7 +2422,7 @@ func (x *DatabaseGrant) String() string {
 func (*DatabaseGrant) ProtoMessage() {}
 
 func (x *DatabaseGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2137,7 +2435,7 @@ func (x *DatabaseGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseGrant.ProtoReflect.Descriptor instead.
 func (*DatabaseGrant) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{25}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *DatabaseGrant) GetDatabase() string {
@@ -2179,7 +2477,7 @@ type SetDatabaseUserRequest struct {
 
 func (x *SetDatabaseUserRequest) Reset() {
 	*x = SetDatabaseUserRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2191,7 +2489,7 @@ func (x *SetDatabaseUserRequest) String() string {
 func (*SetDatabaseUserRequest) ProtoMessage() {}
 
 func (x *SetDatabaseUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2204,7 +2502,7 @@ func (x *SetDatabaseUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDatabaseUserRequest.ProtoReflect.Descriptor instead.
 func (*SetDatabaseUserRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{26}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SetDatabaseUserRequest) GetJobId() string {
@@ -2303,7 +2601,7 @@ type DeleteDatabaseUserRequest struct {
 
 func (x *DeleteDatabaseUserRequest) Reset() {
 	*x = DeleteDatabaseUserRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2315,7 +2613,7 @@ func (x *DeleteDatabaseUserRequest) String() string {
 func (*DeleteDatabaseUserRequest) ProtoMessage() {}
 
 func (x *DeleteDatabaseUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2328,7 +2626,7 @@ func (x *DeleteDatabaseUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDatabaseUserRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDatabaseUserRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{27}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *DeleteDatabaseUserRequest) GetJobId() string {
@@ -2400,7 +2698,7 @@ type DatabaseRef struct {
 
 func (x *DatabaseRef) Reset() {
 	*x = DatabaseRef{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2412,7 +2710,7 @@ func (x *DatabaseRef) String() string {
 func (*DatabaseRef) ProtoMessage() {}
 
 func (x *DatabaseRef) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2425,7 +2723,7 @@ func (x *DatabaseRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseRef.ProtoReflect.Descriptor instead.
 func (*DatabaseRef) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{28}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DatabaseRef) GetEngine() string {
@@ -2475,7 +2773,7 @@ type BackupRequest struct {
 
 func (x *BackupRequest) Reset() {
 	*x = BackupRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2487,7 +2785,7 @@ func (x *BackupRequest) String() string {
 func (*BackupRequest) ProtoMessage() {}
 
 func (x *BackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2500,7 +2798,7 @@ func (x *BackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupRequest.ProtoReflect.Descriptor instead.
 func (*BackupRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{29}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *BackupRequest) GetJobId() string {
@@ -2588,7 +2886,7 @@ type Retention struct {
 
 func (x *Retention) Reset() {
 	*x = Retention{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2600,7 +2898,7 @@ func (x *Retention) String() string {
 func (*Retention) ProtoMessage() {}
 
 func (x *Retention) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2613,7 +2911,7 @@ func (x *Retention) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Retention.ProtoReflect.Descriptor instead.
 func (*Retention) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{30}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Retention) GetDaily() int32 {
@@ -2658,7 +2956,7 @@ type PruneBackupsRequest struct {
 
 func (x *PruneBackupsRequest) Reset() {
 	*x = PruneBackupsRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2670,7 +2968,7 @@ func (x *PruneBackupsRequest) String() string {
 func (*PruneBackupsRequest) ProtoMessage() {}
 
 func (x *PruneBackupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2683,7 +2981,7 @@ func (x *PruneBackupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PruneBackupsRequest.ProtoReflect.Descriptor instead.
 func (*PruneBackupsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{31}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *PruneBackupsRequest) GetJobId() string {
@@ -2742,7 +3040,7 @@ type RestoreRequest struct {
 
 func (x *RestoreRequest) Reset() {
 	*x = RestoreRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[32]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2754,7 +3052,7 @@ func (x *RestoreRequest) String() string {
 func (*RestoreRequest) ProtoMessage() {}
 
 func (x *RestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[32]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2767,7 +3065,7 @@ func (x *RestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreRequest.ProtoReflect.Descriptor instead.
 func (*RestoreRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{32}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *RestoreRequest) GetJobId() string {
@@ -2870,7 +3168,7 @@ type SetSftpRequest struct {
 
 func (x *SetSftpRequest) Reset() {
 	*x = SetSftpRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[33]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2882,7 +3180,7 @@ func (x *SetSftpRequest) String() string {
 func (*SetSftpRequest) ProtoMessage() {}
 
 func (x *SetSftpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[33]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2895,7 +3193,7 @@ func (x *SetSftpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSftpRequest.ProtoReflect.Descriptor instead.
 func (*SetSftpRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{33}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SetSftpRequest) GetJobId() string {
@@ -2946,7 +3244,7 @@ type ConfigureHostRequest struct {
 
 func (x *ConfigureHostRequest) Reset() {
 	*x = ConfigureHostRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[34]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2958,7 +3256,7 @@ func (x *ConfigureHostRequest) String() string {
 func (*ConfigureHostRequest) ProtoMessage() {}
 
 func (x *ConfigureHostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[34]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2971,7 +3269,7 @@ func (x *ConfigureHostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureHostRequest.ProtoReflect.Descriptor instead.
 func (*ConfigureHostRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{34}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ConfigureHostRequest) GetJobId() string {
@@ -3001,7 +3299,7 @@ type SetPanelCertificateRequest struct {
 
 func (x *SetPanelCertificateRequest) Reset() {
 	*x = SetPanelCertificateRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[35]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3013,7 +3311,7 @@ func (x *SetPanelCertificateRequest) String() string {
 func (*SetPanelCertificateRequest) ProtoMessage() {}
 
 func (x *SetPanelCertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[35]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3026,7 +3324,7 @@ func (x *SetPanelCertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPanelCertificateRequest.ProtoReflect.Descriptor instead.
 func (*SetPanelCertificateRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{35}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SetPanelCertificateRequest) GetJobId() string {
@@ -3057,7 +3355,7 @@ type SetPanelBrandsRequest struct {
 
 func (x *SetPanelBrandsRequest) Reset() {
 	*x = SetPanelBrandsRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[36]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3069,7 +3367,7 @@ func (x *SetPanelBrandsRequest) String() string {
 func (*SetPanelBrandsRequest) ProtoMessage() {}
 
 func (x *SetPanelBrandsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[36]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3082,7 +3380,7 @@ func (x *SetPanelBrandsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPanelBrandsRequest.ProtoReflect.Descriptor instead.
 func (*SetPanelBrandsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{36}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SetPanelBrandsRequest) GetJobId() string {
@@ -3110,7 +3408,7 @@ type SetPacksRequest struct {
 
 func (x *SetPacksRequest) Reset() {
 	*x = SetPacksRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[37]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3122,7 +3420,7 @@ func (x *SetPacksRequest) String() string {
 func (*SetPacksRequest) ProtoMessage() {}
 
 func (x *SetPacksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[37]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3135,7 +3433,7 @@ func (x *SetPacksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPacksRequest.ProtoReflect.Descriptor instead.
 func (*SetPacksRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{37}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SetPacksRequest) GetJobId() string {
@@ -3163,7 +3461,7 @@ type SetCertificatesRequest struct {
 
 func (x *SetCertificatesRequest) Reset() {
 	*x = SetCertificatesRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[38]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3175,7 +3473,7 @@ func (x *SetCertificatesRequest) String() string {
 func (*SetCertificatesRequest) ProtoMessage() {}
 
 func (x *SetCertificatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[38]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3188,7 +3486,7 @@ func (x *SetCertificatesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCertificatesRequest.ProtoReflect.Descriptor instead.
 func (*SetCertificatesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{38}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *SetCertificatesRequest) GetJobId() string {
@@ -3224,7 +3522,7 @@ type EdgeCertificate struct {
 
 func (x *EdgeCertificate) Reset() {
 	*x = EdgeCertificate{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[39]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3236,7 +3534,7 @@ func (x *EdgeCertificate) String() string {
 func (*EdgeCertificate) ProtoMessage() {}
 
 func (x *EdgeCertificate) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[39]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3249,7 +3547,7 @@ func (x *EdgeCertificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeCertificate.ProtoReflect.Descriptor instead.
 func (*EdgeCertificate) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{39}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *EdgeCertificate) GetId() string {
@@ -3296,7 +3594,7 @@ type Pack struct {
 
 func (x *Pack) Reset() {
 	*x = Pack{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[40]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3308,7 +3606,7 @@ func (x *Pack) String() string {
 func (*Pack) ProtoMessage() {}
 
 func (x *Pack) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[40]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3321,7 +3619,7 @@ func (x *Pack) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Pack.ProtoReflect.Descriptor instead.
 func (*Pack) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{40}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *Pack) GetManifest() string {
@@ -3368,7 +3666,7 @@ type MeshPeer struct {
 
 func (x *MeshPeer) Reset() {
 	*x = MeshPeer{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[41]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3380,7 +3678,7 @@ func (x *MeshPeer) String() string {
 func (*MeshPeer) ProtoMessage() {}
 
 func (x *MeshPeer) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[41]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3393,7 +3691,7 @@ func (x *MeshPeer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MeshPeer.ProtoReflect.Descriptor instead.
 func (*MeshPeer) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{41}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *MeshPeer) GetServer() string {
@@ -3457,7 +3755,7 @@ type NetworkMember struct {
 
 func (x *NetworkMember) Reset() {
 	*x = NetworkMember{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[42]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3469,7 +3767,7 @@ func (x *NetworkMember) String() string {
 func (*NetworkMember) ProtoMessage() {}
 
 func (x *NetworkMember) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[42]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3482,7 +3780,7 @@ func (x *NetworkMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkMember.ProtoReflect.Descriptor instead.
 func (*NetworkMember) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{42}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *NetworkMember) GetId() string {
@@ -3528,7 +3826,7 @@ type NetworkName struct {
 
 func (x *NetworkName) Reset() {
 	*x = NetworkName{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[43]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3540,7 +3838,7 @@ func (x *NetworkName) String() string {
 func (*NetworkName) ProtoMessage() {}
 
 func (x *NetworkName) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[43]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3553,7 +3851,7 @@ func (x *NetworkName) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkName.ProtoReflect.Descriptor instead.
 func (*NetworkName) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{43}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *NetworkName) GetName() string {
@@ -3591,7 +3889,7 @@ type NetworkWebsite struct {
 
 func (x *NetworkWebsite) Reset() {
 	*x = NetworkWebsite{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[44]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3603,7 +3901,7 @@ func (x *NetworkWebsite) String() string {
 func (*NetworkWebsite) ProtoMessage() {}
 
 func (x *NetworkWebsite) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[44]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3616,7 +3914,7 @@ func (x *NetworkWebsite) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkWebsite.ProtoReflect.Descriptor instead.
 func (*NetworkWebsite) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{44}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *NetworkWebsite) GetId() string {
@@ -3657,7 +3955,7 @@ type Mesh struct {
 
 func (x *Mesh) Reset() {
 	*x = Mesh{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[45]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3669,7 +3967,7 @@ func (x *Mesh) String() string {
 func (*Mesh) ProtoMessage() {}
 
 func (x *Mesh) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[45]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3682,7 +3980,7 @@ func (x *Mesh) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mesh.ProtoReflect.Descriptor instead.
 func (*Mesh) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{45}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *Mesh) GetVersion() int64 {
@@ -3747,7 +4045,7 @@ type SetMeshRequest struct {
 
 func (x *SetMeshRequest) Reset() {
 	*x = SetMeshRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[46]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3759,7 +4057,7 @@ func (x *SetMeshRequest) String() string {
 func (*SetMeshRequest) ProtoMessage() {}
 
 func (x *SetMeshRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[46]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3772,7 +4070,7 @@ func (x *SetMeshRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMeshRequest.ProtoReflect.Descriptor instead.
 func (*SetMeshRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{46}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *SetMeshRequest) GetJobId() string {
@@ -3801,7 +4099,7 @@ type RotateMeshKeyRequest struct {
 
 func (x *RotateMeshKeyRequest) Reset() {
 	*x = RotateMeshKeyRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[47]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3813,7 +4111,7 @@ func (x *RotateMeshKeyRequest) String() string {
 func (*RotateMeshKeyRequest) ProtoMessage() {}
 
 func (x *RotateMeshKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[47]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3826,7 +4124,7 @@ func (x *RotateMeshKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateMeshKeyRequest.ProtoReflect.Descriptor instead.
 func (*RotateMeshKeyRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{47}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *RotateMeshKeyRequest) GetJobId() string {
@@ -3859,7 +4157,7 @@ type SendDatabaseServerRequest struct {
 
 func (x *SendDatabaseServerRequest) Reset() {
 	*x = SendDatabaseServerRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[48]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3871,7 +4169,7 @@ func (x *SendDatabaseServerRequest) String() string {
 func (*SendDatabaseServerRequest) ProtoMessage() {}
 
 func (x *SendDatabaseServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[48]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3884,7 +4182,7 @@ func (x *SendDatabaseServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendDatabaseServerRequest.ProtoReflect.Descriptor instead.
 func (*SendDatabaseServerRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{48}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *SendDatabaseServerRequest) GetJobId() string {
@@ -3940,7 +4238,7 @@ type ReceiveDatabaseServerRequest struct {
 
 func (x *ReceiveDatabaseServerRequest) Reset() {
 	*x = ReceiveDatabaseServerRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[49]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3952,7 +4250,7 @@ func (x *ReceiveDatabaseServerRequest) String() string {
 func (*ReceiveDatabaseServerRequest) ProtoMessage() {}
 
 func (x *ReceiveDatabaseServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[49]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3965,7 +4263,7 @@ func (x *ReceiveDatabaseServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiveDatabaseServerRequest.ProtoReflect.Descriptor instead.
 func (*ReceiveDatabaseServerRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{49}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ReceiveDatabaseServerRequest) GetJobId() string {
@@ -4015,7 +4313,7 @@ type HostRequest struct {
 
 func (x *HostRequest) Reset() {
 	*x = HostRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[50]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4027,7 +4325,7 @@ func (x *HostRequest) String() string {
 func (*HostRequest) ProtoMessage() {}
 
 func (x *HostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[50]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4040,7 +4338,7 @@ func (x *HostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostRequest.ProtoReflect.Descriptor instead.
 func (*HostRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{50}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *HostRequest) GetJobId() string {
@@ -4069,7 +4367,7 @@ type UpdateAgentRequest struct {
 
 func (x *UpdateAgentRequest) Reset() {
 	*x = UpdateAgentRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[51]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4081,7 +4379,7 @@ func (x *UpdateAgentRequest) String() string {
 func (*UpdateAgentRequest) ProtoMessage() {}
 
 func (x *UpdateAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[51]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4094,7 +4392,7 @@ func (x *UpdateAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAgentRequest.ProtoReflect.Descriptor instead.
 func (*UpdateAgentRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{51}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *UpdateAgentRequest) GetJobId() string {
@@ -4126,7 +4424,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[52]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4138,7 +4436,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[52]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4151,7 +4449,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{52}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{56}
 }
 
 type PendingUpdate struct {
@@ -4166,7 +4464,7 @@ type PendingUpdate struct {
 
 func (x *PendingUpdate) Reset() {
 	*x = PendingUpdate{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[53]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4178,7 +4476,7 @@ func (x *PendingUpdate) String() string {
 func (*PendingUpdate) ProtoMessage() {}
 
 func (x *PendingUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[53]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4191,7 +4489,7 @@ func (x *PendingUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingUpdate.ProtoReflect.Descriptor instead.
 func (*PendingUpdate) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{53}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *PendingUpdate) GetName() string {
@@ -4233,7 +4531,7 @@ type Service struct {
 
 func (x *Service) Reset() {
 	*x = Service{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[54]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4245,7 +4543,7 @@ func (x *Service) String() string {
 func (*Service) ProtoMessage() {}
 
 func (x *Service) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[54]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4258,7 +4556,7 @@ func (x *Service) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Service.ProtoReflect.Descriptor instead.
 func (*Service) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{54}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *Service) GetName() string {
@@ -4297,7 +4595,7 @@ type DnsRecord struct {
 
 func (x *DnsRecord) Reset() {
 	*x = DnsRecord{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[55]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4309,7 +4607,7 @@ func (x *DnsRecord) String() string {
 func (*DnsRecord) ProtoMessage() {}
 
 func (x *DnsRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[55]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4322,7 +4620,7 @@ func (x *DnsRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DnsRecord.ProtoReflect.Descriptor instead.
 func (*DnsRecord) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{55}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *DnsRecord) GetName() string {
@@ -4381,7 +4679,7 @@ type DnsZone struct {
 
 func (x *DnsZone) Reset() {
 	*x = DnsZone{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[56]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4393,7 +4691,7 @@ func (x *DnsZone) String() string {
 func (*DnsZone) ProtoMessage() {}
 
 func (x *DnsZone) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[56]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4406,7 +4704,7 @@ func (x *DnsZone) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DnsZone.ProtoReflect.Descriptor instead.
 func (*DnsZone) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{56}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *DnsZone) GetName() string {
@@ -4464,7 +4762,7 @@ type DnssecKey struct {
 
 func (x *DnssecKey) Reset() {
 	*x = DnssecKey{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[57]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4476,7 +4774,7 @@ func (x *DnssecKey) String() string {
 func (*DnssecKey) ProtoMessage() {}
 
 func (x *DnssecKey) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[57]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4489,7 +4787,7 @@ func (x *DnssecKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DnssecKey.ProtoReflect.Descriptor instead.
 func (*DnssecKey) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{57}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *DnssecKey) GetKey() string {
@@ -4529,7 +4827,7 @@ type TsigKey struct {
 
 func (x *TsigKey) Reset() {
 	*x = TsigKey{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[58]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4541,7 +4839,7 @@ func (x *TsigKey) String() string {
 func (*TsigKey) ProtoMessage() {}
 
 func (x *TsigKey) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[58]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4554,7 +4852,7 @@ func (x *TsigKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TsigKey.ProtoReflect.Descriptor instead.
 func (*TsigKey) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{58}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *TsigKey) GetName() string {
@@ -4595,7 +4893,7 @@ type DnsTransfers struct {
 
 func (x *DnsTransfers) Reset() {
 	*x = DnsTransfers{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[59]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4607,7 +4905,7 @@ func (x *DnsTransfers) String() string {
 func (*DnsTransfers) ProtoMessage() {}
 
 func (x *DnsTransfers) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[59]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4620,7 +4918,7 @@ func (x *DnsTransfers) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DnsTransfers.ProtoReflect.Descriptor instead.
 func (*DnsTransfers) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{59}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *DnsTransfers) GetAddresses() []string {
@@ -4663,7 +4961,7 @@ type DnsSecondary struct {
 
 func (x *DnsSecondary) Reset() {
 	*x = DnsSecondary{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[60]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4675,7 +4973,7 @@ func (x *DnsSecondary) String() string {
 func (*DnsSecondary) ProtoMessage() {}
 
 func (x *DnsSecondary) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[60]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4688,7 +4986,7 @@ func (x *DnsSecondary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DnsSecondary.ProtoReflect.Descriptor instead.
 func (*DnsSecondary) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{60}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *DnsSecondary) GetId() string {
@@ -4745,7 +5043,7 @@ type SetDnsSecondariesRequest struct {
 
 func (x *SetDnsSecondariesRequest) Reset() {
 	*x = SetDnsSecondariesRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[61]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4757,7 +5055,7 @@ func (x *SetDnsSecondariesRequest) String() string {
 func (*SetDnsSecondariesRequest) ProtoMessage() {}
 
 func (x *SetDnsSecondariesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[61]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4770,7 +5068,7 @@ func (x *SetDnsSecondariesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDnsSecondariesRequest.ProtoReflect.Descriptor instead.
 func (*SetDnsSecondariesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{61}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *SetDnsSecondariesRequest) GetJobId() string {
@@ -4814,7 +5112,7 @@ type SetDnsZonesRequest struct {
 
 func (x *SetDnsZonesRequest) Reset() {
 	*x = SetDnsZonesRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[62]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4826,7 +5124,7 @@ func (x *SetDnsZonesRequest) String() string {
 func (*SetDnsZonesRequest) ProtoMessage() {}
 
 func (x *SetDnsZonesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[62]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4839,7 +5137,7 @@ func (x *SetDnsZonesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDnsZonesRequest.ProtoReflect.Descriptor instead.
 func (*SetDnsZonesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{62}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *SetDnsZonesRequest) GetJobId() string {
@@ -4868,7 +5166,7 @@ type DeleteDnsZonesRequest struct {
 
 func (x *DeleteDnsZonesRequest) Reset() {
 	*x = DeleteDnsZonesRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[63]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4880,7 +5178,7 @@ func (x *DeleteDnsZonesRequest) String() string {
 func (*DeleteDnsZonesRequest) ProtoMessage() {}
 
 func (x *DeleteDnsZonesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[63]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4893,7 +5191,7 @@ func (x *DeleteDnsZonesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDnsZonesRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDnsZonesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{63}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *DeleteDnsZonesRequest) GetJobId() string {
@@ -4925,7 +5223,7 @@ type HostStatus struct {
 
 func (x *HostStatus) Reset() {
 	*x = HostStatus{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[64]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4937,7 +5235,7 @@ func (x *HostStatus) String() string {
 func (*HostStatus) ProtoMessage() {}
 
 func (x *HostStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[64]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4950,7 +5248,7 @@ func (x *HostStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostStatus.ProtoReflect.Descriptor instead.
 func (*HostStatus) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{64}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *HostStatus) GetAgentVersion() string {
@@ -5018,7 +5316,7 @@ type CronJob struct {
 
 func (x *CronJob) Reset() {
 	*x = CronJob{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[65]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5030,7 +5328,7 @@ func (x *CronJob) String() string {
 func (*CronJob) ProtoMessage() {}
 
 func (x *CronJob) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[65]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5043,7 +5341,7 @@ func (x *CronJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CronJob.ProtoReflect.Descriptor instead.
 func (*CronJob) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{65}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *CronJob) GetId() string {
@@ -5086,7 +5384,7 @@ type SetCronJobsRequest struct {
 
 func (x *SetCronJobsRequest) Reset() {
 	*x = SetCronJobsRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[66]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5098,7 +5396,7 @@ func (x *SetCronJobsRequest) String() string {
 func (*SetCronJobsRequest) ProtoMessage() {}
 
 func (x *SetCronJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[66]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5111,7 +5409,7 @@ func (x *SetCronJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCronJobsRequest.ProtoReflect.Descriptor instead.
 func (*SetCronJobsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{66}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *SetCronJobsRequest) GetJobId() string {
@@ -5147,7 +5445,7 @@ type RunCronJobRequest struct {
 
 func (x *RunCronJobRequest) Reset() {
 	*x = RunCronJobRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[67]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5159,7 +5457,7 @@ func (x *RunCronJobRequest) String() string {
 func (*RunCronJobRequest) ProtoMessage() {}
 
 func (x *RunCronJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[67]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5172,7 +5470,7 @@ func (x *RunCronJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunCronJobRequest.ProtoReflect.Descriptor instead.
 func (*RunCronJobRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{67}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *RunCronJobRequest) GetJobId() string {
@@ -5211,7 +5509,7 @@ type RunCommandRequest struct {
 
 func (x *RunCommandRequest) Reset() {
 	*x = RunCommandRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[68]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5223,7 +5521,7 @@ func (x *RunCommandRequest) String() string {
 func (*RunCommandRequest) ProtoMessage() {}
 
 func (x *RunCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[68]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5236,7 +5534,7 @@ func (x *RunCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunCommandRequest.ProtoReflect.Descriptor instead.
 func (*RunCommandRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{68}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *RunCommandRequest) GetJobId() string {
@@ -5305,7 +5603,7 @@ type DeployRequest struct {
 
 func (x *DeployRequest) Reset() {
 	*x = DeployRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[69]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5317,7 +5615,7 @@ func (x *DeployRequest) String() string {
 func (*DeployRequest) ProtoMessage() {}
 
 func (x *DeployRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[69]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5330,7 +5628,7 @@ func (x *DeployRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployRequest.ProtoReflect.Descriptor instead.
 func (*DeployRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{69}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *DeployRequest) GetJobId() string {
@@ -5431,7 +5729,7 @@ type ActivateReleaseRequest struct {
 
 func (x *ActivateReleaseRequest) Reset() {
 	*x = ActivateReleaseRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[70]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5443,7 +5741,7 @@ func (x *ActivateReleaseRequest) String() string {
 func (*ActivateReleaseRequest) ProtoMessage() {}
 
 func (x *ActivateReleaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[70]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5456,7 +5754,7 @@ func (x *ActivateReleaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateReleaseRequest.ProtoReflect.Descriptor instead.
 func (*ActivateReleaseRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{70}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *ActivateReleaseRequest) GetJobId() string {
@@ -5504,7 +5802,7 @@ type InstallDependenciesRequest struct {
 
 func (x *InstallDependenciesRequest) Reset() {
 	*x = InstallDependenciesRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[71]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5516,7 +5814,7 @@ func (x *InstallDependenciesRequest) String() string {
 func (*InstallDependenciesRequest) ProtoMessage() {}
 
 func (x *InstallDependenciesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[71]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5529,7 +5827,7 @@ func (x *InstallDependenciesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallDependenciesRequest.ProtoReflect.Descriptor instead.
 func (*InstallDependenciesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{71}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *InstallDependenciesRequest) GetJobId() string {
@@ -5572,7 +5870,7 @@ type FileRequest struct {
 
 func (x *FileRequest) Reset() {
 	*x = FileRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[72]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5584,7 +5882,7 @@ func (x *FileRequest) String() string {
 func (*FileRequest) ProtoMessage() {}
 
 func (x *FileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[72]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5597,7 +5895,7 @@ func (x *FileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileRequest.ProtoReflect.Descriptor instead.
 func (*FileRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{72}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *FileRequest) GetWebsiteId() string {
@@ -5632,7 +5930,7 @@ type FileEntry struct {
 
 func (x *FileEntry) Reset() {
 	*x = FileEntry{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[73]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5644,7 +5942,7 @@ func (x *FileEntry) String() string {
 func (*FileEntry) ProtoMessage() {}
 
 func (x *FileEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[73]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5657,7 +5955,7 @@ func (x *FileEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
 func (*FileEntry) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{73}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *FileEntry) GetName() string {
@@ -5713,7 +6011,7 @@ type FileList struct {
 
 func (x *FileList) Reset() {
 	*x = FileList{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[74]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5725,7 +6023,7 @@ func (x *FileList) String() string {
 func (*FileList) ProtoMessage() {}
 
 func (x *FileList) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[74]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5738,7 +6036,7 @@ func (x *FileList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileList.ProtoReflect.Descriptor instead.
 func (*FileList) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{74}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *FileList) GetEntries() []*FileEntry {
@@ -5765,7 +6063,7 @@ type FileContent struct {
 
 func (x *FileContent) Reset() {
 	*x = FileContent{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[75]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5777,7 +6075,7 @@ func (x *FileContent) String() string {
 func (*FileContent) ProtoMessage() {}
 
 func (x *FileContent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[75]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5790,7 +6088,7 @@ func (x *FileContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileContent.ProtoReflect.Descriptor instead.
 func (*FileContent) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{75}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *FileContent) GetFile() *FileEntry {
@@ -5820,7 +6118,7 @@ type WriteFileRequest struct {
 
 func (x *WriteFileRequest) Reset() {
 	*x = WriteFileRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[76]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5832,7 +6130,7 @@ func (x *WriteFileRequest) String() string {
 func (*WriteFileRequest) ProtoMessage() {}
 
 func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[76]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5845,7 +6143,7 @@ func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteFileRequest.ProtoReflect.Descriptor instead.
 func (*WriteFileRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{76}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *WriteFileRequest) GetWebsiteId() string {
@@ -5887,7 +6185,7 @@ type MoveFileRequest struct {
 
 func (x *MoveFileRequest) Reset() {
 	*x = MoveFileRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[77]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5899,7 +6197,7 @@ func (x *MoveFileRequest) String() string {
 func (*MoveFileRequest) ProtoMessage() {}
 
 func (x *MoveFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[77]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5912,7 +6210,7 @@ func (x *MoveFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveFileRequest.ProtoReflect.Descriptor instead.
 func (*MoveFileRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{77}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *MoveFileRequest) GetWebsiteId() string {
@@ -5944,7 +6242,7 @@ type FileDeleted struct {
 
 func (x *FileDeleted) Reset() {
 	*x = FileDeleted{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[78]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5956,7 +6254,7 @@ func (x *FileDeleted) String() string {
 func (*FileDeleted) ProtoMessage() {}
 
 func (x *FileDeleted) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[78]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5969,7 +6267,7 @@ func (x *FileDeleted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDeleted.ProtoReflect.Descriptor instead.
 func (*FileDeleted) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{78}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{82}
 }
 
 type BranchCheck struct {
@@ -5987,7 +6285,7 @@ type BranchCheck struct {
 
 func (x *BranchCheck) Reset() {
 	*x = BranchCheck{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[79]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5999,7 +6297,7 @@ func (x *BranchCheck) String() string {
 func (*BranchCheck) ProtoMessage() {}
 
 func (x *BranchCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[79]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6012,7 +6310,7 @@ func (x *BranchCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BranchCheck.ProtoReflect.Descriptor instead.
 func (*BranchCheck) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{79}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *BranchCheck) GetWebsiteId() string {
@@ -6053,7 +6351,7 @@ type CheckBranchesRequest struct {
 
 func (x *CheckBranchesRequest) Reset() {
 	*x = CheckBranchesRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[80]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6065,7 +6363,7 @@ func (x *CheckBranchesRequest) String() string {
 func (*CheckBranchesRequest) ProtoMessage() {}
 
 func (x *CheckBranchesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[80]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6078,7 +6376,7 @@ func (x *CheckBranchesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckBranchesRequest.ProtoReflect.Descriptor instead.
 func (*CheckBranchesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{80}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *CheckBranchesRequest) GetChecks() []*BranchCheck {
@@ -6101,7 +6399,7 @@ type BranchHead struct {
 
 func (x *BranchHead) Reset() {
 	*x = BranchHead{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[81]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6113,7 +6411,7 @@ func (x *BranchHead) String() string {
 func (*BranchHead) ProtoMessage() {}
 
 func (x *BranchHead) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[81]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6126,7 +6424,7 @@ func (x *BranchHead) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BranchHead.ProtoReflect.Descriptor instead.
 func (*BranchHead) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{81}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *BranchHead) GetWebsiteId() string {
@@ -6160,7 +6458,7 @@ type BranchHeads struct {
 
 func (x *BranchHeads) Reset() {
 	*x = BranchHeads{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[82]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6172,7 +6470,7 @@ func (x *BranchHeads) String() string {
 func (*BranchHeads) ProtoMessage() {}
 
 func (x *BranchHeads) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[82]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6185,7 +6483,7 @@ func (x *BranchHeads) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BranchHeads.ProtoReflect.Descriptor instead.
 func (*BranchHeads) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{82}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *BranchHeads) GetHeads() []*BranchHead {
@@ -6206,7 +6504,7 @@ type GetLogsRequest struct {
 
 func (x *GetLogsRequest) Reset() {
 	*x = GetLogsRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[83]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6218,7 +6516,7 @@ func (x *GetLogsRequest) String() string {
 func (*GetLogsRequest) ProtoMessage() {}
 
 func (x *GetLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[83]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6231,7 +6529,7 @@ func (x *GetLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLogsRequest.ProtoReflect.Descriptor instead.
 func (*GetLogsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{83}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *GetLogsRequest) GetWebsiteId() string {
@@ -6261,7 +6559,7 @@ type LogLine struct {
 
 func (x *LogLine) Reset() {
 	*x = LogLine{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[84]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6273,7 +6571,7 @@ func (x *LogLine) String() string {
 func (*LogLine) ProtoMessage() {}
 
 func (x *LogLine) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[84]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6286,7 +6584,7 @@ func (x *LogLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogLine.ProtoReflect.Descriptor instead.
 func (*LogLine) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{84}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *LogLine) GetAt() string {
@@ -6319,7 +6617,7 @@ type Logs struct {
 
 func (x *Logs) Reset() {
 	*x = Logs{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[85]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6331,7 +6629,7 @@ func (x *Logs) String() string {
 func (*Logs) ProtoMessage() {}
 
 func (x *Logs) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[85]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6344,12 +6642,269 @@ func (x *Logs) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Logs.ProtoReflect.Descriptor instead.
 func (*Logs) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{85}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *Logs) GetLines() []*LogLine {
 	if x != nil {
 		return x.Lines
+	}
+	return nil
+}
+
+type GetFirewallEventsRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	WebsiteId string                 `protobuf:"bytes,1,opt,name=website_id,json=websiteId,proto3" json:"website_id,omitempty"`
+	// The maximum number of events. 0 means 50.
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFirewallEventsRequest) Reset() {
+	*x = GetFirewallEventsRequest{}
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[90]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFirewallEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFirewallEventsRequest) ProtoMessage() {}
+
+func (x *GetFirewallEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[90]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFirewallEventsRequest.ProtoReflect.Descriptor instead.
+func (*GetFirewallEventsRequest) Descriptor() ([]byte, []int) {
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{90}
+}
+
+func (x *GetFirewallEventsRequest) GetWebsiteId() string {
+	if x != nil {
+		return x.WebsiteId
+	}
+	return ""
+}
+
+func (x *GetFirewallEventsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+// One request that the firewall blocked or detected.
+type FirewallEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// RFC 3339.
+	At       string `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	ClientIp string `protobuf:"bytes,2,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	// The host, the path and the query of the request. The agent cuts a long value.
+	Host string `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`
+	Uri  string `protobuf:"bytes,4,opt,name=uri,proto3" json:"uri,omitempty"`
+	// "blocked" or "detected". "detected" is a request that the firewall did not block
+	// because its mode is "detect", or because the rules gave too low a score.
+	Action string `protobuf:"bytes,5,opt,name=action,proto3" json:"action,omitempty"`
+	// The total anomaly score of the request, or 0 when the agent does not know it.
+	Score         int32           `protobuf:"varint,6,opt,name=score,proto3" json:"score,omitempty"`
+	Rules         []*FirewallRule `protobuf:"bytes,7,rep,name=rules,proto3" json:"rules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FirewallEvent) Reset() {
+	*x = FirewallEvent{}
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[91]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FirewallEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FirewallEvent) ProtoMessage() {}
+
+func (x *FirewallEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[91]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FirewallEvent.ProtoReflect.Descriptor instead.
+func (*FirewallEvent) Descriptor() ([]byte, []int) {
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{91}
+}
+
+func (x *FirewallEvent) GetAt() string {
+	if x != nil {
+		return x.At
+	}
+	return ""
+}
+
+func (x *FirewallEvent) GetClientIp() string {
+	if x != nil {
+		return x.ClientIp
+	}
+	return ""
+}
+
+func (x *FirewallEvent) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *FirewallEvent) GetUri() string {
+	if x != nil {
+		return x.Uri
+	}
+	return ""
+}
+
+func (x *FirewallEvent) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *FirewallEvent) GetScore() int32 {
+	if x != nil {
+		return x.Score
+	}
+	return 0
+}
+
+func (x *FirewallEvent) GetRules() []*FirewallRule {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
+type FirewallRule struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Id      int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Message string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	// The part of the request that the rule found. The agent cuts a long value.
+	Data          string `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FirewallRule) Reset() {
+	*x = FirewallRule{}
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[92]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FirewallRule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FirewallRule) ProtoMessage() {}
+
+func (x *FirewallRule) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[92]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FirewallRule.ProtoReflect.Descriptor instead.
+func (*FirewallRule) Descriptor() ([]byte, []int) {
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{92}
+}
+
+func (x *FirewallRule) GetId() int32 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *FirewallRule) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *FirewallRule) GetData() string {
+	if x != nil {
+		return x.Data
+	}
+	return ""
+}
+
+type FirewallEvents struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The newest event first.
+	Events        []*FirewallEvent `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FirewallEvents) Reset() {
+	*x = FirewallEvents{}
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[93]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FirewallEvents) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FirewallEvents) ProtoMessage() {}
+
+func (x *FirewallEvents) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[93]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FirewallEvents.ProtoReflect.Descriptor instead.
+func (*FirewallEvents) Descriptor() ([]byte, []int) {
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{93}
+}
+
+func (x *FirewallEvents) GetEvents() []*FirewallEvent {
+	if x != nil {
+		return x.Events
 	}
 	return nil
 }
@@ -6375,7 +6930,7 @@ type FetchImportRequest struct {
 
 func (x *FetchImportRequest) Reset() {
 	*x = FetchImportRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[86]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6387,7 +6942,7 @@ func (x *FetchImportRequest) String() string {
 func (*FetchImportRequest) ProtoMessage() {}
 
 func (x *FetchImportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[86]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6400,7 +6955,7 @@ func (x *FetchImportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchImportRequest.ProtoReflect.Descriptor instead.
 func (*FetchImportRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{86}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *FetchImportRequest) GetJobId() string {
@@ -6470,7 +7025,7 @@ type ImportFilesRequest struct {
 
 func (x *ImportFilesRequest) Reset() {
 	*x = ImportFilesRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[87]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6482,7 +7037,7 @@ func (x *ImportFilesRequest) String() string {
 func (*ImportFilesRequest) ProtoMessage() {}
 
 func (x *ImportFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[87]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6495,7 +7050,7 @@ func (x *ImportFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportFilesRequest.ProtoReflect.Descriptor instead.
 func (*ImportFilesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{87}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *ImportFilesRequest) GetJobId() string {
@@ -6584,7 +7139,7 @@ type ImportDatabaseRequest struct {
 
 func (x *ImportDatabaseRequest) Reset() {
 	*x = ImportDatabaseRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[88]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6596,7 +7151,7 @@ func (x *ImportDatabaseRequest) String() string {
 func (*ImportDatabaseRequest) ProtoMessage() {}
 
 func (x *ImportDatabaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[88]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6609,7 +7164,7 @@ func (x *ImportDatabaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportDatabaseRequest.ProtoReflect.Descriptor instead.
 func (*ImportDatabaseRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{88}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *ImportDatabaseRequest) GetJobId() string {
@@ -6689,7 +7244,7 @@ type ImportMailRequest struct {
 
 func (x *ImportMailRequest) Reset() {
 	*x = ImportMailRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[89]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6701,7 +7256,7 @@ func (x *ImportMailRequest) String() string {
 func (*ImportMailRequest) ProtoMessage() {}
 
 func (x *ImportMailRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[89]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6714,7 +7269,7 @@ func (x *ImportMailRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportMailRequest.ProtoReflect.Descriptor instead.
 func (*ImportMailRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{89}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ImportMailRequest) GetJobId() string {
@@ -6750,7 +7305,7 @@ type ImportMailbox struct {
 
 func (x *ImportMailbox) Reset() {
 	*x = ImportMailbox{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[90]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6762,7 +7317,7 @@ func (x *ImportMailbox) String() string {
 func (*ImportMailbox) ProtoMessage() {}
 
 func (x *ImportMailbox) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[90]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6775,7 +7330,7 @@ func (x *ImportMailbox) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportMailbox.ProtoReflect.Descriptor instead.
 func (*ImportMailbox) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{90}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *ImportMailbox) GetDomain() string {
@@ -6810,7 +7365,7 @@ type DeleteImportRequest struct {
 
 func (x *DeleteImportRequest) Reset() {
 	*x = DeleteImportRequest{}
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[91]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6822,7 +7377,7 @@ func (x *DeleteImportRequest) String() string {
 func (*DeleteImportRequest) ProtoMessage() {}
 
 func (x *DeleteImportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[91]
+	mi := &file_cloudfactory_agent_v1_agent_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6835,7 +7390,7 @@ func (x *DeleteImportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteImportRequest.ProtoReflect.Descriptor instead.
 func (*DeleteImportRequest) Descriptor() ([]byte, []int) {
-	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{91}
+	return file_cloudfactory_agent_v1_agent_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *DeleteImportRequest) GetJobId() string {
@@ -6869,7 +7424,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\tprocesses\x18\x05 \x01(\x03R\tprocesses\"0\n" +
 	"\x06Domain\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\"\xb8\x06\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"\xfc\x06\n" +
 	"\aWebsite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tunix_user\x18\x02 \x01(\tR\bunixUser\x12\x14\n" +
@@ -6894,13 +7449,29 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x06worker\x18\x10 \x01(\bR\x06worker\x12\x1d\n" +
 	"\n" +
 	"route_path\x18\x11 \x01(\tR\troutePath\x12Q\n" +
-	"\venvironment\x18\x12 \x03(\v2/.cloudfactory.agent.v1.Website.EnvironmentEntryR\venvironment\x1a9\n" +
+	"\venvironment\x18\x12 \x03(\v2/.cloudfactory.agent.v1.Website.EnvironmentEntryR\venvironment\x12B\n" +
+	"\bsecurity\x18\x13 \x01(\v2&.cloudfactory.agent.v1.WebsiteSecurityR\bsecurity\x1a9\n" +
 	"\vPhpIniEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9f\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd1\x02\n" +
+	"\x0fWebsiteSecurity\x12\x1a\n" +
+	"\bfirewall\x18\x01 \x01(\tR\bfirewall\x12/\n" +
+	"\x13firewall_exclusions\x18\x02 \x03(\x05R\x12firewallExclusions\x12.\n" +
+	"\x13firewall_skip_paths\x18\x03 \x03(\tR\x11firewallSkipPaths\x12\x14\n" +
+	"\x05allow\x18\x04 \x03(\tR\x05allow\x12\x14\n" +
+	"\x05block\x18\x05 \x03(\tR\x05block\x12M\n" +
+	"\x0fprotected_paths\x18\x06 \x03(\v2$.cloudfactory.agent.v1.ProtectedPathR\x0eprotectedPaths\x12\"\n" +
+	"\rsign_in_limit\x18\a \x01(\x05R\vsignInLimit\x12\"\n" +
+	"\rsign_in_paths\x18\b \x03(\tR\vsignInPaths\"Z\n" +
+	"\rProtectedPath\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x125\n" +
+	"\x05users\x18\x02 \x03(\v2\x1f.cloudfactory.agent.v1.PathUserR\x05users\"C\n" +
+	"\bPathUser\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
+	"\rpassword_hash\x18\x02 \x01(\tR\fpasswordHash\"\x9f\x01\n" +
 	"\x0eDatabaseServer\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bcustomer\x18\x02 \x01(\tR\bcustomer\x12\x16\n" +
@@ -7009,7 +7580,13 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"website_id\x18\x02 \x01(\tR\twebsiteId\x12\x1b\n" +
 	"\tunix_user\x18\x03 \x01(\tR\bunixUser\x12\x14\n" +
-	"\x05power\x18\x04 \x01(\tR\x05power\"\x9c\x01\n" +
+	"\x05power\x18\x04 \x01(\tR\x05power\"\xb2\x01\n" +
+	"\x19SetWebsiteSecurityRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
+	"\n" +
+	"website_id\x18\x02 \x01(\tR\twebsiteId\x12\x1b\n" +
+	"\tunix_user\x18\x03 \x01(\tR\bunixUser\x12B\n" +
+	"\bsecurity\x18\x04 \x01(\v2&.cloudfactory.agent.v1.WebsiteSecurityR\bsecurity\"\x9c\x01\n" +
 	"\x10SetLimitsRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
@@ -7383,7 +7960,25 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x06stream\x18\x02 \x01(\tR\x06stream\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\"<\n" +
 	"\x04Logs\x124\n" +
-	"\x05lines\x18\x01 \x03(\v2\x1e.cloudfactory.agent.v1.LogLineR\x05lines\"\xa9\x01\n" +
+	"\x05lines\x18\x01 \x03(\v2\x1e.cloudfactory.agent.v1.LogLineR\x05lines\"O\n" +
+	"\x18GetFirewallEventsRequest\x12\x1d\n" +
+	"\n" +
+	"website_id\x18\x01 \x01(\tR\twebsiteId\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\xcb\x01\n" +
+	"\rFirewallEvent\x12\x0e\n" +
+	"\x02at\x18\x01 \x01(\tR\x02at\x12\x1b\n" +
+	"\tclient_ip\x18\x02 \x01(\tR\bclientIp\x12\x12\n" +
+	"\x04host\x18\x03 \x01(\tR\x04host\x12\x10\n" +
+	"\x03uri\x18\x04 \x01(\tR\x03uri\x12\x16\n" +
+	"\x06action\x18\x05 \x01(\tR\x06action\x12\x14\n" +
+	"\x05score\x18\x06 \x01(\x05R\x05score\x129\n" +
+	"\x05rules\x18\a \x03(\v2#.cloudfactory.agent.v1.FirewallRuleR\x05rules\"L\n" +
+	"\fFirewallRule\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x05R\x02id\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x12\n" +
+	"\x04data\x18\x03 \x01(\tR\x04data\"N\n" +
+	"\x0eFirewallEvents\x12<\n" +
+	"\x06events\x18\x01 \x03(\v2$.cloudfactory.agent.v1.FirewallEventR\x06events\"\xa9\x01\n" +
 	"\x12FetchImportRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1b\n" +
 	"\timport_id\x18\x02 \x01(\tR\bimportId\x12\x10\n" +
@@ -7427,7 +8022,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x04path\x18\x03 \x01(\tR\x04path\"I\n" +
 	"\x13DeleteImportRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1b\n" +
-	"\timport_id\x18\x02 \x01(\tR\bimportId2\xb3-\n" +
+	"\timport_id\x18\x02 \x01(\tR\bimportId2\x8c/\n" +
 	"\fAgentService\x12Z\n" +
 	"\rCreateWebsite\x12%.cloudfactory.agent.v1.WebsiteRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12`\n" +
 	"\rDeleteWebsite\x12+.cloudfactory.agent.v1.DeleteWebsiteRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12d\n" +
@@ -7478,7 +8073,8 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\rRotateMeshKey\x12+.cloudfactory.agent.v1.RotateMeshKeyRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12j\n" +
 	"\x12SendDatabaseServer\x120.cloudfactory.agent.v1.SendDatabaseServerRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12p\n" +
 	"\x15ReceiveDatabaseServer\x123.cloudfactory.agent.v1.ReceiveDatabaseServerRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12V\n" +
-	"\bSetPacks\x12&.cloudfactory.agent.v1.SetPacksRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12d\n" +
+	"\bSetPacks\x12&.cloudfactory.agent.v1.SetPacksRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12j\n" +
+	"\x12SetWebsiteSecurity\x120.cloudfactory.agent.v1.SetWebsiteSecurityRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12d\n" +
 	"\x0fSetCertificates\x12-.cloudfactory.agent.v1.SetCertificatesRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12\\\n" +
 	"\vFetchImport\x12).cloudfactory.agent.v1.FetchImportRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12\\\n" +
 	"\vImportFiles\x12).cloudfactory.agent.v1.ImportFilesRequest\x1a\".cloudfactory.agent.v1.JobAccepted\x12b\n" +
@@ -7494,7 +8090,8 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\bMoveFile\x12&.cloudfactory.agent.v1.MoveFileRequest\x1a .cloudfactory.agent.v1.FileEntry\x12T\n" +
 	"\n" +
 	"DeleteFile\x12\".cloudfactory.agent.v1.FileRequest\x1a\".cloudfactory.agent.v1.FileDeleted\x12M\n" +
-	"\aGetLogs\x12%.cloudfactory.agent.v1.GetLogsRequest\x1a\x1b.cloudfactory.agent.v1.Logs\x12`\n" +
+	"\aGetLogs\x12%.cloudfactory.agent.v1.GetLogsRequest\x1a\x1b.cloudfactory.agent.v1.Logs\x12k\n" +
+	"\x11GetFirewallEvents\x12/.cloudfactory.agent.v1.GetFirewallEventsRequest\x1a%.cloudfactory.agent.v1.FirewallEvents\x12`\n" +
 	"\rCheckBranches\x12+.cloudfactory.agent.v1.CheckBranchesRequest\x1a\".cloudfactory.agent.v1.BranchHeadsBFZDgithub.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1;agentv1b\x06proto3"
 
 var (
@@ -7509,292 +8106,310 @@ func file_cloudfactory_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_cloudfactory_agent_v1_agent_proto_rawDescData
 }
 
-var file_cloudfactory_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 99)
+var file_cloudfactory_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 107)
 var file_cloudfactory_agent_v1_agent_proto_goTypes = []any{
 	(*JobAccepted)(nil),                  // 0: cloudfactory.agent.v1.JobAccepted
 	(*Limits)(nil),                       // 1: cloudfactory.agent.v1.Limits
 	(*Domain)(nil),                       // 2: cloudfactory.agent.v1.Domain
 	(*Website)(nil),                      // 3: cloudfactory.agent.v1.Website
-	(*DatabaseServer)(nil),               // 4: cloudfactory.agent.v1.DatabaseServer
-	(*DatabaseServerRequest)(nil),        // 5: cloudfactory.agent.v1.DatabaseServerRequest
-	(*SetMailServerRequest)(nil),         // 6: cloudfactory.agent.v1.SetMailServerRequest
-	(*PrepareMailNodeRequest)(nil),       // 7: cloudfactory.agent.v1.PrepareMailNodeRequest
-	(*MailClusterMember)(nil),            // 8: cloudfactory.agent.v1.MailClusterMember
-	(*SetMailNodeRequest)(nil),           // 9: cloudfactory.agent.v1.SetMailNodeRequest
-	(*MailDomainRequest)(nil),            // 10: cloudfactory.agent.v1.MailDomainRequest
-	(*SetMailboxRequest)(nil),            // 11: cloudfactory.agent.v1.SetMailboxRequest
-	(*MailAddressRequest)(nil),           // 12: cloudfactory.agent.v1.MailAddressRequest
-	(*SetMailAliasRequest)(nil),          // 13: cloudfactory.agent.v1.SetMailAliasRequest
-	(*DeleteDatabaseServerRequest)(nil),  // 14: cloudfactory.agent.v1.DeleteDatabaseServerRequest
-	(*HealthCheck)(nil),                  // 15: cloudfactory.agent.v1.HealthCheck
-	(*WebsiteRequest)(nil),               // 16: cloudfactory.agent.v1.WebsiteRequest
-	(*DatabaseCopy)(nil),                 // 17: cloudfactory.agent.v1.DatabaseCopy
-	(*DatabaseUserCopy)(nil),             // 18: cloudfactory.agent.v1.DatabaseUserCopy
-	(*DeleteWebsiteRequest)(nil),         // 19: cloudfactory.agent.v1.DeleteWebsiteRequest
-	(*SetWebsitePowerRequest)(nil),       // 20: cloudfactory.agent.v1.SetWebsitePowerRequest
-	(*SetLimitsRequest)(nil),             // 21: cloudfactory.agent.v1.SetLimitsRequest
-	(*DomainRequest)(nil),                // 22: cloudfactory.agent.v1.DomainRequest
-	(*CreateDatabaseRequest)(nil),        // 23: cloudfactory.agent.v1.CreateDatabaseRequest
-	(*DeleteDatabaseRequest)(nil),        // 24: cloudfactory.agent.v1.DeleteDatabaseRequest
-	(*DatabaseGrant)(nil),                // 25: cloudfactory.agent.v1.DatabaseGrant
-	(*SetDatabaseUserRequest)(nil),       // 26: cloudfactory.agent.v1.SetDatabaseUserRequest
-	(*DeleteDatabaseUserRequest)(nil),    // 27: cloudfactory.agent.v1.DeleteDatabaseUserRequest
-	(*DatabaseRef)(nil),                  // 28: cloudfactory.agent.v1.DatabaseRef
-	(*BackupRequest)(nil),                // 29: cloudfactory.agent.v1.BackupRequest
-	(*Retention)(nil),                    // 30: cloudfactory.agent.v1.Retention
-	(*PruneBackupsRequest)(nil),          // 31: cloudfactory.agent.v1.PruneBackupsRequest
-	(*RestoreRequest)(nil),               // 32: cloudfactory.agent.v1.RestoreRequest
-	(*SetSftpRequest)(nil),               // 33: cloudfactory.agent.v1.SetSftpRequest
-	(*ConfigureHostRequest)(nil),         // 34: cloudfactory.agent.v1.ConfigureHostRequest
-	(*SetPanelCertificateRequest)(nil),   // 35: cloudfactory.agent.v1.SetPanelCertificateRequest
-	(*SetPanelBrandsRequest)(nil),        // 36: cloudfactory.agent.v1.SetPanelBrandsRequest
-	(*SetPacksRequest)(nil),              // 37: cloudfactory.agent.v1.SetPacksRequest
-	(*SetCertificatesRequest)(nil),       // 38: cloudfactory.agent.v1.SetCertificatesRequest
-	(*EdgeCertificate)(nil),              // 39: cloudfactory.agent.v1.EdgeCertificate
-	(*Pack)(nil),                         // 40: cloudfactory.agent.v1.Pack
-	(*MeshPeer)(nil),                     // 41: cloudfactory.agent.v1.MeshPeer
-	(*NetworkMember)(nil),                // 42: cloudfactory.agent.v1.NetworkMember
-	(*NetworkName)(nil),                  // 43: cloudfactory.agent.v1.NetworkName
-	(*NetworkWebsite)(nil),               // 44: cloudfactory.agent.v1.NetworkWebsite
-	(*Mesh)(nil),                         // 45: cloudfactory.agent.v1.Mesh
-	(*SetMeshRequest)(nil),               // 46: cloudfactory.agent.v1.SetMeshRequest
-	(*RotateMeshKeyRequest)(nil),         // 47: cloudfactory.agent.v1.RotateMeshKeyRequest
-	(*SendDatabaseServerRequest)(nil),    // 48: cloudfactory.agent.v1.SendDatabaseServerRequest
-	(*ReceiveDatabaseServerRequest)(nil), // 49: cloudfactory.agent.v1.ReceiveDatabaseServerRequest
-	(*HostRequest)(nil),                  // 50: cloudfactory.agent.v1.HostRequest
-	(*UpdateAgentRequest)(nil),           // 51: cloudfactory.agent.v1.UpdateAgentRequest
-	(*GetStatusRequest)(nil),             // 52: cloudfactory.agent.v1.GetStatusRequest
-	(*PendingUpdate)(nil),                // 53: cloudfactory.agent.v1.PendingUpdate
-	(*Service)(nil),                      // 54: cloudfactory.agent.v1.Service
-	(*DnsRecord)(nil),                    // 55: cloudfactory.agent.v1.DnsRecord
-	(*DnsZone)(nil),                      // 56: cloudfactory.agent.v1.DnsZone
-	(*DnssecKey)(nil),                    // 57: cloudfactory.agent.v1.DnssecKey
-	(*TsigKey)(nil),                      // 58: cloudfactory.agent.v1.TsigKey
-	(*DnsTransfers)(nil),                 // 59: cloudfactory.agent.v1.DnsTransfers
-	(*DnsSecondary)(nil),                 // 60: cloudfactory.agent.v1.DnsSecondary
-	(*SetDnsSecondariesRequest)(nil),     // 61: cloudfactory.agent.v1.SetDnsSecondariesRequest
-	(*SetDnsZonesRequest)(nil),           // 62: cloudfactory.agent.v1.SetDnsZonesRequest
-	(*DeleteDnsZonesRequest)(nil),        // 63: cloudfactory.agent.v1.DeleteDnsZonesRequest
-	(*HostStatus)(nil),                   // 64: cloudfactory.agent.v1.HostStatus
-	(*CronJob)(nil),                      // 65: cloudfactory.agent.v1.CronJob
-	(*SetCronJobsRequest)(nil),           // 66: cloudfactory.agent.v1.SetCronJobsRequest
-	(*RunCronJobRequest)(nil),            // 67: cloudfactory.agent.v1.RunCronJobRequest
-	(*RunCommandRequest)(nil),            // 68: cloudfactory.agent.v1.RunCommandRequest
-	(*DeployRequest)(nil),                // 69: cloudfactory.agent.v1.DeployRequest
-	(*ActivateReleaseRequest)(nil),       // 70: cloudfactory.agent.v1.ActivateReleaseRequest
-	(*InstallDependenciesRequest)(nil),   // 71: cloudfactory.agent.v1.InstallDependenciesRequest
-	(*FileRequest)(nil),                  // 72: cloudfactory.agent.v1.FileRequest
-	(*FileEntry)(nil),                    // 73: cloudfactory.agent.v1.FileEntry
-	(*FileList)(nil),                     // 74: cloudfactory.agent.v1.FileList
-	(*FileContent)(nil),                  // 75: cloudfactory.agent.v1.FileContent
-	(*WriteFileRequest)(nil),             // 76: cloudfactory.agent.v1.WriteFileRequest
-	(*MoveFileRequest)(nil),              // 77: cloudfactory.agent.v1.MoveFileRequest
-	(*FileDeleted)(nil),                  // 78: cloudfactory.agent.v1.FileDeleted
-	(*BranchCheck)(nil),                  // 79: cloudfactory.agent.v1.BranchCheck
-	(*CheckBranchesRequest)(nil),         // 80: cloudfactory.agent.v1.CheckBranchesRequest
-	(*BranchHead)(nil),                   // 81: cloudfactory.agent.v1.BranchHead
-	(*BranchHeads)(nil),                  // 82: cloudfactory.agent.v1.BranchHeads
-	(*GetLogsRequest)(nil),               // 83: cloudfactory.agent.v1.GetLogsRequest
-	(*LogLine)(nil),                      // 84: cloudfactory.agent.v1.LogLine
-	(*Logs)(nil),                         // 85: cloudfactory.agent.v1.Logs
-	(*FetchImportRequest)(nil),           // 86: cloudfactory.agent.v1.FetchImportRequest
-	(*ImportFilesRequest)(nil),           // 87: cloudfactory.agent.v1.ImportFilesRequest
-	(*ImportDatabaseRequest)(nil),        // 88: cloudfactory.agent.v1.ImportDatabaseRequest
-	(*ImportMailRequest)(nil),            // 89: cloudfactory.agent.v1.ImportMailRequest
-	(*ImportMailbox)(nil),                // 90: cloudfactory.agent.v1.ImportMailbox
-	(*DeleteImportRequest)(nil),          // 91: cloudfactory.agent.v1.DeleteImportRequest
-	nil,                                  // 92: cloudfactory.agent.v1.Website.PhpIniEntry
-	nil,                                  // 93: cloudfactory.agent.v1.Website.EnvironmentEntry
-	nil,                                  // 94: cloudfactory.agent.v1.BackupRequest.CredentialsEntry
-	nil,                                  // 95: cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntry
-	nil,                                  // 96: cloudfactory.agent.v1.RestoreRequest.CredentialsEntry
-	nil,                                  // 97: cloudfactory.agent.v1.DeployRequest.SecretsEntry
-	nil,                                  // 98: cloudfactory.agent.v1.ImportFilesRequest.WordpressValuesEntry
+	(*WebsiteSecurity)(nil),              // 4: cloudfactory.agent.v1.WebsiteSecurity
+	(*ProtectedPath)(nil),                // 5: cloudfactory.agent.v1.ProtectedPath
+	(*PathUser)(nil),                     // 6: cloudfactory.agent.v1.PathUser
+	(*DatabaseServer)(nil),               // 7: cloudfactory.agent.v1.DatabaseServer
+	(*DatabaseServerRequest)(nil),        // 8: cloudfactory.agent.v1.DatabaseServerRequest
+	(*SetMailServerRequest)(nil),         // 9: cloudfactory.agent.v1.SetMailServerRequest
+	(*PrepareMailNodeRequest)(nil),       // 10: cloudfactory.agent.v1.PrepareMailNodeRequest
+	(*MailClusterMember)(nil),            // 11: cloudfactory.agent.v1.MailClusterMember
+	(*SetMailNodeRequest)(nil),           // 12: cloudfactory.agent.v1.SetMailNodeRequest
+	(*MailDomainRequest)(nil),            // 13: cloudfactory.agent.v1.MailDomainRequest
+	(*SetMailboxRequest)(nil),            // 14: cloudfactory.agent.v1.SetMailboxRequest
+	(*MailAddressRequest)(nil),           // 15: cloudfactory.agent.v1.MailAddressRequest
+	(*SetMailAliasRequest)(nil),          // 16: cloudfactory.agent.v1.SetMailAliasRequest
+	(*DeleteDatabaseServerRequest)(nil),  // 17: cloudfactory.agent.v1.DeleteDatabaseServerRequest
+	(*HealthCheck)(nil),                  // 18: cloudfactory.agent.v1.HealthCheck
+	(*WebsiteRequest)(nil),               // 19: cloudfactory.agent.v1.WebsiteRequest
+	(*DatabaseCopy)(nil),                 // 20: cloudfactory.agent.v1.DatabaseCopy
+	(*DatabaseUserCopy)(nil),             // 21: cloudfactory.agent.v1.DatabaseUserCopy
+	(*DeleteWebsiteRequest)(nil),         // 22: cloudfactory.agent.v1.DeleteWebsiteRequest
+	(*SetWebsitePowerRequest)(nil),       // 23: cloudfactory.agent.v1.SetWebsitePowerRequest
+	(*SetWebsiteSecurityRequest)(nil),    // 24: cloudfactory.agent.v1.SetWebsiteSecurityRequest
+	(*SetLimitsRequest)(nil),             // 25: cloudfactory.agent.v1.SetLimitsRequest
+	(*DomainRequest)(nil),                // 26: cloudfactory.agent.v1.DomainRequest
+	(*CreateDatabaseRequest)(nil),        // 27: cloudfactory.agent.v1.CreateDatabaseRequest
+	(*DeleteDatabaseRequest)(nil),        // 28: cloudfactory.agent.v1.DeleteDatabaseRequest
+	(*DatabaseGrant)(nil),                // 29: cloudfactory.agent.v1.DatabaseGrant
+	(*SetDatabaseUserRequest)(nil),       // 30: cloudfactory.agent.v1.SetDatabaseUserRequest
+	(*DeleteDatabaseUserRequest)(nil),    // 31: cloudfactory.agent.v1.DeleteDatabaseUserRequest
+	(*DatabaseRef)(nil),                  // 32: cloudfactory.agent.v1.DatabaseRef
+	(*BackupRequest)(nil),                // 33: cloudfactory.agent.v1.BackupRequest
+	(*Retention)(nil),                    // 34: cloudfactory.agent.v1.Retention
+	(*PruneBackupsRequest)(nil),          // 35: cloudfactory.agent.v1.PruneBackupsRequest
+	(*RestoreRequest)(nil),               // 36: cloudfactory.agent.v1.RestoreRequest
+	(*SetSftpRequest)(nil),               // 37: cloudfactory.agent.v1.SetSftpRequest
+	(*ConfigureHostRequest)(nil),         // 38: cloudfactory.agent.v1.ConfigureHostRequest
+	(*SetPanelCertificateRequest)(nil),   // 39: cloudfactory.agent.v1.SetPanelCertificateRequest
+	(*SetPanelBrandsRequest)(nil),        // 40: cloudfactory.agent.v1.SetPanelBrandsRequest
+	(*SetPacksRequest)(nil),              // 41: cloudfactory.agent.v1.SetPacksRequest
+	(*SetCertificatesRequest)(nil),       // 42: cloudfactory.agent.v1.SetCertificatesRequest
+	(*EdgeCertificate)(nil),              // 43: cloudfactory.agent.v1.EdgeCertificate
+	(*Pack)(nil),                         // 44: cloudfactory.agent.v1.Pack
+	(*MeshPeer)(nil),                     // 45: cloudfactory.agent.v1.MeshPeer
+	(*NetworkMember)(nil),                // 46: cloudfactory.agent.v1.NetworkMember
+	(*NetworkName)(nil),                  // 47: cloudfactory.agent.v1.NetworkName
+	(*NetworkWebsite)(nil),               // 48: cloudfactory.agent.v1.NetworkWebsite
+	(*Mesh)(nil),                         // 49: cloudfactory.agent.v1.Mesh
+	(*SetMeshRequest)(nil),               // 50: cloudfactory.agent.v1.SetMeshRequest
+	(*RotateMeshKeyRequest)(nil),         // 51: cloudfactory.agent.v1.RotateMeshKeyRequest
+	(*SendDatabaseServerRequest)(nil),    // 52: cloudfactory.agent.v1.SendDatabaseServerRequest
+	(*ReceiveDatabaseServerRequest)(nil), // 53: cloudfactory.agent.v1.ReceiveDatabaseServerRequest
+	(*HostRequest)(nil),                  // 54: cloudfactory.agent.v1.HostRequest
+	(*UpdateAgentRequest)(nil),           // 55: cloudfactory.agent.v1.UpdateAgentRequest
+	(*GetStatusRequest)(nil),             // 56: cloudfactory.agent.v1.GetStatusRequest
+	(*PendingUpdate)(nil),                // 57: cloudfactory.agent.v1.PendingUpdate
+	(*Service)(nil),                      // 58: cloudfactory.agent.v1.Service
+	(*DnsRecord)(nil),                    // 59: cloudfactory.agent.v1.DnsRecord
+	(*DnsZone)(nil),                      // 60: cloudfactory.agent.v1.DnsZone
+	(*DnssecKey)(nil),                    // 61: cloudfactory.agent.v1.DnssecKey
+	(*TsigKey)(nil),                      // 62: cloudfactory.agent.v1.TsigKey
+	(*DnsTransfers)(nil),                 // 63: cloudfactory.agent.v1.DnsTransfers
+	(*DnsSecondary)(nil),                 // 64: cloudfactory.agent.v1.DnsSecondary
+	(*SetDnsSecondariesRequest)(nil),     // 65: cloudfactory.agent.v1.SetDnsSecondariesRequest
+	(*SetDnsZonesRequest)(nil),           // 66: cloudfactory.agent.v1.SetDnsZonesRequest
+	(*DeleteDnsZonesRequest)(nil),        // 67: cloudfactory.agent.v1.DeleteDnsZonesRequest
+	(*HostStatus)(nil),                   // 68: cloudfactory.agent.v1.HostStatus
+	(*CronJob)(nil),                      // 69: cloudfactory.agent.v1.CronJob
+	(*SetCronJobsRequest)(nil),           // 70: cloudfactory.agent.v1.SetCronJobsRequest
+	(*RunCronJobRequest)(nil),            // 71: cloudfactory.agent.v1.RunCronJobRequest
+	(*RunCommandRequest)(nil),            // 72: cloudfactory.agent.v1.RunCommandRequest
+	(*DeployRequest)(nil),                // 73: cloudfactory.agent.v1.DeployRequest
+	(*ActivateReleaseRequest)(nil),       // 74: cloudfactory.agent.v1.ActivateReleaseRequest
+	(*InstallDependenciesRequest)(nil),   // 75: cloudfactory.agent.v1.InstallDependenciesRequest
+	(*FileRequest)(nil),                  // 76: cloudfactory.agent.v1.FileRequest
+	(*FileEntry)(nil),                    // 77: cloudfactory.agent.v1.FileEntry
+	(*FileList)(nil),                     // 78: cloudfactory.agent.v1.FileList
+	(*FileContent)(nil),                  // 79: cloudfactory.agent.v1.FileContent
+	(*WriteFileRequest)(nil),             // 80: cloudfactory.agent.v1.WriteFileRequest
+	(*MoveFileRequest)(nil),              // 81: cloudfactory.agent.v1.MoveFileRequest
+	(*FileDeleted)(nil),                  // 82: cloudfactory.agent.v1.FileDeleted
+	(*BranchCheck)(nil),                  // 83: cloudfactory.agent.v1.BranchCheck
+	(*CheckBranchesRequest)(nil),         // 84: cloudfactory.agent.v1.CheckBranchesRequest
+	(*BranchHead)(nil),                   // 85: cloudfactory.agent.v1.BranchHead
+	(*BranchHeads)(nil),                  // 86: cloudfactory.agent.v1.BranchHeads
+	(*GetLogsRequest)(nil),               // 87: cloudfactory.agent.v1.GetLogsRequest
+	(*LogLine)(nil),                      // 88: cloudfactory.agent.v1.LogLine
+	(*Logs)(nil),                         // 89: cloudfactory.agent.v1.Logs
+	(*GetFirewallEventsRequest)(nil),     // 90: cloudfactory.agent.v1.GetFirewallEventsRequest
+	(*FirewallEvent)(nil),                // 91: cloudfactory.agent.v1.FirewallEvent
+	(*FirewallRule)(nil),                 // 92: cloudfactory.agent.v1.FirewallRule
+	(*FirewallEvents)(nil),               // 93: cloudfactory.agent.v1.FirewallEvents
+	(*FetchImportRequest)(nil),           // 94: cloudfactory.agent.v1.FetchImportRequest
+	(*ImportFilesRequest)(nil),           // 95: cloudfactory.agent.v1.ImportFilesRequest
+	(*ImportDatabaseRequest)(nil),        // 96: cloudfactory.agent.v1.ImportDatabaseRequest
+	(*ImportMailRequest)(nil),            // 97: cloudfactory.agent.v1.ImportMailRequest
+	(*ImportMailbox)(nil),                // 98: cloudfactory.agent.v1.ImportMailbox
+	(*DeleteImportRequest)(nil),          // 99: cloudfactory.agent.v1.DeleteImportRequest
+	nil,                                  // 100: cloudfactory.agent.v1.Website.PhpIniEntry
+	nil,                                  // 101: cloudfactory.agent.v1.Website.EnvironmentEntry
+	nil,                                  // 102: cloudfactory.agent.v1.BackupRequest.CredentialsEntry
+	nil,                                  // 103: cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntry
+	nil,                                  // 104: cloudfactory.agent.v1.RestoreRequest.CredentialsEntry
+	nil,                                  // 105: cloudfactory.agent.v1.DeployRequest.SecretsEntry
+	nil,                                  // 106: cloudfactory.agent.v1.ImportFilesRequest.WordpressValuesEntry
 }
 var file_cloudfactory_agent_v1_agent_proto_depIdxs = []int32{
-	92,  // 0: cloudfactory.agent.v1.Website.php_ini:type_name -> cloudfactory.agent.v1.Website.PhpIniEntry
+	100, // 0: cloudfactory.agent.v1.Website.php_ini:type_name -> cloudfactory.agent.v1.Website.PhpIniEntry
 	1,   // 1: cloudfactory.agent.v1.Website.limits:type_name -> cloudfactory.agent.v1.Limits
 	2,   // 2: cloudfactory.agent.v1.Website.domains:type_name -> cloudfactory.agent.v1.Domain
-	93,  // 3: cloudfactory.agent.v1.Website.environment:type_name -> cloudfactory.agent.v1.Website.EnvironmentEntry
-	1,   // 4: cloudfactory.agent.v1.DatabaseServer.limits:type_name -> cloudfactory.agent.v1.Limits
-	4,   // 5: cloudfactory.agent.v1.DatabaseServerRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
-	8,   // 6: cloudfactory.agent.v1.SetMailNodeRequest.members:type_name -> cloudfactory.agent.v1.MailClusterMember
-	3,   // 7: cloudfactory.agent.v1.WebsiteRequest.website:type_name -> cloudfactory.agent.v1.Website
-	15,  // 8: cloudfactory.agent.v1.WebsiteRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
-	17,  // 9: cloudfactory.agent.v1.WebsiteRequest.copy_databases:type_name -> cloudfactory.agent.v1.DatabaseCopy
-	18,  // 10: cloudfactory.agent.v1.WebsiteRequest.copy_users:type_name -> cloudfactory.agent.v1.DatabaseUserCopy
-	4,   // 11: cloudfactory.agent.v1.WebsiteRequest.database_servers:type_name -> cloudfactory.agent.v1.DatabaseServer
-	28,  // 12: cloudfactory.agent.v1.DeleteWebsiteRequest.databases:type_name -> cloudfactory.agent.v1.DatabaseRef
-	28,  // 13: cloudfactory.agent.v1.DeleteWebsiteRequest.database_users:type_name -> cloudfactory.agent.v1.DatabaseRef
-	1,   // 14: cloudfactory.agent.v1.SetLimitsRequest.limits:type_name -> cloudfactory.agent.v1.Limits
-	4,   // 15: cloudfactory.agent.v1.CreateDatabaseRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
-	25,  // 16: cloudfactory.agent.v1.SetDatabaseUserRequest.grants:type_name -> cloudfactory.agent.v1.DatabaseGrant
-	4,   // 17: cloudfactory.agent.v1.SetDatabaseUserRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
-	28,  // 18: cloudfactory.agent.v1.BackupRequest.databases:type_name -> cloudfactory.agent.v1.DatabaseRef
-	94,  // 19: cloudfactory.agent.v1.BackupRequest.credentials:type_name -> cloudfactory.agent.v1.BackupRequest.CredentialsEntry
-	30,  // 20: cloudfactory.agent.v1.BackupRequest.retention:type_name -> cloudfactory.agent.v1.Retention
-	95,  // 21: cloudfactory.agent.v1.PruneBackupsRequest.credentials:type_name -> cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntry
-	96,  // 22: cloudfactory.agent.v1.RestoreRequest.credentials:type_name -> cloudfactory.agent.v1.RestoreRequest.CredentialsEntry
-	40,  // 23: cloudfactory.agent.v1.SetPacksRequest.packs:type_name -> cloudfactory.agent.v1.Pack
-	39,  // 24: cloudfactory.agent.v1.SetCertificatesRequest.certificates:type_name -> cloudfactory.agent.v1.EdgeCertificate
-	43,  // 25: cloudfactory.agent.v1.NetworkWebsite.names:type_name -> cloudfactory.agent.v1.NetworkName
-	41,  // 26: cloudfactory.agent.v1.Mesh.peers:type_name -> cloudfactory.agent.v1.MeshPeer
-	42,  // 27: cloudfactory.agent.v1.Mesh.members:type_name -> cloudfactory.agent.v1.NetworkMember
-	44,  // 28: cloudfactory.agent.v1.Mesh.websites:type_name -> cloudfactory.agent.v1.NetworkWebsite
-	45,  // 29: cloudfactory.agent.v1.SetMeshRequest.mesh:type_name -> cloudfactory.agent.v1.Mesh
-	4,   // 30: cloudfactory.agent.v1.ReceiveDatabaseServerRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
-	55,  // 31: cloudfactory.agent.v1.DnsZone.records:type_name -> cloudfactory.agent.v1.DnsRecord
-	59,  // 32: cloudfactory.agent.v1.DnsZone.transfers:type_name -> cloudfactory.agent.v1.DnsTransfers
-	57,  // 33: cloudfactory.agent.v1.DnsZone.dnssec_keys:type_name -> cloudfactory.agent.v1.DnssecKey
-	58,  // 34: cloudfactory.agent.v1.DnsTransfers.tsig:type_name -> cloudfactory.agent.v1.TsigKey
-	58,  // 35: cloudfactory.agent.v1.DnsSecondary.tsig:type_name -> cloudfactory.agent.v1.TsigKey
-	60,  // 36: cloudfactory.agent.v1.SetDnsSecondariesRequest.secondaries:type_name -> cloudfactory.agent.v1.DnsSecondary
-	56,  // 37: cloudfactory.agent.v1.SetDnsZonesRequest.zones:type_name -> cloudfactory.agent.v1.DnsZone
-	53,  // 38: cloudfactory.agent.v1.HostStatus.pending_updates:type_name -> cloudfactory.agent.v1.PendingUpdate
-	54,  // 39: cloudfactory.agent.v1.HostStatus.services:type_name -> cloudfactory.agent.v1.Service
-	65,  // 40: cloudfactory.agent.v1.SetCronJobsRequest.cron_jobs:type_name -> cloudfactory.agent.v1.CronJob
-	65,  // 41: cloudfactory.agent.v1.RunCronJobRequest.cron_job:type_name -> cloudfactory.agent.v1.CronJob
-	3,   // 42: cloudfactory.agent.v1.DeployRequest.website:type_name -> cloudfactory.agent.v1.Website
-	97,  // 43: cloudfactory.agent.v1.DeployRequest.secrets:type_name -> cloudfactory.agent.v1.DeployRequest.SecretsEntry
-	15,  // 44: cloudfactory.agent.v1.DeployRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
-	3,   // 45: cloudfactory.agent.v1.ActivateReleaseRequest.website:type_name -> cloudfactory.agent.v1.Website
-	15,  // 46: cloudfactory.agent.v1.ActivateReleaseRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
-	3,   // 47: cloudfactory.agent.v1.InstallDependenciesRequest.website:type_name -> cloudfactory.agent.v1.Website
-	15,  // 48: cloudfactory.agent.v1.InstallDependenciesRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
-	73,  // 49: cloudfactory.agent.v1.FileList.entries:type_name -> cloudfactory.agent.v1.FileEntry
-	73,  // 50: cloudfactory.agent.v1.FileContent.file:type_name -> cloudfactory.agent.v1.FileEntry
-	79,  // 51: cloudfactory.agent.v1.CheckBranchesRequest.checks:type_name -> cloudfactory.agent.v1.BranchCheck
-	81,  // 52: cloudfactory.agent.v1.BranchHeads.heads:type_name -> cloudfactory.agent.v1.BranchHead
-	84,  // 53: cloudfactory.agent.v1.Logs.lines:type_name -> cloudfactory.agent.v1.LogLine
-	98,  // 54: cloudfactory.agent.v1.ImportFilesRequest.wordpress_values:type_name -> cloudfactory.agent.v1.ImportFilesRequest.WordpressValuesEntry
-	90,  // 55: cloudfactory.agent.v1.ImportMailRequest.mailboxes:type_name -> cloudfactory.agent.v1.ImportMailbox
-	16,  // 56: cloudfactory.agent.v1.AgentService.CreateWebsite:input_type -> cloudfactory.agent.v1.WebsiteRequest
-	19,  // 57: cloudfactory.agent.v1.AgentService.DeleteWebsite:input_type -> cloudfactory.agent.v1.DeleteWebsiteRequest
-	20,  // 58: cloudfactory.agent.v1.AgentService.SetWebsitePower:input_type -> cloudfactory.agent.v1.SetWebsitePowerRequest
-	21,  // 59: cloudfactory.agent.v1.AgentService.SetLimits:input_type -> cloudfactory.agent.v1.SetLimitsRequest
-	16,  // 60: cloudfactory.agent.v1.AgentService.SetRuntime:input_type -> cloudfactory.agent.v1.WebsiteRequest
-	22,  // 61: cloudfactory.agent.v1.AgentService.AddDomain:input_type -> cloudfactory.agent.v1.DomainRequest
-	22,  // 62: cloudfactory.agent.v1.AgentService.RemoveDomain:input_type -> cloudfactory.agent.v1.DomainRequest
-	23,  // 63: cloudfactory.agent.v1.AgentService.CreateDatabase:input_type -> cloudfactory.agent.v1.CreateDatabaseRequest
-	24,  // 64: cloudfactory.agent.v1.AgentService.DeleteDatabase:input_type -> cloudfactory.agent.v1.DeleteDatabaseRequest
-	26,  // 65: cloudfactory.agent.v1.AgentService.SetDatabaseUser:input_type -> cloudfactory.agent.v1.SetDatabaseUserRequest
-	27,  // 66: cloudfactory.agent.v1.AgentService.DeleteDatabaseUser:input_type -> cloudfactory.agent.v1.DeleteDatabaseUserRequest
-	29,  // 67: cloudfactory.agent.v1.AgentService.Backup:input_type -> cloudfactory.agent.v1.BackupRequest
-	32,  // 68: cloudfactory.agent.v1.AgentService.Restore:input_type -> cloudfactory.agent.v1.RestoreRequest
-	50,  // 69: cloudfactory.agent.v1.AgentService.InstallHostUpdates:input_type -> cloudfactory.agent.v1.HostRequest
-	50,  // 70: cloudfactory.agent.v1.AgentService.Reboot:input_type -> cloudfactory.agent.v1.HostRequest
-	51,  // 71: cloudfactory.agent.v1.AgentService.UpdateAgent:input_type -> cloudfactory.agent.v1.UpdateAgentRequest
-	31,  // 72: cloudfactory.agent.v1.AgentService.PruneBackups:input_type -> cloudfactory.agent.v1.PruneBackupsRequest
-	33,  // 73: cloudfactory.agent.v1.AgentService.SetSftp:input_type -> cloudfactory.agent.v1.SetSftpRequest
-	34,  // 74: cloudfactory.agent.v1.AgentService.ConfigureHost:input_type -> cloudfactory.agent.v1.ConfigureHostRequest
-	35,  // 75: cloudfactory.agent.v1.AgentService.SetPanelCertificate:input_type -> cloudfactory.agent.v1.SetPanelCertificateRequest
-	36,  // 76: cloudfactory.agent.v1.AgentService.SetPanelBrands:input_type -> cloudfactory.agent.v1.SetPanelBrandsRequest
-	5,   // 77: cloudfactory.agent.v1.AgentService.SetDatabaseServer:input_type -> cloudfactory.agent.v1.DatabaseServerRequest
-	14,  // 78: cloudfactory.agent.v1.AgentService.DeleteDatabaseServer:input_type -> cloudfactory.agent.v1.DeleteDatabaseServerRequest
-	6,   // 79: cloudfactory.agent.v1.AgentService.SetMailServer:input_type -> cloudfactory.agent.v1.SetMailServerRequest
-	7,   // 80: cloudfactory.agent.v1.AgentService.PrepareMailNode:input_type -> cloudfactory.agent.v1.PrepareMailNodeRequest
-	9,   // 81: cloudfactory.agent.v1.AgentService.SetMailNode:input_type -> cloudfactory.agent.v1.SetMailNodeRequest
-	10,  // 82: cloudfactory.agent.v1.AgentService.SetMailDomain:input_type -> cloudfactory.agent.v1.MailDomainRequest
-	10,  // 83: cloudfactory.agent.v1.AgentService.DeleteMailDomain:input_type -> cloudfactory.agent.v1.MailDomainRequest
-	11,  // 84: cloudfactory.agent.v1.AgentService.SetMailbox:input_type -> cloudfactory.agent.v1.SetMailboxRequest
-	12,  // 85: cloudfactory.agent.v1.AgentService.DeleteMailbox:input_type -> cloudfactory.agent.v1.MailAddressRequest
-	13,  // 86: cloudfactory.agent.v1.AgentService.SetMailAlias:input_type -> cloudfactory.agent.v1.SetMailAliasRequest
-	12,  // 87: cloudfactory.agent.v1.AgentService.DeleteMailAlias:input_type -> cloudfactory.agent.v1.MailAddressRequest
-	62,  // 88: cloudfactory.agent.v1.AgentService.SetDnsZones:input_type -> cloudfactory.agent.v1.SetDnsZonesRequest
-	63,  // 89: cloudfactory.agent.v1.AgentService.DeleteDnsZones:input_type -> cloudfactory.agent.v1.DeleteDnsZonesRequest
-	61,  // 90: cloudfactory.agent.v1.AgentService.SetDnsSecondaries:input_type -> cloudfactory.agent.v1.SetDnsSecondariesRequest
-	66,  // 91: cloudfactory.agent.v1.AgentService.SetCronJobs:input_type -> cloudfactory.agent.v1.SetCronJobsRequest
-	67,  // 92: cloudfactory.agent.v1.AgentService.RunCronJob:input_type -> cloudfactory.agent.v1.RunCronJobRequest
-	68,  // 93: cloudfactory.agent.v1.AgentService.RunCommand:input_type -> cloudfactory.agent.v1.RunCommandRequest
-	69,  // 94: cloudfactory.agent.v1.AgentService.Deploy:input_type -> cloudfactory.agent.v1.DeployRequest
-	70,  // 95: cloudfactory.agent.v1.AgentService.ActivateRelease:input_type -> cloudfactory.agent.v1.ActivateReleaseRequest
-	71,  // 96: cloudfactory.agent.v1.AgentService.InstallDependencies:input_type -> cloudfactory.agent.v1.InstallDependenciesRequest
-	46,  // 97: cloudfactory.agent.v1.AgentService.SetMesh:input_type -> cloudfactory.agent.v1.SetMeshRequest
-	47,  // 98: cloudfactory.agent.v1.AgentService.RotateMeshKey:input_type -> cloudfactory.agent.v1.RotateMeshKeyRequest
-	48,  // 99: cloudfactory.agent.v1.AgentService.SendDatabaseServer:input_type -> cloudfactory.agent.v1.SendDatabaseServerRequest
-	49,  // 100: cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer:input_type -> cloudfactory.agent.v1.ReceiveDatabaseServerRequest
-	37,  // 101: cloudfactory.agent.v1.AgentService.SetPacks:input_type -> cloudfactory.agent.v1.SetPacksRequest
-	38,  // 102: cloudfactory.agent.v1.AgentService.SetCertificates:input_type -> cloudfactory.agent.v1.SetCertificatesRequest
-	86,  // 103: cloudfactory.agent.v1.AgentService.FetchImport:input_type -> cloudfactory.agent.v1.FetchImportRequest
-	87,  // 104: cloudfactory.agent.v1.AgentService.ImportFiles:input_type -> cloudfactory.agent.v1.ImportFilesRequest
-	88,  // 105: cloudfactory.agent.v1.AgentService.ImportDatabase:input_type -> cloudfactory.agent.v1.ImportDatabaseRequest
-	89,  // 106: cloudfactory.agent.v1.AgentService.ImportMail:input_type -> cloudfactory.agent.v1.ImportMailRequest
-	91,  // 107: cloudfactory.agent.v1.AgentService.DeleteImport:input_type -> cloudfactory.agent.v1.DeleteImportRequest
-	52,  // 108: cloudfactory.agent.v1.AgentService.GetStatus:input_type -> cloudfactory.agent.v1.GetStatusRequest
-	72,  // 109: cloudfactory.agent.v1.AgentService.ListFiles:input_type -> cloudfactory.agent.v1.FileRequest
-	72,  // 110: cloudfactory.agent.v1.AgentService.ReadFile:input_type -> cloudfactory.agent.v1.FileRequest
-	76,  // 111: cloudfactory.agent.v1.AgentService.WriteFile:input_type -> cloudfactory.agent.v1.WriteFileRequest
-	72,  // 112: cloudfactory.agent.v1.AgentService.MakeDirectory:input_type -> cloudfactory.agent.v1.FileRequest
-	77,  // 113: cloudfactory.agent.v1.AgentService.MoveFile:input_type -> cloudfactory.agent.v1.MoveFileRequest
-	72,  // 114: cloudfactory.agent.v1.AgentService.DeleteFile:input_type -> cloudfactory.agent.v1.FileRequest
-	83,  // 115: cloudfactory.agent.v1.AgentService.GetLogs:input_type -> cloudfactory.agent.v1.GetLogsRequest
-	80,  // 116: cloudfactory.agent.v1.AgentService.CheckBranches:input_type -> cloudfactory.agent.v1.CheckBranchesRequest
-	0,   // 117: cloudfactory.agent.v1.AgentService.CreateWebsite:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 118: cloudfactory.agent.v1.AgentService.DeleteWebsite:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 119: cloudfactory.agent.v1.AgentService.SetWebsitePower:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 120: cloudfactory.agent.v1.AgentService.SetLimits:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 121: cloudfactory.agent.v1.AgentService.SetRuntime:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 122: cloudfactory.agent.v1.AgentService.AddDomain:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 123: cloudfactory.agent.v1.AgentService.RemoveDomain:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 124: cloudfactory.agent.v1.AgentService.CreateDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 125: cloudfactory.agent.v1.AgentService.DeleteDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 126: cloudfactory.agent.v1.AgentService.SetDatabaseUser:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 127: cloudfactory.agent.v1.AgentService.DeleteDatabaseUser:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 128: cloudfactory.agent.v1.AgentService.Backup:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 129: cloudfactory.agent.v1.AgentService.Restore:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 130: cloudfactory.agent.v1.AgentService.InstallHostUpdates:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 131: cloudfactory.agent.v1.AgentService.Reboot:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 132: cloudfactory.agent.v1.AgentService.UpdateAgent:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 133: cloudfactory.agent.v1.AgentService.PruneBackups:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 134: cloudfactory.agent.v1.AgentService.SetSftp:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 135: cloudfactory.agent.v1.AgentService.ConfigureHost:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 136: cloudfactory.agent.v1.AgentService.SetPanelCertificate:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 137: cloudfactory.agent.v1.AgentService.SetPanelBrands:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 138: cloudfactory.agent.v1.AgentService.SetDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 139: cloudfactory.agent.v1.AgentService.DeleteDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 140: cloudfactory.agent.v1.AgentService.SetMailServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 141: cloudfactory.agent.v1.AgentService.PrepareMailNode:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 142: cloudfactory.agent.v1.AgentService.SetMailNode:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 143: cloudfactory.agent.v1.AgentService.SetMailDomain:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 144: cloudfactory.agent.v1.AgentService.DeleteMailDomain:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 145: cloudfactory.agent.v1.AgentService.SetMailbox:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 146: cloudfactory.agent.v1.AgentService.DeleteMailbox:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 147: cloudfactory.agent.v1.AgentService.SetMailAlias:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 148: cloudfactory.agent.v1.AgentService.DeleteMailAlias:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 149: cloudfactory.agent.v1.AgentService.SetDnsZones:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 150: cloudfactory.agent.v1.AgentService.DeleteDnsZones:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 151: cloudfactory.agent.v1.AgentService.SetDnsSecondaries:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 152: cloudfactory.agent.v1.AgentService.SetCronJobs:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 153: cloudfactory.agent.v1.AgentService.RunCronJob:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 154: cloudfactory.agent.v1.AgentService.RunCommand:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 155: cloudfactory.agent.v1.AgentService.Deploy:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 156: cloudfactory.agent.v1.AgentService.ActivateRelease:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 157: cloudfactory.agent.v1.AgentService.InstallDependencies:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 158: cloudfactory.agent.v1.AgentService.SetMesh:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 159: cloudfactory.agent.v1.AgentService.RotateMeshKey:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 160: cloudfactory.agent.v1.AgentService.SendDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 161: cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 162: cloudfactory.agent.v1.AgentService.SetPacks:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 163: cloudfactory.agent.v1.AgentService.SetCertificates:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 164: cloudfactory.agent.v1.AgentService.FetchImport:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 165: cloudfactory.agent.v1.AgentService.ImportFiles:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 166: cloudfactory.agent.v1.AgentService.ImportDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 167: cloudfactory.agent.v1.AgentService.ImportMail:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,   // 168: cloudfactory.agent.v1.AgentService.DeleteImport:output_type -> cloudfactory.agent.v1.JobAccepted
-	64,  // 169: cloudfactory.agent.v1.AgentService.GetStatus:output_type -> cloudfactory.agent.v1.HostStatus
-	74,  // 170: cloudfactory.agent.v1.AgentService.ListFiles:output_type -> cloudfactory.agent.v1.FileList
-	75,  // 171: cloudfactory.agent.v1.AgentService.ReadFile:output_type -> cloudfactory.agent.v1.FileContent
-	73,  // 172: cloudfactory.agent.v1.AgentService.WriteFile:output_type -> cloudfactory.agent.v1.FileEntry
-	73,  // 173: cloudfactory.agent.v1.AgentService.MakeDirectory:output_type -> cloudfactory.agent.v1.FileEntry
-	73,  // 174: cloudfactory.agent.v1.AgentService.MoveFile:output_type -> cloudfactory.agent.v1.FileEntry
-	78,  // 175: cloudfactory.agent.v1.AgentService.DeleteFile:output_type -> cloudfactory.agent.v1.FileDeleted
-	85,  // 176: cloudfactory.agent.v1.AgentService.GetLogs:output_type -> cloudfactory.agent.v1.Logs
-	82,  // 177: cloudfactory.agent.v1.AgentService.CheckBranches:output_type -> cloudfactory.agent.v1.BranchHeads
-	117, // [117:178] is the sub-list for method output_type
-	56,  // [56:117] is the sub-list for method input_type
-	56,  // [56:56] is the sub-list for extension type_name
-	56,  // [56:56] is the sub-list for extension extendee
-	0,   // [0:56] is the sub-list for field type_name
+	101, // 3: cloudfactory.agent.v1.Website.environment:type_name -> cloudfactory.agent.v1.Website.EnvironmentEntry
+	4,   // 4: cloudfactory.agent.v1.Website.security:type_name -> cloudfactory.agent.v1.WebsiteSecurity
+	5,   // 5: cloudfactory.agent.v1.WebsiteSecurity.protected_paths:type_name -> cloudfactory.agent.v1.ProtectedPath
+	6,   // 6: cloudfactory.agent.v1.ProtectedPath.users:type_name -> cloudfactory.agent.v1.PathUser
+	1,   // 7: cloudfactory.agent.v1.DatabaseServer.limits:type_name -> cloudfactory.agent.v1.Limits
+	7,   // 8: cloudfactory.agent.v1.DatabaseServerRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
+	11,  // 9: cloudfactory.agent.v1.SetMailNodeRequest.members:type_name -> cloudfactory.agent.v1.MailClusterMember
+	3,   // 10: cloudfactory.agent.v1.WebsiteRequest.website:type_name -> cloudfactory.agent.v1.Website
+	18,  // 11: cloudfactory.agent.v1.WebsiteRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
+	20,  // 12: cloudfactory.agent.v1.WebsiteRequest.copy_databases:type_name -> cloudfactory.agent.v1.DatabaseCopy
+	21,  // 13: cloudfactory.agent.v1.WebsiteRequest.copy_users:type_name -> cloudfactory.agent.v1.DatabaseUserCopy
+	7,   // 14: cloudfactory.agent.v1.WebsiteRequest.database_servers:type_name -> cloudfactory.agent.v1.DatabaseServer
+	32,  // 15: cloudfactory.agent.v1.DeleteWebsiteRequest.databases:type_name -> cloudfactory.agent.v1.DatabaseRef
+	32,  // 16: cloudfactory.agent.v1.DeleteWebsiteRequest.database_users:type_name -> cloudfactory.agent.v1.DatabaseRef
+	4,   // 17: cloudfactory.agent.v1.SetWebsiteSecurityRequest.security:type_name -> cloudfactory.agent.v1.WebsiteSecurity
+	1,   // 18: cloudfactory.agent.v1.SetLimitsRequest.limits:type_name -> cloudfactory.agent.v1.Limits
+	7,   // 19: cloudfactory.agent.v1.CreateDatabaseRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
+	29,  // 20: cloudfactory.agent.v1.SetDatabaseUserRequest.grants:type_name -> cloudfactory.agent.v1.DatabaseGrant
+	7,   // 21: cloudfactory.agent.v1.SetDatabaseUserRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
+	32,  // 22: cloudfactory.agent.v1.BackupRequest.databases:type_name -> cloudfactory.agent.v1.DatabaseRef
+	102, // 23: cloudfactory.agent.v1.BackupRequest.credentials:type_name -> cloudfactory.agent.v1.BackupRequest.CredentialsEntry
+	34,  // 24: cloudfactory.agent.v1.BackupRequest.retention:type_name -> cloudfactory.agent.v1.Retention
+	103, // 25: cloudfactory.agent.v1.PruneBackupsRequest.credentials:type_name -> cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntry
+	104, // 26: cloudfactory.agent.v1.RestoreRequest.credentials:type_name -> cloudfactory.agent.v1.RestoreRequest.CredentialsEntry
+	44,  // 27: cloudfactory.agent.v1.SetPacksRequest.packs:type_name -> cloudfactory.agent.v1.Pack
+	43,  // 28: cloudfactory.agent.v1.SetCertificatesRequest.certificates:type_name -> cloudfactory.agent.v1.EdgeCertificate
+	47,  // 29: cloudfactory.agent.v1.NetworkWebsite.names:type_name -> cloudfactory.agent.v1.NetworkName
+	45,  // 30: cloudfactory.agent.v1.Mesh.peers:type_name -> cloudfactory.agent.v1.MeshPeer
+	46,  // 31: cloudfactory.agent.v1.Mesh.members:type_name -> cloudfactory.agent.v1.NetworkMember
+	48,  // 32: cloudfactory.agent.v1.Mesh.websites:type_name -> cloudfactory.agent.v1.NetworkWebsite
+	49,  // 33: cloudfactory.agent.v1.SetMeshRequest.mesh:type_name -> cloudfactory.agent.v1.Mesh
+	7,   // 34: cloudfactory.agent.v1.ReceiveDatabaseServerRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
+	59,  // 35: cloudfactory.agent.v1.DnsZone.records:type_name -> cloudfactory.agent.v1.DnsRecord
+	63,  // 36: cloudfactory.agent.v1.DnsZone.transfers:type_name -> cloudfactory.agent.v1.DnsTransfers
+	61,  // 37: cloudfactory.agent.v1.DnsZone.dnssec_keys:type_name -> cloudfactory.agent.v1.DnssecKey
+	62,  // 38: cloudfactory.agent.v1.DnsTransfers.tsig:type_name -> cloudfactory.agent.v1.TsigKey
+	62,  // 39: cloudfactory.agent.v1.DnsSecondary.tsig:type_name -> cloudfactory.agent.v1.TsigKey
+	64,  // 40: cloudfactory.agent.v1.SetDnsSecondariesRequest.secondaries:type_name -> cloudfactory.agent.v1.DnsSecondary
+	60,  // 41: cloudfactory.agent.v1.SetDnsZonesRequest.zones:type_name -> cloudfactory.agent.v1.DnsZone
+	57,  // 42: cloudfactory.agent.v1.HostStatus.pending_updates:type_name -> cloudfactory.agent.v1.PendingUpdate
+	58,  // 43: cloudfactory.agent.v1.HostStatus.services:type_name -> cloudfactory.agent.v1.Service
+	69,  // 44: cloudfactory.agent.v1.SetCronJobsRequest.cron_jobs:type_name -> cloudfactory.agent.v1.CronJob
+	69,  // 45: cloudfactory.agent.v1.RunCronJobRequest.cron_job:type_name -> cloudfactory.agent.v1.CronJob
+	3,   // 46: cloudfactory.agent.v1.DeployRequest.website:type_name -> cloudfactory.agent.v1.Website
+	105, // 47: cloudfactory.agent.v1.DeployRequest.secrets:type_name -> cloudfactory.agent.v1.DeployRequest.SecretsEntry
+	18,  // 48: cloudfactory.agent.v1.DeployRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
+	3,   // 49: cloudfactory.agent.v1.ActivateReleaseRequest.website:type_name -> cloudfactory.agent.v1.Website
+	18,  // 50: cloudfactory.agent.v1.ActivateReleaseRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
+	3,   // 51: cloudfactory.agent.v1.InstallDependenciesRequest.website:type_name -> cloudfactory.agent.v1.Website
+	18,  // 52: cloudfactory.agent.v1.InstallDependenciesRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
+	77,  // 53: cloudfactory.agent.v1.FileList.entries:type_name -> cloudfactory.agent.v1.FileEntry
+	77,  // 54: cloudfactory.agent.v1.FileContent.file:type_name -> cloudfactory.agent.v1.FileEntry
+	83,  // 55: cloudfactory.agent.v1.CheckBranchesRequest.checks:type_name -> cloudfactory.agent.v1.BranchCheck
+	85,  // 56: cloudfactory.agent.v1.BranchHeads.heads:type_name -> cloudfactory.agent.v1.BranchHead
+	88,  // 57: cloudfactory.agent.v1.Logs.lines:type_name -> cloudfactory.agent.v1.LogLine
+	92,  // 58: cloudfactory.agent.v1.FirewallEvent.rules:type_name -> cloudfactory.agent.v1.FirewallRule
+	91,  // 59: cloudfactory.agent.v1.FirewallEvents.events:type_name -> cloudfactory.agent.v1.FirewallEvent
+	106, // 60: cloudfactory.agent.v1.ImportFilesRequest.wordpress_values:type_name -> cloudfactory.agent.v1.ImportFilesRequest.WordpressValuesEntry
+	98,  // 61: cloudfactory.agent.v1.ImportMailRequest.mailboxes:type_name -> cloudfactory.agent.v1.ImportMailbox
+	19,  // 62: cloudfactory.agent.v1.AgentService.CreateWebsite:input_type -> cloudfactory.agent.v1.WebsiteRequest
+	22,  // 63: cloudfactory.agent.v1.AgentService.DeleteWebsite:input_type -> cloudfactory.agent.v1.DeleteWebsiteRequest
+	23,  // 64: cloudfactory.agent.v1.AgentService.SetWebsitePower:input_type -> cloudfactory.agent.v1.SetWebsitePowerRequest
+	25,  // 65: cloudfactory.agent.v1.AgentService.SetLimits:input_type -> cloudfactory.agent.v1.SetLimitsRequest
+	19,  // 66: cloudfactory.agent.v1.AgentService.SetRuntime:input_type -> cloudfactory.agent.v1.WebsiteRequest
+	26,  // 67: cloudfactory.agent.v1.AgentService.AddDomain:input_type -> cloudfactory.agent.v1.DomainRequest
+	26,  // 68: cloudfactory.agent.v1.AgentService.RemoveDomain:input_type -> cloudfactory.agent.v1.DomainRequest
+	27,  // 69: cloudfactory.agent.v1.AgentService.CreateDatabase:input_type -> cloudfactory.agent.v1.CreateDatabaseRequest
+	28,  // 70: cloudfactory.agent.v1.AgentService.DeleteDatabase:input_type -> cloudfactory.agent.v1.DeleteDatabaseRequest
+	30,  // 71: cloudfactory.agent.v1.AgentService.SetDatabaseUser:input_type -> cloudfactory.agent.v1.SetDatabaseUserRequest
+	31,  // 72: cloudfactory.agent.v1.AgentService.DeleteDatabaseUser:input_type -> cloudfactory.agent.v1.DeleteDatabaseUserRequest
+	33,  // 73: cloudfactory.agent.v1.AgentService.Backup:input_type -> cloudfactory.agent.v1.BackupRequest
+	36,  // 74: cloudfactory.agent.v1.AgentService.Restore:input_type -> cloudfactory.agent.v1.RestoreRequest
+	54,  // 75: cloudfactory.agent.v1.AgentService.InstallHostUpdates:input_type -> cloudfactory.agent.v1.HostRequest
+	54,  // 76: cloudfactory.agent.v1.AgentService.Reboot:input_type -> cloudfactory.agent.v1.HostRequest
+	55,  // 77: cloudfactory.agent.v1.AgentService.UpdateAgent:input_type -> cloudfactory.agent.v1.UpdateAgentRequest
+	35,  // 78: cloudfactory.agent.v1.AgentService.PruneBackups:input_type -> cloudfactory.agent.v1.PruneBackupsRequest
+	37,  // 79: cloudfactory.agent.v1.AgentService.SetSftp:input_type -> cloudfactory.agent.v1.SetSftpRequest
+	38,  // 80: cloudfactory.agent.v1.AgentService.ConfigureHost:input_type -> cloudfactory.agent.v1.ConfigureHostRequest
+	39,  // 81: cloudfactory.agent.v1.AgentService.SetPanelCertificate:input_type -> cloudfactory.agent.v1.SetPanelCertificateRequest
+	40,  // 82: cloudfactory.agent.v1.AgentService.SetPanelBrands:input_type -> cloudfactory.agent.v1.SetPanelBrandsRequest
+	8,   // 83: cloudfactory.agent.v1.AgentService.SetDatabaseServer:input_type -> cloudfactory.agent.v1.DatabaseServerRequest
+	17,  // 84: cloudfactory.agent.v1.AgentService.DeleteDatabaseServer:input_type -> cloudfactory.agent.v1.DeleteDatabaseServerRequest
+	9,   // 85: cloudfactory.agent.v1.AgentService.SetMailServer:input_type -> cloudfactory.agent.v1.SetMailServerRequest
+	10,  // 86: cloudfactory.agent.v1.AgentService.PrepareMailNode:input_type -> cloudfactory.agent.v1.PrepareMailNodeRequest
+	12,  // 87: cloudfactory.agent.v1.AgentService.SetMailNode:input_type -> cloudfactory.agent.v1.SetMailNodeRequest
+	13,  // 88: cloudfactory.agent.v1.AgentService.SetMailDomain:input_type -> cloudfactory.agent.v1.MailDomainRequest
+	13,  // 89: cloudfactory.agent.v1.AgentService.DeleteMailDomain:input_type -> cloudfactory.agent.v1.MailDomainRequest
+	14,  // 90: cloudfactory.agent.v1.AgentService.SetMailbox:input_type -> cloudfactory.agent.v1.SetMailboxRequest
+	15,  // 91: cloudfactory.agent.v1.AgentService.DeleteMailbox:input_type -> cloudfactory.agent.v1.MailAddressRequest
+	16,  // 92: cloudfactory.agent.v1.AgentService.SetMailAlias:input_type -> cloudfactory.agent.v1.SetMailAliasRequest
+	15,  // 93: cloudfactory.agent.v1.AgentService.DeleteMailAlias:input_type -> cloudfactory.agent.v1.MailAddressRequest
+	66,  // 94: cloudfactory.agent.v1.AgentService.SetDnsZones:input_type -> cloudfactory.agent.v1.SetDnsZonesRequest
+	67,  // 95: cloudfactory.agent.v1.AgentService.DeleteDnsZones:input_type -> cloudfactory.agent.v1.DeleteDnsZonesRequest
+	65,  // 96: cloudfactory.agent.v1.AgentService.SetDnsSecondaries:input_type -> cloudfactory.agent.v1.SetDnsSecondariesRequest
+	70,  // 97: cloudfactory.agent.v1.AgentService.SetCronJobs:input_type -> cloudfactory.agent.v1.SetCronJobsRequest
+	71,  // 98: cloudfactory.agent.v1.AgentService.RunCronJob:input_type -> cloudfactory.agent.v1.RunCronJobRequest
+	72,  // 99: cloudfactory.agent.v1.AgentService.RunCommand:input_type -> cloudfactory.agent.v1.RunCommandRequest
+	73,  // 100: cloudfactory.agent.v1.AgentService.Deploy:input_type -> cloudfactory.agent.v1.DeployRequest
+	74,  // 101: cloudfactory.agent.v1.AgentService.ActivateRelease:input_type -> cloudfactory.agent.v1.ActivateReleaseRequest
+	75,  // 102: cloudfactory.agent.v1.AgentService.InstallDependencies:input_type -> cloudfactory.agent.v1.InstallDependenciesRequest
+	50,  // 103: cloudfactory.agent.v1.AgentService.SetMesh:input_type -> cloudfactory.agent.v1.SetMeshRequest
+	51,  // 104: cloudfactory.agent.v1.AgentService.RotateMeshKey:input_type -> cloudfactory.agent.v1.RotateMeshKeyRequest
+	52,  // 105: cloudfactory.agent.v1.AgentService.SendDatabaseServer:input_type -> cloudfactory.agent.v1.SendDatabaseServerRequest
+	53,  // 106: cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer:input_type -> cloudfactory.agent.v1.ReceiveDatabaseServerRequest
+	41,  // 107: cloudfactory.agent.v1.AgentService.SetPacks:input_type -> cloudfactory.agent.v1.SetPacksRequest
+	24,  // 108: cloudfactory.agent.v1.AgentService.SetWebsiteSecurity:input_type -> cloudfactory.agent.v1.SetWebsiteSecurityRequest
+	42,  // 109: cloudfactory.agent.v1.AgentService.SetCertificates:input_type -> cloudfactory.agent.v1.SetCertificatesRequest
+	94,  // 110: cloudfactory.agent.v1.AgentService.FetchImport:input_type -> cloudfactory.agent.v1.FetchImportRequest
+	95,  // 111: cloudfactory.agent.v1.AgentService.ImportFiles:input_type -> cloudfactory.agent.v1.ImportFilesRequest
+	96,  // 112: cloudfactory.agent.v1.AgentService.ImportDatabase:input_type -> cloudfactory.agent.v1.ImportDatabaseRequest
+	97,  // 113: cloudfactory.agent.v1.AgentService.ImportMail:input_type -> cloudfactory.agent.v1.ImportMailRequest
+	99,  // 114: cloudfactory.agent.v1.AgentService.DeleteImport:input_type -> cloudfactory.agent.v1.DeleteImportRequest
+	56,  // 115: cloudfactory.agent.v1.AgentService.GetStatus:input_type -> cloudfactory.agent.v1.GetStatusRequest
+	76,  // 116: cloudfactory.agent.v1.AgentService.ListFiles:input_type -> cloudfactory.agent.v1.FileRequest
+	76,  // 117: cloudfactory.agent.v1.AgentService.ReadFile:input_type -> cloudfactory.agent.v1.FileRequest
+	80,  // 118: cloudfactory.agent.v1.AgentService.WriteFile:input_type -> cloudfactory.agent.v1.WriteFileRequest
+	76,  // 119: cloudfactory.agent.v1.AgentService.MakeDirectory:input_type -> cloudfactory.agent.v1.FileRequest
+	81,  // 120: cloudfactory.agent.v1.AgentService.MoveFile:input_type -> cloudfactory.agent.v1.MoveFileRequest
+	76,  // 121: cloudfactory.agent.v1.AgentService.DeleteFile:input_type -> cloudfactory.agent.v1.FileRequest
+	87,  // 122: cloudfactory.agent.v1.AgentService.GetLogs:input_type -> cloudfactory.agent.v1.GetLogsRequest
+	90,  // 123: cloudfactory.agent.v1.AgentService.GetFirewallEvents:input_type -> cloudfactory.agent.v1.GetFirewallEventsRequest
+	84,  // 124: cloudfactory.agent.v1.AgentService.CheckBranches:input_type -> cloudfactory.agent.v1.CheckBranchesRequest
+	0,   // 125: cloudfactory.agent.v1.AgentService.CreateWebsite:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 126: cloudfactory.agent.v1.AgentService.DeleteWebsite:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 127: cloudfactory.agent.v1.AgentService.SetWebsitePower:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 128: cloudfactory.agent.v1.AgentService.SetLimits:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 129: cloudfactory.agent.v1.AgentService.SetRuntime:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 130: cloudfactory.agent.v1.AgentService.AddDomain:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 131: cloudfactory.agent.v1.AgentService.RemoveDomain:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 132: cloudfactory.agent.v1.AgentService.CreateDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 133: cloudfactory.agent.v1.AgentService.DeleteDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 134: cloudfactory.agent.v1.AgentService.SetDatabaseUser:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 135: cloudfactory.agent.v1.AgentService.DeleteDatabaseUser:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 136: cloudfactory.agent.v1.AgentService.Backup:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 137: cloudfactory.agent.v1.AgentService.Restore:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 138: cloudfactory.agent.v1.AgentService.InstallHostUpdates:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 139: cloudfactory.agent.v1.AgentService.Reboot:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 140: cloudfactory.agent.v1.AgentService.UpdateAgent:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 141: cloudfactory.agent.v1.AgentService.PruneBackups:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 142: cloudfactory.agent.v1.AgentService.SetSftp:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 143: cloudfactory.agent.v1.AgentService.ConfigureHost:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 144: cloudfactory.agent.v1.AgentService.SetPanelCertificate:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 145: cloudfactory.agent.v1.AgentService.SetPanelBrands:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 146: cloudfactory.agent.v1.AgentService.SetDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 147: cloudfactory.agent.v1.AgentService.DeleteDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 148: cloudfactory.agent.v1.AgentService.SetMailServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 149: cloudfactory.agent.v1.AgentService.PrepareMailNode:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 150: cloudfactory.agent.v1.AgentService.SetMailNode:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 151: cloudfactory.agent.v1.AgentService.SetMailDomain:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 152: cloudfactory.agent.v1.AgentService.DeleteMailDomain:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 153: cloudfactory.agent.v1.AgentService.SetMailbox:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 154: cloudfactory.agent.v1.AgentService.DeleteMailbox:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 155: cloudfactory.agent.v1.AgentService.SetMailAlias:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 156: cloudfactory.agent.v1.AgentService.DeleteMailAlias:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 157: cloudfactory.agent.v1.AgentService.SetDnsZones:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 158: cloudfactory.agent.v1.AgentService.DeleteDnsZones:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 159: cloudfactory.agent.v1.AgentService.SetDnsSecondaries:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 160: cloudfactory.agent.v1.AgentService.SetCronJobs:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 161: cloudfactory.agent.v1.AgentService.RunCronJob:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 162: cloudfactory.agent.v1.AgentService.RunCommand:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 163: cloudfactory.agent.v1.AgentService.Deploy:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 164: cloudfactory.agent.v1.AgentService.ActivateRelease:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 165: cloudfactory.agent.v1.AgentService.InstallDependencies:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 166: cloudfactory.agent.v1.AgentService.SetMesh:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 167: cloudfactory.agent.v1.AgentService.RotateMeshKey:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 168: cloudfactory.agent.v1.AgentService.SendDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 169: cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 170: cloudfactory.agent.v1.AgentService.SetPacks:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 171: cloudfactory.agent.v1.AgentService.SetWebsiteSecurity:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 172: cloudfactory.agent.v1.AgentService.SetCertificates:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 173: cloudfactory.agent.v1.AgentService.FetchImport:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 174: cloudfactory.agent.v1.AgentService.ImportFiles:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 175: cloudfactory.agent.v1.AgentService.ImportDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 176: cloudfactory.agent.v1.AgentService.ImportMail:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,   // 177: cloudfactory.agent.v1.AgentService.DeleteImport:output_type -> cloudfactory.agent.v1.JobAccepted
+	68,  // 178: cloudfactory.agent.v1.AgentService.GetStatus:output_type -> cloudfactory.agent.v1.HostStatus
+	78,  // 179: cloudfactory.agent.v1.AgentService.ListFiles:output_type -> cloudfactory.agent.v1.FileList
+	79,  // 180: cloudfactory.agent.v1.AgentService.ReadFile:output_type -> cloudfactory.agent.v1.FileContent
+	77,  // 181: cloudfactory.agent.v1.AgentService.WriteFile:output_type -> cloudfactory.agent.v1.FileEntry
+	77,  // 182: cloudfactory.agent.v1.AgentService.MakeDirectory:output_type -> cloudfactory.agent.v1.FileEntry
+	77,  // 183: cloudfactory.agent.v1.AgentService.MoveFile:output_type -> cloudfactory.agent.v1.FileEntry
+	82,  // 184: cloudfactory.agent.v1.AgentService.DeleteFile:output_type -> cloudfactory.agent.v1.FileDeleted
+	89,  // 185: cloudfactory.agent.v1.AgentService.GetLogs:output_type -> cloudfactory.agent.v1.Logs
+	93,  // 186: cloudfactory.agent.v1.AgentService.GetFirewallEvents:output_type -> cloudfactory.agent.v1.FirewallEvents
+	86,  // 187: cloudfactory.agent.v1.AgentService.CheckBranches:output_type -> cloudfactory.agent.v1.BranchHeads
+	125, // [125:188] is the sub-list for method output_type
+	62,  // [62:125] is the sub-list for method input_type
+	62,  // [62:62] is the sub-list for extension type_name
+	62,  // [62:62] is the sub-list for extension extendee
+	0,   // [0:62] is the sub-list for field type_name
 }
 
 func init() { file_cloudfactory_agent_v1_agent_proto_init() }
@@ -7808,7 +8423,7 @@ func file_cloudfactory_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudfactory_agent_v1_agent_proto_rawDesc), len(file_cloudfactory_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   99,
+			NumMessages:   107,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
