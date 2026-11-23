@@ -443,6 +443,17 @@ class ImportTest extends TestCase
         $this->assertSame('db/bakery_wp/bakery_wp.mysql.sql.zst', $hestia['websites'][0]['databases'][0]['content']['path']);
         $this->assertSame('mail/bakeryclub.example.org/accounts.tar.zst/hello', $hestia['mail']['domains'][0]['mailboxes'][0]['content']['path']);
 
+        // An account export of Cloudfactory has an archive of the files of each website, and no
+        // messages and no passwords of the mailboxes.
+        $export = Description::normalise(DemoImport::account('corner-bakery-export-20261122-2103.tar'));
+        $this->assertSame(['cloudfactory', '0.1.0', 'Corner Bakery'], [$export['source']['panel'], $export['source']['version'], $export['source']['account']]);
+        $this->assertSame('websites/bakeryclub.example.org/files.tar.gz', $export['websites'][0]['content']['files']['path']);
+        $this->assertSame([], $export['websites'][0]['content']['files']['exclude']);
+        $this->assertSame(['orders', 'websites/orders.bakeryclub.example.org/databases/mariadb-orders_k3m9_orders.sql.gz'], [$export['websites'][1]['databases'][0]['name'], $export['websites'][1]['databases'][0]['content']['path']]);
+        $this->assertSame(['', null, 0], [$export['mail']['domains'][0]['mailboxes'][0]['passwordHash'], $export['mail']['domains'][0]['mailboxes'][0]['content'], $export['mail']['domains'][0]['mailboxes'][0]['messages']]);
+        $this->assertStringNotContainsString('SOA', $export['dnsZones'][0]['zoneFile']);
+        $this->assertSame('cloudfactory', Description::normalise(DemoImport::account('https://files.example/acme.cf-export.tar'))['source']['panel']);
+
         $this->expectExceptionMessage('comes from a panel that the import does not know');
         Description::normalise(['format' => Description::FORMAT, 'source' => ['panel' => 'ispconfig']]);
     }

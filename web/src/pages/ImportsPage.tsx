@@ -44,8 +44,8 @@ function ImportStatusLabel({ item }: { item: Import }) {
 const plural = (n: number, one: string, many = `${one}s`) => `${count(n)} ${n === 1 ? one : many}`;
 
 /**
- * The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP (docs/imports.md). The web server reads
- * the backup archive, and the page shows the plan. The administrator selects the parts, and the
+ * The import of an account from cPanel, DirectAdmin, Plesk, HestiaCP or a different Cloudfactory
+ * panel (docs/imports.md). The web server reads the backup archive, and the page shows the plan. The administrator selects the parts, and the
  * panel makes the websites, the databases, the mail and the DNS zones. Then the servers copy
  * the files, the dumps and the messages.
  */
@@ -65,7 +65,7 @@ function ImportList() {
       <main id="main" className="content content-wide">
         <PageHeader
           title="Imports"
-          description="Move an account from cPanel, DirectAdmin, Plesk or HestiaCP to this panel: its websites with their files and databases, its mail with the messages, and its DNS zones."
+          description="Move an account from cPanel, DirectAdmin, Plesk, HestiaCP or a different Cloudfactory panel to this panel: its websites with their files and databases, its mail with the messages, and its DNS zones."
           actions={<button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>Import account</button>}
         />
         <FormError error={data.error} />
@@ -73,7 +73,7 @@ function ImportList() {
         {data.data && data.data.length === 0 && (
           <Card title="Imports">
             <div className="card-body">
-              <Empty title="No imports">Make a full backup of the account on the old panel. In cPanel, use <strong>Backup</strong>, then <strong>Download a Full Account Backup</strong>. In DirectAdmin, use <strong>Create/Restore Backups</strong>. In Plesk, make a backup of the subscription in <strong>Backup Manager</strong>, then download it. In HestiaCP, open <strong>Backups</strong>, make a backup, then download it. Then select <strong>Import account</strong>.</Empty>
+              <Empty title="No imports">Make a full backup of the account on the old panel. In cPanel, use <strong>Backup</strong>, then <strong>Download a Full Account Backup</strong>. In DirectAdmin, use <strong>Create/Restore Backups</strong>. In Plesk, make a backup of the subscription in <strong>Backup Manager</strong>, then download it. In HestiaCP, open <strong>Backups</strong>, make a backup, then download it. In a different Cloudfactory panel, open <strong>My account</strong>, make an account export, then download it. Then select <strong>Import account</strong>.</Empty>
             </div>
           </Card>
         )}
@@ -160,7 +160,7 @@ function NewImportDialog({ onClose, onCreated }: { onClose: () => void; onCreate
         </label>
       </fieldset>
       {source === "upload" ? (
-        <Field label="File" hint="A cPanel backup (cpmove-USER.tar.gz or backup-…_USER.tar.gz), a DirectAdmin backup (user.ADMIN.USER.tar.gz or .tar.zst), a Plesk backup (backup_….tar) or a HestiaCP backup (USER.2026-11-22_05-00-00.tar)." error={err.fileName ?? err.sizeBytes}>
+        <Field label="File" hint="A cPanel backup (cpmove-USER.tar.gz or backup-…_USER.tar.gz), a DirectAdmin backup (user.ADMIN.USER.tar.gz or .tar.zst), a Plesk backup (backup_….tar), a HestiaCP backup (USER.2026-11-22_05-00-00.tar) or a Cloudfactory account export (NAME-export-….tar)." error={err.fileName ?? err.sizeBytes}>
           {(p) => <input {...p} type="file" accept=".gz,.tgz,.zst,.bz2,.tar" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />}
         </Field>
       ) : (
@@ -214,7 +214,7 @@ function ImportPage({ id }: { id: string }) {
               <div className="alert alert-danger alert-stack" role="alert">
                 <p><strong>The import failed.</strong></p>
                 {i.error && <p className="cause">{i.error}</p>}
-                <p>Check that the file is a full account backup of cPanel, DirectAdmin, Plesk or HestiaCP, then start a new import.</p>
+                <p>Check that the file is a full account backup of cPanel, DirectAdmin, Plesk or HestiaCP, or a Cloudfactory account export, then start a new import.</p>
               </div>
             )}
             {i.status === "ready" && i.plan && <PlanForm item={i} plan={i.plan} onStarted={data.set} />}

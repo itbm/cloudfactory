@@ -138,7 +138,7 @@ class RunDemoJob implements ShouldQueue
             ],
             $job->action === AgentAction::FetchImport && str_contains(self::importName($job), 'fail') => [
                 'step' => 1,
-                'error' => 'the archive is not a cPanel, DirectAdmin, Plesk or HestiaCP account backup',
+                'error' => 'the archive is not a cPanel, DirectAdmin, Plesk or HestiaCP account backup, or a Cloudfactory account export',
             ],
             default => null,
         };
