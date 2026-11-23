@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
-import type { CronJob, Deploy, LogEntry } from "../api/types";
+import type { CronJob, Deploy, LogEntry, LogSearchResult, WebsiteCommand } from "../api/types";
 import { toBase64 } from "../features/FileManager";
 import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelApi";
 
@@ -88,8 +88,38 @@ describe("the logs of a website", () => {
   };
   const line: LogEntry = { at: "2026-11-14T09:58:52.700Z", source: "error", text: "PHP Warning:  Undefined array key", access: null };
 
+  /**
+   * The first page of a search with no filters: 45 requests and 5 lines of the errors, the
+   * newest first, with a summary. The tests do not use the logs of the fixtures.
+   */
+  function firstPage(): LogSearchResult {
+    const entries: LogEntry[] = Array.from({ length: 50 }, (_, i) => {
+      const at = new Date(Date.UTC(2026, 10, 14, 10, 0) - i * 60_000).toISOString();
+      if (i % 10 === 9) return { ...line, at };
+      const client = i % 3 === 0 ? "198.51.100.250" : "203.0.113.7";
+      return { ...request, at, access: { ...request.access!, client, method: "GET", uri: i % 2 ? "/" : "/products", status: i % 7 === 0 ? 500 : 200 } };
+    });
+    return {
+      entries, next: "page-2",
+      summary: {
+        total: 120, sources: { access: 108, output: 0, error: 12 }, statuses: { "1xx": 0, "2xx": 96, "3xx": 0, "4xx": 4, "5xx": 8 },
+        topPaths: [{ value: "/products", count: 60 }, { value: "/", count: 48 }], topClients: [{ value: "203.0.113.7", count: 72 }, { value: "198.51.100.250", count: 36 }],
+        sizeBytes: 912_000, oldest: "2026-11-12T10:00:00Z",
+      },
+    };
+  }
+
+  /** Signs in as an owner and opens the logs of a website, with firstPage as the answer. */
+  async function openLogs(): Promise<{ api: PanelApi; id: string }> {
+    const api = await signedIn("owner");
+    const id = website("shop.acme.example.com").id;
+    api.on(`GET /websites/${id}/logs?*`, () => firstPage());
+    render(<MemoryRouter initialEntries={[`/websites/${id}/logs`]}><App /></MemoryRouter>);
+    return { api, id };
+  }
+
   it("shows the requests, the lines and the summary of the search", async () => {
-    await open("shop.acme.example.com", "logs");
+    await openLogs();
     const view = await screen.findByLabelText("Log lines");
     await waitFor(() => expect(view.querySelectorAll(".log-row")).toHaveLength(50));
     const summary = screen.getByRole("region", { name: "Summary of the search" });
@@ -99,7 +129,7 @@ describe("the logs of a website", () => {
   });
 
   it("sends the search and the filters to the API, and loads older entries", async () => {
-    const { api, id } = await open("shop.acme.example.com", "logs");
+    const { api, id } = await openLogs();
     await screen.findByRole("button", { name: "Load older entries" });
     const paths: string[] = [];
     api.on(`GET /websites/${id}/logs?*`, (_body, path) => {
@@ -132,7 +162,7 @@ describe("the logs of a website", () => {
   });
 
   it("filters by a top client of the summary, and shows the error of the API", async () => {
-    const { api, id } = await open("shop.acme.example.com", "logs");
+    const { api, id } = await openLogs();
     const top = (await screen.findAllByRole("button", { name: /^Show the requests of / }))[0];
     const client = top.getAttribute("aria-label")!.replace("Show the requests of ", "");
     api.on(`GET /websites/${id}/logs?*`, () => [422, { message: "Enter an IP address or a network, for example 203.0.113.7 or 203.0.113.0/24.", errors: { client: ["Enter an IP address or a network."] } }]);
@@ -162,6 +192,54 @@ describe("the cron jobs of a website", () => {
     fireEvent.change(screen.getByLabelText("Command"), { target: { value: "true" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(await screen.findByText("The schedule must have 5 fields.")).toBeTruthy();
+  });
+});
+
+describe("run a command and the command log", () => {
+  const entry = (over: Partial<WebsiteCommand> = {}): WebsiteCommand => ({
+    id: "c-new", websiteId: "", source: "run", command: "php artisan migrate --force", state: "done", exitCode: 0, timedOut: false, timeoutSeconds: 600,
+    actor: "Olu Owner", ip: "203.0.113.14", jobId: "job-1", createdAt: "2026-11-14T10:00:00+00:00", startedAt: "2026-11-14T10:00:00+00:00", finishedAt: "2026-11-14T10:00:03+00:00", ...over,
+  });
+
+  it("shows the command log, with a role name for an administrator", async () => {
+    await open("api.acme.example.com", "commands");
+    expect(await screen.findByText("php artisan queue:restart")).toBeTruthy();
+    const row = screen.getByText("du -sh storage/logs").closest("tr")!;
+    expect(within(row).getByText("Administrator")).toBeTruthy();
+    expect(screen.getByText("Exit code 1")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/podman|runuser|\.sock/);
+  });
+
+  it("runs a command and shows its output", async () => {
+    const { api, id } = await open("api.acme.example.com", "commands");
+    await screen.findByText("php artisan queue:restart");
+    api.on(`POST /websites/${id}/commands`, () => [202, { command: entry({ websiteId: id, state: "running", exitCode: null }), job: apiJob({ websiteId: id, action: "RunCommand" }) }]);
+    api.on("GET /jobs/job-1", () => ({ data: apiJob({ websiteId: id, action: "RunCommand" }) }));
+    api.on(`GET /websites/${id}/commands/c-new`, () => ({ command: entry({ websiteId: id, output: "INFO  Running migrations." }) }));
+    fireEvent.change(screen.getByLabelText("Command"), { target: { value: " php artisan migrate --force " } });
+    fireEvent.change(screen.getByLabelText("Time limit"), { target: { value: "1800" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    expect((await screen.findByLabelText("Output of the command")).textContent).toBe("INFO  Running migrations.");
+    expect(screen.getAllByText("Exit code 0").length).toBeGreaterThan(0);
+    expect(api.changes.at(-1)).toEqual({ method: "POST", path: `/websites/${id}/commands`, body: { command: "php artisan migrate --force", timeoutSeconds: 1800 } });
+  });
+
+  it("shows the output of an entry and uses its command again", async () => {
+    const { api, id } = await open("api.acme.example.com", "commands");
+    await screen.findByText("php artisan queue:restart");
+    api.on(`GET /websites/${id}/commands/*`, () => ({ command: entry({ websiteId: id, command: "php artisan orders:export --since=yesterday", exitCode: 1, output: "PHP Fatal error" }) }));
+    fireEvent.click(screen.getByRole("button", { name: /^Show output\s*of php artisan orders:export/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect((await within(dialog).findByLabelText("Output")).textContent).toBe("PHP Fatal error");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use this command again" }));
+    expect((screen.getByLabelText("Command") as HTMLInputElement).value).toBe("php artisan orders:export --since=yesterday");
+  });
+
+  it("does not run a command on a stopped website", async () => {
+    await open("old.acme.example.com", "commands");
+    fireEvent.change(screen.getByLabelText("Command"), { target: { value: "php -v" } });
+    expect((screen.getByRole("button", { name: "Run" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("The website does not run. Start it before you run a command.")).toBeTruthy();
   });
 });
 
@@ -213,7 +291,9 @@ describe("the deploys of a website", () => {
     api.change<Deploy>(`/websites/${id}/deploy`, (d) => { deploy = structuredClone(d); });
     api.on(`PUT /websites/${id}/deploy`, () => ({ ...deploy, source: { ...deploy.source!, trigger: "schedule", checkMinutes: 15, migrationCommand: null, webhookUrl: null } }));
     await screen.findByText("git@github.com:acme-example/api.git");
-    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    // The card of the previews can also have a button "Change".
+    const repository = screen.getByRole("heading", { name: "Git repository" }).closest("section")!;
+    fireEvent.click(within(repository).getByRole("button", { name: "Change" }));
     fireEvent.click(screen.getByRole("radio", { name: /^Schedule/ }));
     fireEvent.change(screen.getByLabelText("Check the branch every"), { target: { value: "15" } });
     fireEvent.change(screen.getByLabelText("Migration command"), { target: { value: "  " } });

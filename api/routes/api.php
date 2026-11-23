@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\PluginController;
 use App\Http\Controllers\Api\PreviewController;
 use App\Http\Controllers\Api\RolloutController;
 use App\Http\Controllers\Api\RuntimeController;
+use App\Http\Controllers\Api\SecurityController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
@@ -49,6 +50,7 @@ use App\Http\Controllers\Api\SsoController;
 use App\Http\Controllers\Api\TrustedKeyController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WebsiteCommandController;
 use App\Http\Controllers\Api\WebsiteController;
 use Illuminate\Support\Facades\Route;
 
@@ -152,6 +154,10 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/files/move', [FileController::class, 'move'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/logs', [LogController::class, 'index'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/usage', [UsageController::class, 'website']);
+            // The protection of a website in the edge proxy: firewall, IP rules, protected paths, sign-in limit.
+            Route::get('websites/{websiteId}/security', [SecurityController::class, 'show']);
+            Route::patch('websites/{websiteId}/security', [SecurityController::class, 'update']);
+            Route::get('websites/{websiteId}/security/events', [SecurityController::class, 'events'])->middleware('throttle:site-tools');
             Route::get('usage-alerts', [UsageController::class, 'alerts']);
 
             Route::get('websites/{websiteId}/cron-jobs', [CronJobController::class, 'index']);
@@ -159,6 +165,11 @@ Route::prefix('v1')->group(function () {
             Route::patch('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'update']);
             Route::delete('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'destroy']);
             Route::post('websites/{websiteId}/cron-jobs/{cronJobId}/run', [CronJobController::class, 'run'])->middleware('throttle:30,1,post-websites-x-cron-jobs-x-run');
+
+            // Run a command in the container of the website, and the command log (FR-802).
+            Route::get('websites/{websiteId}/commands', [WebsiteCommandController::class, 'index']);
+            Route::post('websites/{websiteId}/commands', [WebsiteCommandController::class, 'store'])->middleware('throttle:30,1,post-websites-x-commands');
+            Route::get('websites/{websiteId}/commands/{commandId}', [WebsiteCommandController::class, 'show']);
 
             // Deploys from a Git repository.
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);

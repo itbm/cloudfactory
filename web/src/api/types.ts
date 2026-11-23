@@ -1221,6 +1221,37 @@ export interface LogQuery {
   summary?: boolean;
 }
 
+export type FirewallMode = "off" | "detect" | "block";
+
+/** The protection of a website in the edge proxy. The API never gives the passwords. */
+export interface WebsiteSecurity {
+  firewall: { mode: FirewallMode; excludedRules: number[]; skippedPaths: string[] };
+  ipRules: { allow: string[]; block: string[] };
+  protectedPaths: { path: string; users: { name: string }[] }[];
+  signInLimit: { requestsPerMinute: number; paths: string[] };
+}
+
+/** A change of the protection. Each part replaces the part that the website has. */
+export interface WebsiteSecurityChange {
+  firewall?: { mode: FirewallMode; excludedRules?: number[]; skippedPaths?: string[] };
+  ipRules?: { allow?: string[]; block?: string[] };
+  /** A user with no password keeps the password that the same user of the same path has. */
+  protectedPaths?: { path: string; users: { name: string; password?: string | null }[] }[];
+  signInLimit?: { requestsPerMinute: number; paths?: string[] };
+}
+
+/** A request that the firewall blocked or detected. */
+export interface FirewallEvent {
+  at: string | null;
+  clientIp: string;
+  /** Only an event that the firewall blocked has the host. */
+  host: string | null;
+  uri: string;
+  action: "blocked" | "detected";
+  score: number;
+  rules: { id: number; message: string; data: string }[];
+}
+
 export interface CronJob {
   id: string;
   schedule: string;
@@ -1230,6 +1261,35 @@ export interface CronJob {
   lastResult: "ok" | "failed" | null;
   lastExitCode: number | null;
   lastOutput: string | null;
+}
+
+/** One entry of the command log of a website: a command that a user ran with "Run a command". */
+export interface WebsiteCommand {
+  id: string;
+  websiteId: string;
+  source: "run";
+  command: string;
+  /** "done": the command ran and has an exit code. "failed": the command did not start. */
+  state: "running" | "done" | "failed";
+  exitCode: number | null;
+  /** True when the server stopped the command at its time limit. */
+  timedOut: boolean;
+  timeoutSeconds: number | null;
+  /** Who ran the command. A user who must not see the person gets a role name in its place. */
+  actor: string;
+  ip: string | null;
+  jobId: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** The end of the output. Only the answer for one entry has it. */
+  output?: string | null;
+}
+
+/** A page of the command log, the newest command first. */
+export interface CommandLogPage {
+  data: WebsiteCommand[];
+  meta: { currentPage: number; lastPage: number; total: number };
 }
 
 /** How a deploy starts: by hand, with a signed webhook, or with a check of the branch on a schedule. */

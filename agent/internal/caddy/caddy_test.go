@@ -27,8 +27,8 @@ type fakeCaddy struct {
 	tls []map[string]any
 	// calls are the method and path of each request.
 	calls []string
-	// logging is the logging configuration.
-	logging any
+	// logging is the logging configuration, or nil when the configuration has none.
+	logging map[string]any
 	// config has the JSON of some paths of the configuration, as the admin API keeps it:
 	// the TLS connection policies, the automatic HTTPS and the loaded certificates.
 	config map[string]string
@@ -95,10 +95,10 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write([]byte("{}"))
 	case r.Method == http.MethodPost && r.URL.Path == "/load":
+		var cfg map[string]any
+		readJSON(r, &cfg)
+		f.logging, _ = cfg["logging"].(map[string]any)
 		f.loaded = true
-		var config map[string]any
-		readJSON(r, &config)
-		f.logging = config["logging"]
 	case r.Method == http.MethodGet && r.URL.Path == "/config/logging":
 		json.NewEncoder(w).Encode(f.logging)
 	case r.Method == http.MethodPost && r.URL.Path == "/config/logging":
@@ -451,7 +451,7 @@ func TestTheAccessLogGoesToTheAgent(t *testing.T) {
 	b, _ := json.Marshal(BaseConfig()["logging"])
 	for _, want := range []string{
 		`"writer":{"address":"tcp/169.254.77.1:19514","dial_timeout":"2s","output":"net","soft_start":true}`,
-		`"time_format":"rfc3339_nano"`, `"include":["http.log.access"]`, `"default":{"exclude":["http.log.access"]}`,
+		`"time_format":"rfc3339_nano"`, `"include":["http.log.access"]`, `"default":{"exclude":["http.log.access","http.handlers.waf"]}`,
 	} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("logging has no %s:\n%s", want, b)

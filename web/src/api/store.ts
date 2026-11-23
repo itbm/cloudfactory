@@ -13,7 +13,9 @@ import type {
   BackupPolicy,
   BrandFields,
   Confirmation,
+  CommandLogPage,
   CronJob,
+  FirewallEvent,
   Customer,
   CustomerCertificate,
   DatabaseEngine,
@@ -55,7 +57,10 @@ import type {
   TokenScope,
   UpdatePolicy,
   Website,
+  WebsiteCommand,
   WebsiteKind,
+  WebsiteSecurity,
+  WebsiteSecurityChange,
   UsageAlert,
   UsageAlertSettings,
   UsageHistory,
@@ -592,6 +597,50 @@ export function removeCronJob(websiteId: string, cronJobId: string): Promise<voi
 /** Runs the command of a cron job now. The promise resolves when the command has finished. */
 export function runCronJob(websiteId: string, cronJobId: string): Promise<Job> {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/cron-jobs/${cronJobId}/run`)).then((r) => track(r.job));
+}
+
+// The protection of a website in the edge proxy
+
+type SecurityAnswer = { security: WebsiteSecurity; job: live.ApiJob | null };
+
+export function readSecurity(websiteId: string): Promise<WebsiteSecurity> {
+  return call(() => live.request<{ security: WebsiteSecurity }>("GET", `/websites/${websiteId}/security`)).then((r) => r.security);
+}
+
+/** Changes the protection. The panel saves the change at once, and a job applies it to the edge proxy. */
+export function setSecurity(websiteId: string, change: WebsiteSecurityChange): Promise<WebsiteSecurity> {
+  return call(() => live.request<SecurityAnswer>("PATCH", `/websites/${websiteId}/security`, change)).then((r) => {
+    if (r.job) void track(r.job);
+    return r.security;
+  });
+}
+
+/** The last requests that the firewall blocked or detected, the newest first. */
+export function listFirewallEvents(websiteId: string): Promise<FirewallEvent[]> {
+  return call(() => live.request<{ events: FirewallEvent[] }>("GET", `/websites/${websiteId}/security/events`)).then((r) => r.events);
+}
+
+/** A page of the command log of a website. The search finds the commands with the text. */
+export function listCommands(websiteId: string, page = 1, search = ""): Promise<CommandLogPage> {
+  const query = [page > 1 ? `page=${page}` : "", search.trim() ? `q=${q(search.trim())}` : ""].filter(Boolean).join("&");
+  return call(() => live.request<CommandLogPage>("GET", `/websites/${websiteId}/commands${query ? `?${query}` : ""}`));
+}
+
+/** One entry of the command log, with the end of the output. */
+export function readCommand(websiteId: string, commandId: string): Promise<WebsiteCommand> {
+  return call(() => live.request<{ command: WebsiteCommand }>("GET", `/websites/${websiteId}/commands/${commandId}`)).then((r) => r.command);
+}
+
+/**
+ * Runs one command line in the container of the website. The promise resolves with the entry
+ * of the command log when the command has ended.
+ */
+export async function runCommand(websiteId: string, command: string, timeoutSeconds?: number): Promise<WebsiteCommand> {
+  const r = await call(() => live.request<{ command: WebsiteCommand; job: live.ApiJob | null }>("POST", `/websites/${websiteId}/commands`, {
+    command: command.trim(), ...(timeoutSeconds ? { timeoutSeconds } : {}),
+  }));
+  await track(r.job);
+  return readCommand(websiteId, r.command.id);
 }
 
 export function readDeploy(websiteId: string): Promise<Deploy> {

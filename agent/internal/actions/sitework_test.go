@@ -227,7 +227,7 @@ func TestCronRunsInTheContainerOfTheWebsite(t *testing.T) {
 		t.Fatalf("runs = %+v", runs)
 	}
 	call, _ := called(f, asSite+"env")
-	if !strings.HasSuffix(call, " sh 3600 cf-acme_x7k2 php artisan schedule:run") || !strings.Contains(call, `podman exec --workdir /app "$2" sh -c '`) || !strings.Contains(call, `exec timeout -k 10 "$0" sh -c "$1"`) {
+	if !strings.HasSuffix(call, " sh 3600 cf-acme_x7k2 16000 php artisan schedule:run") || !strings.Contains(call, `podman exec --workdir /app "$2" sh -c '`) || !strings.Contains(call, `exec timeout -k 10 "$0" sh -c "$1"`) {
 		t.Errorf("call = %q", call)
 	}
 	// The result is in three reports, and then no more.

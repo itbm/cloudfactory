@@ -667,6 +667,9 @@ a.cell-title:hover { text-decoration: underline; }
 /* The fields are side by side: no space above the second field, and a button keeps its size. */
 .inline-form .field + .field { margin-top: 0; }
 .inline-form .field:has(> .btn) { flex: 0 0 auto; }
+/* Run a command: the command gets most of the line, and the time limit a short field. */
+.inline-form.command-form .field:first-child { flex: 4 1 320px; }
+.inline-form.command-form .field:has(> .select) { flex: 0 1 180px; }
 
 .notifications { position: relative; }
 .notifications-panel {

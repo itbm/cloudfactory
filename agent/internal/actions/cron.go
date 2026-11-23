@@ -177,23 +177,33 @@ func (d *Deps) RunCronJob(req *agentv1.RunCronJobRequest) (jobs.Job, error) {
 	}}, nil
 }
 
-var cronExit = regexp.MustCompile(`(?s)^(.*)cf-exit:(\d+)\n?$`)
+var containerExit = regexp.MustCompile(`(?s)^(.*)cf-exit:(\d+)\n?$`)
 
-// cronScript runs the command in the container and then writes the exit code. The output of
-// the command has its standard output and its standard error. "timeout" stops a command
-// that does not end. "tail" reads all the output and gives only the end of it to the agent,
-// so a command that writes much output continues and uses no memory of the agent
-// (adversarial review, finding G5-01). The agent keeps cronOutputMax bytes of that end.
+// containerScript runs a command in the container of a website and then writes the exit code.
+// The output of the command has its standard output and its standard error. "timeout" stops a
+// command that does not end. "tail" reads all the output and gives only the end of it ($3
+// bytes) to the agent, so a command that writes much output continues and uses no memory of
+// the agent (adversarial review, finding G5-01). The arguments are the time limit in seconds,
+// the container, the number of bytes and the command.
 //
 // The first "timeout" is in the container, where it stops the command. The second "timeout"
 // is on the host and stops only "podman exec": the command of an exec session continues in
 // the container when its client stops (finding G5-13). It is for an image with no "timeout".
-const cronScript = `{ timeout -k 10 "$(($1 + 30))" podman exec --workdir /app "$2" sh -c 'if command -v timeout >/dev/null 2>&1; then exec timeout -k 10 "$0" sh -c "$1"; fi; exec sh -c "$1"' "$1" "$3" 2>&1; echo "cf-exit:$?"; } | tail -c 16384`
+const containerScript = `{ timeout -k 10 "$(($1 + 30))" podman exec --workdir /app "$2" sh -c 'if command -v timeout >/dev/null 2>&1; then exec timeout -k 10 "$0" sh -c "$1"; fi; exec sh -c "$1"' "$1" "$4" 2>&1; echo "cf-exit:$?"; } | tail -c "$3"`
 
-// runCron runs the command of a cron job in the container of the website and gives the result.
-func (d *Deps) runCron(ctx context.Context, site *Site, e CronEntry) panel.CronRun {
-	limit := orDefault(d.CronLimit, time.Hour)
-	run := panel.CronRun{WebsiteID: site.ID, ID: e.ID, At: time.Now().UTC().Format(time.RFC3339), ExitCode: -1}
+// containerRun is the result of a command in the container of a website.
+type containerRun struct {
+	Output   string
+	ExitCode int
+	// TimedOut is true when the agent stopped the command at its time limit.
+	TimedOut bool
+}
+
+// runInContainer runs a command line in the container of a website, as the Unix user of the
+// website, and gives the end of the output (at most keep bytes) and the exit code. The exit
+// code is -1 when the command did not start.
+func (d *Deps) runInContainer(ctx context.Context, site *Site, command string, limit time.Duration, keep int) containerRun {
+	run := containerRun{ExitCode: -1}
 	uid, err := d.Host.LookupUID(site.UnixUser)
 	if err != nil {
 		run.Output = "the website has no Unix user"
@@ -202,14 +212,17 @@ func (d *Deps) runCron(ctx context.Context, site *Site, e CronEntry) panel.CronR
 	container := quadlet.Website{UnixUser: site.UnixUser, Suffix: site.Suffix}.ContainerName()
 	ctx, cancel := context.WithTimeout(ctx, limit+time.Minute)
 	defer cancel()
+	// "tail" reads 4 times the size that the agent keeps: the text is valid UTF-8 again after
+	// the cut, and the lines at the end are complete.
 	out, err := d.Run.Run(ctx, "runuser", "-u", site.UnixUser, "--", "env", "XDG_RUNTIME_DIR=/run/user/"+strconv.Itoa(uid),
-		"sh", "-c", cronScript, "sh", strconv.Itoa(int(limit.Seconds())), container, e.Command)
-	m := cronExit.FindStringSubmatch(out)
+		"sh", "-c", containerScript, "sh", strconv.Itoa(int(limit.Seconds())), container, strconv.Itoa(4*keep), command)
+	m := containerExit.FindStringSubmatch(out)
 	switch {
 	case m != nil:
 		run.Output = m[1]
 		run.ExitCode, _ = strconv.Atoi(m[2])
 		if run.ExitCode == 124 {
+			run.TimedOut = true
 			run.Output += fmt.Sprintf("\nThe command did not end in %s. The agent stopped it.", limit)
 		}
 	case err != nil:
@@ -217,8 +230,15 @@ func (d *Deps) runCron(ctx context.Context, site *Site, e CronEntry) panel.CronR
 	default:
 		run.Output = out
 	}
-	run.Output = lastLines(sitelogs.Clean(run.Output), cronOutputMax)
+	run.Output = lastLines(sitelogs.Clean(run.Output), keep)
 	return run
+}
+
+// runCron runs the command of a cron job in the container of the website and gives the result.
+func (d *Deps) runCron(ctx context.Context, site *Site, e CronEntry) panel.CronRun {
+	at := time.Now().UTC().Format(time.RFC3339)
+	r := d.runInContainer(ctx, site, e.Command, orDefault(d.CronLimit, time.Hour), cronOutputMax)
+	return panel.CronRun{WebsiteID: site.ID, ID: e.ID, At: at, ExitCode: r.ExitCode, Output: r.Output}
 }
 
 // lastLines gives the end of a text, at most max bytes.
