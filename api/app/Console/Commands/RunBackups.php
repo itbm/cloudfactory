@@ -22,8 +22,9 @@ use Illuminate\Support\Carbon;
 /**
  * FR-901 and FR-902: the nightly backup of each website and each mailbox at the time of the
  * backup policy (UTC), with the retention policy. On Sunday, each server also removes from its
- * repository the backups of the websites and the mailboxes that were deleted some time ago,
- * and the data that no snapshot uses.
+ * repository the backups of the websites and the mailboxes that were deleted some time ago, the
+ * backups of the files of the websites that moved to a different server some time ago, and the
+ * data that no snapshot uses.
  * The scheduler runs this command each minute. It starts the backups once each day.
  */
 #[Signature('cloudfactory:backups {--now : Start the backups now}')]
@@ -51,6 +52,12 @@ class RunBackups extends Command
         $count = 0;
         Website::with('server')->whereNull('staging_of')->where('status', '!=', WebsiteStatus::Failed->value)->orderBy('name')
             ->each(function (Website $website) use ($jobs, &$count) {
+                // The files of a website that moves are on the way to its new server.
+                if ($website->status === WebsiteStatus::Moving) {
+                    $this->line("No backup of {$website->name}: the website moves to a different server.");
+
+                    return;
+                }
                 // A backup would start a database server that moves to a different server
                 // (adversarial review, finding A4-01). The website has its backup the next night.
                 if ($moving = BackupController::movingServerOf($website)) {
@@ -84,10 +91,17 @@ class RunBackups extends Command
             foreach (BackupController::repositoryServers()->whereIn('state', Server::WORKING)->orderBy('name')->get() as $server) {
                 // Audit finding R8: the job also removes the backups of the websites and the
                 // mailboxes that were deleted some time ago. A limit keeps the job short. The
-                // rest goes next week.
-                $deleted = BackupRemoval::where('server_id', $server->id)->where('remove_after', '<=', $now)->orderBy('remove_after')->limit(self::DELETED_WEBSITES)->pluck('website_id')->all();
+                // rest goes next week. A website that moved to a different server: the job
+                // removes only the backups of its files. The backups of its databases on this
+                // server stay.
+                $removals = BackupRemoval::where('server_id', $server->id)->where('remove_after', '<=', $now)->orderBy('remove_after')->limit(self::DELETED_WEBSITES)->get(['website_id', 'files_only']);
                 $mailboxIds = MailboxSnapshot::where('server_id', $server->id)->where('remove_after', '<=', $now)->distinct()->orderBy('mailbox_id')->limit(self::DELETED_WEBSITES)->pluck('mailbox_id')->all();
-                $jobs->dispatch($server, AgentAction::PruneBackups, ['target' => BackupController::repository($server), 'forgetWebsiteIds' => $deleted, 'forgetMailboxIds' => $mailboxIds], "Remove unused backup data of {$server->name}");
+                $jobs->dispatch($server, AgentAction::PruneBackups, [
+                    'target' => BackupController::repository($server),
+                    'forgetWebsiteIds' => $removals->where('files_only', false)->pluck('website_id')->values()->all(),
+                    'forgetMovedWebsiteIds' => $removals->where('files_only', true)->pluck('website_id')->values()->all(),
+                    'forgetMailboxIds' => $mailboxIds,
+                ], "Remove unused backup data of {$server->name}");
                 $this->line("Started the weekly prune on {$server->name}.");
             }
         }

@@ -43,6 +43,11 @@ describe("the usage graphs and the usage alerts", () => {
     expect(row.textContent).toContain("Memory");
     expect(main.textContent).not.toContain("harbourbooks");
     expect(within(main).queryByRole("button", { name: "Save thresholds" })).toBeNull();
+    // FR-603: a mailbox that is 90% full has an alert. The link opens the mailbox on the email page.
+    const mailbox = within(main).getByRole("link", { name: "sales@acme.example.com" });
+    expect(mailbox.getAttribute("href")).toBe("/email?mailbox=sales%40acme.example.com");
+    expect(mailbox.closest("tr")!.textContent).toContain("Mailbox storage");
+    expect(main.textContent).toContain("A mailbox alert opens when a mailbox is 90% full");
     // The overview of the website tells about the alert.
     cleanup();
     render(<MemoryRouter initialEntries={[`/websites/${website("shop.acme.example.com").id}`]}><App /></MemoryRouter>);

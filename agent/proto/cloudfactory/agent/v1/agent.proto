@@ -27,6 +27,10 @@ service AgentService {
   rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
   rpc Backup(BackupRequest) returns (JobAccepted);
   rpc Restore(RestoreRequest) returns (JobAccepted);
+  // Account export (docs/account-export.md): the agent sends the files and the database dumps
+  // of a website to the panel, as parts of an export. Each part goes to
+  // /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
+  rpc ExportWebsite(ExportWebsiteRequest) returns (JobAccepted);
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
   rpc Reboot(HostRequest) returns (JobAccepted);
   rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
@@ -74,6 +78,8 @@ service AgentService {
   rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
   rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
   rpc ReceiveDatabaseServer(ReceiveDatabaseServerRequest) returns (JobAccepted);
+  rpc SendWebsite(SendWebsiteRequest) returns (JobAccepted);
+  rpc ReceiveWebsite(ReceiveWebsiteRequest) returns (JobAccepted);
   // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
   // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
   // each pack only with a signature of its publisher, and loads the runtimes of the packs.
@@ -98,6 +104,10 @@ service AgentService {
   rpc ImportDatabase(ImportDatabaseRequest) returns (JobAccepted);
   rpc ImportMail(ImportMailRequest) returns (JobAccepted);
   rpc DeleteImport(DeleteImportRequest) returns (JobAccepted);
+  // The archives of the file manager. The agent does each job as the Unix user of the
+  // website, in the directory of the website, as the methods of the file manager below.
+  rpc MakeArchive(MakeArchiveRequest) returns (JobAccepted);
+  rpc ExtractArchive(ExtractArchiveRequest) returns (JobAccepted);
   // Scans the files of a website for malware with ClamAV. The job first updates the
   // signatures of the server. The result has the files that ClamAV found.
   rpc ScanWebsite(ScanWebsiteRequest) returns (JobAccepted);
@@ -114,6 +124,7 @@ service AgentService {
   rpc MakeDirectory(FileRequest) returns (FileEntry);
   rpc MoveFile(MoveFileRequest) returns (FileEntry);
   rpc DeleteFile(FileRequest) returns (FileDeleted);
+  rpc SetFileMode(SetFileModeRequest) returns (FileModeSet);
   rpc GetLogs(GetLogsRequest) returns (Logs);
   // The last requests of a website that the firewall of the edge proxy blocked or detected.
   // This method does not make a job.
@@ -628,8 +639,12 @@ message PruneBackupsRequest {
   map<string, string> credentials = 3;
   // The IDs of deleted websites. The agent removes all their snapshots first.
   repeated string forget_website_ids = 4;
+  // The IDs of websites that moved to a different server. The agent removes their snapshots of
+  // the files (the kinds "scheduled" and "manual"). It keeps the snapshots of the databases
+  // that this server makes for them (the kinds "scheduled-databases" and "manual-databases").
+  repeated string forget_moved_website_ids = 5;
   // The IDs of deleted mailboxes. The agent removes all their snapshots first.
-  repeated string forget_mailbox_ids = 5;
+  repeated string forget_mailbox_ids = 6;
 }
 
 message RestoreRequest {
@@ -725,6 +740,33 @@ message SetPanelCertificateRequest {
 message SetPanelBrandsRequest {
   string job_id = 1;
   repeated string domains = 2;
+}
+
+// The parts of an account export that this agent sends to the panel.
+message ExportWebsiteRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // The ID of the part for the files of the website. Empty: this job sends no files, for
+  // example a job for the databases of a website of a different server.
+  string files_part = 4;
+  // The databases in the database servers on this server.
+  repeated ExportDatabase databases = 5;
+  // True: the website is on a different server. This job sends only the dumps of its
+  // databases in the database servers on this server.
+  bool databases_only = 6;
+  // The ID of the customer of the website. It is necessary with databases_only: the agent
+  // has no record of a website of a different server.
+  string customer = 7;
+}
+
+message ExportDatabase {
+  string engine = 1;
+  string name = 2;
+  // The ID of its database server.
+  string database_server = 3;
+  // The ID of the part for the dump of this database.
+  string part = 4;
 }
 
 message SetPacksRequest {
@@ -878,6 +920,46 @@ message ReceiveDatabaseServerRequest {
   // minutes. The data has no time limit, but a connection that sends nothing for 2 minutes
   // ends.
   int32 timeout_seconds = 5;
+}
+
+// The move of a website to a different server, with the same ID, Unix user, domains and member
+// address. The panel sends ReceiveWebsite to the new server and SendWebsite to the old server.
+// The old server stops the website and sends its files through the tunnel between the two
+// servers, to the transfer port of the new server. The new server then starts the website and
+// adds its edge route. The files of the old server stay until the panel sends DeleteWebsite to
+// it. The databases stay in their database servers.
+message SendWebsiteRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // The mesh address of the new server. It must be the address of a peer of this server.
+  string to = 4;
+  // The secret of this move: 64 hexadecimal characters. The new server accepts only a
+  // connection that sends it first.
+  string token = 5;
+  // True when the website was stopped before the move. When the files did not go to the new
+  // server, the agent starts the website again only when this is false.
+  bool stopped = 6;
+}
+
+message ReceiveWebsiteRequest {
+  string job_id = 1;
+  // The website, as for CreateWebsite.
+  Website website = 2;
+  // The mesh address of the old server. It must be the address of a peer of this server.
+  string from = 3;
+  string token = 4;
+  // The time that this server waits for the old server to connect, in seconds. 0 means 15
+  // minutes. The files have no time limit, but a connection that sends nothing for 2 minutes
+  // ends.
+  int32 timeout_seconds = 5;
+  // True when the website was stopped before the move. The new server then does not start it.
+  bool stopped = 6;
+  // The SFTP access of the website, as for SetSftp.
+  bool sftp_enabled = 7;
+  repeated string sftp_keys = 8;
+  // The cron jobs of the website, as for SetCronJobs.
+  repeated CronJob cron_jobs = 9;
 }
 
 message HostRequest {
@@ -1118,6 +1200,55 @@ message MoveFileRequest {
 }
 
 message FileDeleted {}
+
+// Changes the permission bits of a file or a directory. The agent does not change a link.
+message SetFileModeRequest {
+  string website_id = 1;
+  string path = 2;
+  // The permission bits: 3 octal digits, for example "0644" or "755". The bits setuid,
+  // setgid and sticky are not permitted. The owner of a directory must keep the read and the
+  // search permission.
+  string mode = 3;
+  // True also changes each file and each directory in the directory. mode is then the mode
+  // of the directory and of each directory in it.
+  bool recursive = 4;
+  // With recursive: the mode of each file in the directory.
+  string file_mode = 5;
+}
+
+message FileModeSet {
+  FileEntry file = 1;
+  // The number of files and directories that the agent changed.
+  int64 changed = 2;
+}
+
+// Puts files and directories of a website in a new archive in the files of the website. The
+// job result has the fields of sitefiles.Summary: files, directories, links, sizeBytes,
+// skipped and skippedNames.
+message MakeArchiveRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The files and the directories for the archive. Each one goes in the archive with its
+  // name, at the top level. "/" alone puts all files of the website in the archive.
+  repeated string paths = 3;
+  // The path of the new archive. The end of the name gives the format: ".zip", ".tar.gz",
+  // ".tgz" or ".tar". The agent does not replace a file.
+  string path = 4;
+}
+
+// Extracts an archive of a website into a directory of the website. The job result has the
+// fields of sitefiles.Summary: files, directories, links, sizeBytes, kept, skipped and
+// skippedNames.
+message ExtractArchiveRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The path of the archive: ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2" or ".tbz2".
+  string path = 3;
+  // The directory for the files of the archive. The agent makes it when it does not exist.
+  string to = 4;
+  // True replaces the files and the links that exist. False keeps them.
+  bool overwrite = 5;
+}
 
 message BranchCheck {
   // The website of the Git source. The agent takes the Unix user, the image and the limits

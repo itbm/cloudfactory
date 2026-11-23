@@ -148,7 +148,8 @@ class CronJobController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private static function payload(CronJob $c): array
+    /** @return array<string, mixed> The cron job for the agent. */
+    public static function payload(CronJob $c): array
     {
         return ['id' => $c->id, 'schedule' => $c->schedule, 'command' => $c->command, 'enabled' => $c->enabled];
     }

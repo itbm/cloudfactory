@@ -143,10 +143,11 @@ class SchemaAndStatesTest extends TestCase
         return [
             'website' => [WebsiteStatus::class, [
                 'starting' => ['running', 'stopping', 'stopped', 'failed'],
-                'running' => ['stopping', 'stopped', 'starting', 'failed'],
+                'running' => ['stopping', 'stopped', 'starting', 'failed', 'moving'],
                 'stopping' => ['stopped', 'running', 'starting', 'failed'],
-                'stopped' => ['starting', 'running', 'failed'],
+                'stopped' => ['starting', 'running', 'failed', 'moving'],
                 'failed' => ['starting'],
+                'moving' => ['running', 'stopped'],
             ]],
             'job' => [JobState::class, [
                 'queued' => ['running', 'succeeded', 'failed'],

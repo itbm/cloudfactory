@@ -10,6 +10,7 @@
 import { BUILT_IN_ENGINES } from "../lib/labels";
 import * as live from "./live";
 import type {
+  AccountExport,
   ApiToken,
   Autoresponder,
   AutoresponderInput,
@@ -93,7 +94,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], databaseEngines: BUILT_IN_ENGINES, dnsZones: [], certificates: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], databaseEngines: BUILT_IN_ENGINES, dnsZones: [], certificates: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], exports: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -390,6 +391,21 @@ export function createStagingCopy(websiteId: string): Promise<{ websiteId: strin
   });
 }
 
+/**
+ * Moves a website to a different server (administrators only). The new server receives the
+ * files, and the old server sends them. The panel reads the websites again when the two jobs
+ * are complete.
+ */
+export function moveWebsite(websiteId: string, serverId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ website: live.ApiWebsite; jobs: live.ApiJob[] }>("POST", `/websites/${websiteId}/move`, { serverId });
+    update((d) => {
+      d.websites = d.websites.map((w) => (w.id === websiteId ? live.toWebsite(r.website) : w));
+    });
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh());
+  });
+}
+
 export function deleteWebsite(websiteId: string) {
   return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}`)).then((r) => track(r.job));
 }
@@ -532,6 +548,27 @@ export function moveFile(websiteId: string, from: string, to: string): Promise<F
 }
 
 /** Removes a file, or a directory with all that is in it. */
+/** Changes the permission bits. With "recursive", "mode" is for the folders and "fileMode" for the files. */
+export function setFileMode(websiteId: string, path: string, mode: string, options: { recursive?: boolean; fileMode?: string } = {}): Promise<{ file: FileEntry; changed: number }> {
+  const body = options.recursive ? { path, mode, recursive: true, fileMode: options.fileMode } : { path, mode };
+  return call(() => live.request<{ file: FileEntry; changed: number }>("PUT", `${filesOf(websiteId)}/permissions`, body));
+}
+
+/**
+ * Starts the job that makes an archive. The promise resolves when the API accepts the job. The
+ * promise "done" resolves when the agent has finished it.
+ */
+export async function makeArchive(websiteId: string, paths: string[], path: string): Promise<{ done: Promise<Job> }> {
+  const r = await call(() => live.request<JobAnswer>("POST", `${filesOf(websiteId)}/archives`, { paths, path }));
+  return { done: track(r.job) };
+}
+
+/** Starts the job that extracts an archive, as makeArchive. */
+export async function extractArchive(websiteId: string, path: string, to: string, overwrite: boolean): Promise<{ done: Promise<Job> }> {
+  const r = await call(() => live.request<JobAnswer>("POST", `${filesOf(websiteId)}/extract`, { path, to, overwrite }));
+  return { done: track(r.job) };
+}
+
 export function deleteFile(websiteId: string, path: string): Promise<void> {
   return call(() => live.request<void>("DELETE", `${filesOf(websiteId)}?path=${q(path)}`));
 }
@@ -1884,6 +1921,42 @@ export function createToken(name: string, scopes: TokenScope[], days: number, pa
     await refresh();
     const token: ApiToken = { id: String(r.id), name: name.trim(), scopes: r.scopes, createdAt: now(), expiresAt: r.expiresAt, prefix: `${r.id}|` };
     return { token, secret: r.token };
+  });
+}
+
+// Account exports (docs/account-export.md)
+
+/**
+ * Starts an export of an account. With no customer, the API exports the account of the user.
+ * An administrator or a reseller gives the customer.
+ */
+export function startExport(options: { customerId?: string; files: boolean; databases: boolean }) {
+  return call(() => live.request<AccountExport>("POST", "/exports", { ...(options.customerId ? { customerId: options.customerId } : {}), files: options.files, databases: options.databases })).then(async (e) => {
+    await refresh();
+    return e;
+  });
+}
+
+export function removeExport(exportId: string) {
+  return call(() => live.request("DELETE", `/exports/${q(exportId)}`)).then(() => refresh());
+}
+
+/**
+ * Downloads the archive of an export. The API gives a short link with a signature, so that the
+ * browser downloads the large file itself, with no token.
+ */
+export function downloadExport(exportId: string) {
+  return call(async () => {
+    const link = await live.request<{ url: string; fileName: string }>("POST", `/exports/${q(exportId)}/download-link`);
+    const a = document.createElement("a");
+    a.href = link.url;
+    a.download = link.fileName;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    void refresh();
+    return link;
   });
 }
 

@@ -135,6 +135,13 @@ func TestPanelUnits(t *testing.T) {
 			t.Errorf("%s publishes a port", name)
 		}
 	}
+	// The API receives the parts of an account export, and the queue and the scheduler
+	// complete and remove them. Thus the three containers use the same directory.
+	for _, name := range []string{"cf-panel-api.container", "cf-panel-queue.container", "cf-panel-scheduler.container"} {
+		if !strings.Contains(units[name], "Environment=CF_EXPORT_PATH=/data/exports\n") || !strings.Contains(units[name], "Volume=/var/lib/cloudfactory/panel:/data:Z\n") {
+			t.Errorf("%s does not have the directory of the exports", name)
+		}
+	}
 }
 
 // Audit findings B4 and R4: gVisor keeps a file lock in one sandbox, so three containers cannot

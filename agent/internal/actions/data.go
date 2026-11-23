@@ -770,9 +770,26 @@ func (d *Deps) forget(ctx context.Context, r repo, tags string, keep *agentv1.Re
 	return ids, nil
 }
 
-// forgetAll removes all snapshots with a tag, for example "website=<ID>": the snapshots of a
-// website or a mailbox that the panel deleted (audit finding R8).
-func (d *Deps) forgetAll(ctx context.Context, r repo, tag string) error {
+// forgetWebsite removes all snapshots of a website that the panel deleted (audit finding R8).
+func (d *Deps) forgetWebsite(ctx context.Context, r repo, websiteID string) error {
+	return d.forgetTagged(ctx, r, "website="+websiteID)
+}
+
+// forgetWebsiteFiles removes the snapshots of the files of a website that moved to a different
+// server: the kinds "scheduled" and "manual". The snapshots of the databases that this server
+// makes for the website stay, because the database servers can stay on this server.
+func (d *Deps) forgetWebsiteFiles(ctx context.Context, r repo, websiteID string) error {
+	for _, kind := range []string{"scheduled", "manual"} {
+		if err := d.forgetTagged(ctx, r, "website="+websiteID+",kind="+kind); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// forgetTagged removes all snapshots with the tags of tag, for example "mailbox=<ID>": the
+// snapshots of a mailbox that the panel deleted (audit finding R8).
+func (d *Deps) forgetTagged(ctx context.Context, r repo, tag string) error {
 	out, err := d.restic(ctx, r, "snapshots", "--tag", tag)
 	if err != nil {
 		return err
@@ -815,29 +832,37 @@ func (d *Deps) PruneBackups(req *agentv1.PruneBackupsRequest) (jobs.Job, error) 
 	if err != nil {
 		return jobs.Job{}, err
 	}
-	tags := []string{}
-	for _, id := range req.GetForgetWebsiteIds() {
+	for _, id := range append(slices.Clone(req.GetForgetWebsiteIds()), req.GetForgetMovedWebsiteIds()...) {
 		if err := validate.ID(id); err != nil {
 			return jobs.Job{}, err
 		}
-		tags = append(tags, "website="+id)
 	}
 	for _, id := range req.GetForgetMailboxIds() {
 		if err := validate.ID(id); err != nil {
 			return jobs.Job{}, err
 		}
-		tags = append(tags, "mailbox="+id)
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: "backup-repository", Long: true, Steps: []jobs.Step{
-		{Name: "Remove backups of deleted websites and mailboxes", Do: func(ctx context.Context) error {
-			if len(tags) == 0 {
+		{Name: "Remove backups of deleted and moved websites, and of deleted mailboxes", Do: func(ctx context.Context) error {
+			if len(req.GetForgetWebsiteIds()) == 0 && len(req.GetForgetMovedWebsiteIds()) == 0 && len(req.GetForgetMailboxIds()) == 0 {
 				return nil
 			}
 			if err := d.ensureRepo(ctx, r); err != nil {
 				return err
 			}
-			for _, tag := range tags {
-				if err := d.forgetAll(ctx, r, tag); err != nil {
+			for _, id := range req.GetForgetWebsiteIds() {
+				if err := d.forgetWebsite(ctx, r, id); err != nil {
+					return err
+				}
+			}
+			for _, id := range req.GetForgetMailboxIds() {
+				if err := d.forgetTagged(ctx, r, "mailbox="+id); err != nil {
+					return err
+				}
+			}
+			// A website that moved to a different server has its new backups there.
+			for _, id := range req.GetForgetMovedWebsiteIds() {
+				if err := d.forgetWebsiteFiles(ctx, r, id); err != nil {
 					return err
 				}
 			}
