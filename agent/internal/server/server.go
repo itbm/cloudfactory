@@ -199,8 +199,8 @@ func (s *Service) SetPacks(_ context.Context, r *connect.Request[agentv1.SetPack
 	return s.submit(s.Deps.SetPacks(r.Msg))
 }
 
-func (s *Service) ExportWebsite(_ context.Context, r *connect.Request[agentv1.ExportWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
-	return s.submit(s.Deps.ExportWebsite(r.Msg))
+func (s *Service) ScanWebsite(_ context.Context, r *connect.Request[agentv1.ScanWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ScanWebsite(r.Msg))
 }
 
 func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agentv1.SetWebsiteSecurityRequest]) (*connect.Response[agentv1.JobAccepted], error) {
