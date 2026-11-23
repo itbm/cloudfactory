@@ -84,7 +84,7 @@ class DemoTest extends TestCase
         $this->seed(DemoSeeder::class);
 
         $this->signInAs('admin@example.com');
-        $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(14, 'data');
+        $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(15, 'data');
         $this->getJson('/api/v1/servers')->assertOk()->assertJsonCount(4, 'data');
         $this->getJson('/api/v1/mail/domains')->assertOk()->assertJsonCount(4, 'data');
 
@@ -102,7 +102,8 @@ class DemoTest extends TestCase
         $this->getJson('/api/v1/mail/mailboxes')->assertOk()->assertJsonCount(4, 'data');
         $this->getJson('/api/v1/mail/aliases')->assertOk()->assertJsonCount(2, 'data');
         $names = $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name');
-        $this->assertCount(8, $names);
+        // The websites of Acme and the preview of a pull request of its API.
+        $this->assertCount(9, $names);
         $this->assertSame(['orders-1c16.internal', 'queue-00b1.internal'], array_values(array_filter($names, fn ($n) => ! str_ends_with($n, 'acme.example.com'))));
     }
 
@@ -258,7 +259,7 @@ class DemoTest extends TestCase
         $this->assertSame([JobState::Succeeded, 0], [$job->state, $cron->fresh()->last_exit_code]);
 
         // A deploy goes live. A repository with "fail" in its address fails in the build.
-        $this->getJson("{$base}/deploy")->assertOk()->assertJsonPath('source.trigger', 'webhook')->assertJsonPath('source.secrets', ['COMPOSER_AUTH', 'SENTRY_AUTH_TOKEN'])->assertJsonCount(5, 'releases');
+        $this->getJson("{$base}/deploy")->assertOk()->assertJsonPath('source.trigger', 'webhook')->assertJsonPath('source.secrets', ['COMPOSER_AUTH', 'SENTRY_AUTH_TOKEN'])->assertJsonCount(6, 'releases');
         $answer = $this->postJson("{$base}/deploy/releases")->assertAccepted()->json();
         $this->assertSame(JobState::Succeeded, $this->runJob($answer['job']['id'])->state);
         $this->getJson("{$base}/deploy")->assertJsonPath('releases.0.id', $answer['release']['id'])->assertJsonPath('releases.0.live', true)->assertJsonPath('releases.0.state', 'ready');

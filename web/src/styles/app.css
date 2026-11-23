@@ -694,9 +694,20 @@ a.cell-title:hover { text-decoration: underline; }
 .login .brand span { color: var(--text-muted); }
 /* The TOTP key must show in full, because the user can type it into an app. */
 .login .copy-field code { white-space: normal; overflow-wrap: anywhere; }
+/* FR-103: the passkeys of the user in Settings. */
+.passkey-list { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--border); }
+.passkey-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.passkey-list .passkey-icon { flex: none; color: var(--text-muted); }
+.passkey-list .passkey-text { flex: 1 1 200px; min-width: 0; }
+.passkey-list .cell-sub { overflow-wrap: anywhere; }
 /* The links under a form of a page before sign-in, for example "Back to sign in". */
 .login a.btn-link { display: inline-flex; align-items: center; }
 .login .sign-in-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 8px; }
+.login .alert { margin-bottom: 14px; }
+.login .sign-in-options { display: flex; flex-direction: column; gap: 8px; }
+.login .sign-in-options .btn { width: 100%; }
+.form-section .sp-label { font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+.form-section .hint + .sp-label { margin-top: 0; }
 .divider { display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 13px; margin: 18px 0; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 

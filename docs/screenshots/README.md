@@ -260,7 +260,7 @@ The file manager of a website, with the permissions of each file. Select files t
 
 ### owner-12-website-deploys
 
-The deploys of a website from a Git repository: the repository, the deploy key, the build secrets and the releases.
+The deploys of a website from a Git repository: the repository, the migration command, the deploy key, the signed webhook, the build secrets and the releases. A release that failed its health check after the switch shows "Went back".
 
 ![owner-12-website-deploys](owner-12-website-deploys.png)
 

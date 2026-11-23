@@ -106,15 +106,40 @@ The product specification, section 6.4, gives the requirements.
   standard output, and the start and the end of the error output. It discards the remainder
   while the command runs. A command of a customer thus cannot use all the memory of the
   agent with its output. A cron job keeps only the last 16 KiB of its output.
-- The panel encrypts the private deploy key, the webhook token and the build secrets in its
-  database. The API gives the names of the secrets, not their values. The private key and
-  the secrets are in a job only when the panel sends it to the agent.
-- The address of a webhook has a random token. Each person who has the address can start a
-  deploy of the branch, but cannot change what the deploy does. The route accepts 30
-  requests each minute. The panel does not start a second deploy while one is in progress.
+- The panel encrypts the private deploy key, the webhook secret and the build secrets in its
+  database. It keeps only the SHA-256 hash of the webhook token. The API gives the names of
+  the secrets, not their values. The private key and the secrets are in a job only when the
+  panel sends it to the agent. Only a token with the scope to change websites gets the
+  webhook address and the webhook secret.
+- The address of a webhook has a random token. The panel also checks the signature of each
+  request with the webhook secret of the website: HMAC-SHA256 of the body for GitHub, Gitea,
+  Forgejo, Gogs and Bitbucket, and the secret token for GitLab. It compares in constant
+  time, and refuses a request with no correct signature. Thus a person who knows only the
+  address cannot start a deploy. A correct request can start a deploy of the branch, but
+  cannot change what the deploy does. The route accepts 30 requests each minute. The panel
+  does not start a second deploy while one is in progress: it deploys the last push after
+  the deploy. **New address and secret** changes both at once.
+- A check of the branch for a deploy on a schedule runs `git ls-remote` in the build
+  container of the website, as the website user, with the deploy key of the website. The
+  host of the agent runs no Git command. The agent removes the key after the check.
+- The migration command runs in the build container, before the switch, with the build
+  secrets. A customer controls this command, as it controls the build commands.
+- A preview of a pull request clones the branch from the repository of the Git source, not
+  from the fork of the pull request. The panel ignores a pull request from a fork. A pull
+  request event needs the same signature as a push. Thus a preview gets only the code of a
+  branch that a person with push access wrote.
+- A preview does not get the environment variables and the build secrets of the website,
+  unless the user turns on this setting. The code of a pull request can read them, so the
+  hint in the panel tells the user to keep live credentials out of the previews. A preview
+  does not run the migration command.
+- The domain of the previews must be in a verified domain of the customer, or in a DNS zone
+  of the customer in the panel. A customer thus cannot take a name of a different customer
+  with a preview.
+- A preview is a website of the plan of the customer. The website limit of the plan, the
+  limits of a website and the limit of the previews (at most 10) apply.
 - A user needs the token scope for websites to use these routes. An owner sees only its own
   websites. For a suspended customer, the panel refuses each change of a file, a cron job and
-  a Git source, and each deploy.
+  a Git source, each deploy and each new preview.
 - The panel records each change of a file, a cron job and a Git source in the audit log.
   It does not record the content of a file.
 
@@ -586,8 +611,9 @@ directory with mode 0700:
 
 ## Users and API tokens
 
-- Users sign in with a password and a TOTP code. An administrator and a reseller must have
-  TOTP. A website owner can turn it on. A TOTP code works only one
+- Users sign in with a password and a TOTP code, with a passkey, or with a single sign-on
+  provider. An administrator and a
+  reseller must have TOTP. A website owner can turn it on. A TOTP code works only one
   time. The panel examines the password first, and asks for the code only when the password is
   correct and TOTP is on for the user. Thus a user with no TOTP does not see the code step, and
   a wrong password gives its error immediately. The request for the code shows that the
@@ -621,6 +647,82 @@ directory with mode 0700:
     or the reseller.
   - The template of the email must have the link (`{{resetUrl}}`) in the text, and not in the
     subject. A user cannot turn off this email.
+- A user can add passkeys in **Settings** and then sign in with a passkey, in place of the
+  password and the TOTP code (FR-103). The panel uses WebAuthn. Obey these rules:
+  - Each passkey must verify the user, with a fingerprint, a face or a PIN. Thus a passkey is
+    a sign-in with two factors: the device and the person. The panel refuses a passkey that
+    only shows that a person is present.
+  - A passkey works only on the panel domain where the user added it: the panel domain or
+    the panel domain of a reseller brand. The panel examines each answer against the domain
+    of the passkey, not against the `Host` header, and accepts only the exact HTTPS origin of
+    that domain. A different domain or a subdomain cannot use the passkey. Thus a fake site
+    cannot get a sign-in from a passkey.
+  - Passkeys do not work on the address of a website or on an IP address. The sign-in page
+    shows the passkey button only on a panel domain.
+  - To add or remove a passkey, the user gives the password and, when TOTP is on, a code. Only
+    a sign-in session can add, rename or remove a passkey, not an API token. A stolen session
+    alone cannot add a passkey. After 5 incorrect attempts, the panel refuses these changes
+    for 15 minutes.
+  - A challenge works one time only, for 5 minutes. The panel asks for no attestation, so it
+    does not know the make of the device. The panel keeps only the public key of a passkey, not a secret.
+  - At the start of a sign-in, the browser shows the passkeys of the domain. The panel does
+    not ask for an email, so the answer shows no data of a user.
+  - A passkey is in a password manager or in a cloud account when **Synced** shows next to
+    it. Then it is on more than one device.
+  - A user can have 20 passkeys. Each sign-in with a passkey is an audit event, and a new
+    device gets the email **Sign-in from a new device**.
+  - A suspended user cannot sign in with a passkey. A reset of the password by an
+    administrator or a reseller removes all passkeys of the user. A reset by email does not:
+    the user can still sign in with a passkey.
+  - An administrator or a reseller must still set up TOTP. A passkey does not replace this
+    rule, because the panel asks for TOTP to confirm changes to administrators.
+- An administrator can add OpenID Connect and SAML 2.0 identity providers in **Settings >
+  Single sign-on**. Then the sign-in page shows the button **Sign in with NAME** for each
+  provider that is on. Obey these rules:
+  - The panel signs in only a user who connected the account of the provider in **Settings**.
+    The panel does not make users: an administrator or a reseller makes the user first.
+  - An administrator can let the panel connect the user with the same email at the first
+    sign-in (**Connect users by email**). Then the panel accepts only an email that the
+    provider verified (`email_verified` in OpenID Connect), and only for the email domains in
+    the list of the provider. A SAML answer has no verified flag, so the panel trusts the
+    emails of a SAML provider when this setting is on. Turn it on only when the provider
+    controls all the email addresses of these domains. Otherwise, a person who gets an email
+    address of the domain at the provider can sign in as the user with that email.
+  - To connect or disconnect an account, the user gives the password and, when TOTP is on, a
+    code. Only a sign-in session can do this, not an API token. One account of a provider
+    connects to one user only.
+  - A sign-in with a provider does not replace TOTP. When TOTP is on for the user, the panel
+    asks for a code after the provider signs the user in. After 5 wrong codes, the sign-in
+    stops. The wrong codes count for the sign-in lock of the account.
+  - Single sign-on works only on the panel domain. It does not work on the panel domain of a
+    reseller brand, on the address of a website or on an IP address. The provider sends the
+    browser back only to the addresses that the administrator registered.
+  - OpenID Connect: the panel uses the authorization code flow with PKCE (`S256`), a state
+    and a nonce. It reads the discovery document of the issuer, and the issuer in the
+    document must be the same. The panel verifies the signature of the ID token with the
+    keys of the provider, and examines the issuer, the audience, the expiry time and the
+    nonce. It accepts only `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`,
+    `ES384` and `EdDSA`. It refuses `HS256` and `none`. Each address of the provider must
+    use HTTPS.
+  - SAML: the panel sends the request with the HTTP-Redirect binding, and the provider posts
+    the answer. The answer or its assertion must have a valid signature of the certificate
+    of the provider. The panel examines the issuer, the destination, the audience, the time
+    and the ID of the request (`InResponseTo`). It refuses an answer that it did not ask for
+    (a sign-in that starts at the provider), an encrypted assertion and a transient NameID.
+    The panel does not sign its requests.
+  - The panel addresses for the providers are the same for all providers. The state of the
+    sign-in identifies the provider. The state works one time only, for 10 minutes. A cookie
+    (`HttpOnly`, path `/api/v1/auth/sso`) binds the state to the browser that started the
+    sign-in. Thus a person cannot sign a different browser in to an account of that person.
+  - After the sign-in, the browser gets a ticket after `#` in the address. The browser does
+    not send it to a server, so no access log has it. The ticket works one time only, for
+    5 minutes.
+  - The panel keeps the client secret encrypted with `APP_KEY`, and does not show it again.
+  - Each sign-in, each connection and each change of a provider is an audit event. A new
+    device gets the email **Sign-in from a new device**.
+  - A suspended user cannot sign in with a provider. A password reset by an administrator or
+    a reseller disconnects all accounts of the user. A removal of a provider disconnects all
+    its accounts. **Sign out** signs the user out of the panel, not out of the provider.
 - An administrator or a reseller with no TOTP can sign in, but the API then accepts only the
   account data, the password change, the TOTP setup and the sign-out (the answer has the code
   `totp_setup_required`). The web panel shows only the page **Set up an authenticator app**.
@@ -637,11 +739,12 @@ directory with mode 0700:
   users of its own customers. An owner sees the list of its users only. Only a sign-in session
   of an administrator can make, reset or delete an administrator. An API token cannot. A user
   cannot reset or delete its own account in this way. A password reset signs the user out,
-  deletes the API tokens of the user and removes a sign-in lock. Each of these changes is an
-  audit event.
+  deletes the API tokens and the passkeys of the user, disconnects the single sign-on
+  accounts of the user, and removes a sign-in lock. Each of these changes is an audit event.
 - On the panel server, root can run `cf-agent panel reset-password EMAIL` and
   `cf-agent panel unlock EMAIL`. This is the procedure when no administrator can sign in.
-- In **Settings**, a user changes the password and turns TOTP on or off. Each change needs the
+- In **Settings**, a user changes the password, turns TOTP on or off, adds or removes
+  passkeys, and connects or disconnects single sign-on accounts. Each change needs the
   current password and, when TOTP is on, a code. Only a sign-in session can do this, not an API
   token. A password change signs out the other sessions of the user and deletes the API
   tokens of the user. A new password has 12 or more characters.
