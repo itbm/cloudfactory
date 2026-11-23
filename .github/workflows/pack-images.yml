@@ -14,18 +14,55 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request stops the builds of the earlier push.
+concurrency:
+  group: pack-images-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Each image builds only when its files change. A change to this workflow builds all images.
+  changes:
+    name: Select the images
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.select.outputs.images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The merge commit of the pull request and its first parent, the base branch.
+          fetch-depth: 2
+      - name: Select the images with changed files
+        id: select
+        env:
+          # The files of each image are the paths that start with an item of "paths".
+          IMAGES: |
+            [
+              { "image": "frankenphp-php8.2", "context": "images/frankenphp", "file": "images/frankenphp/Containerfile", "php": "8.2", "pack": "php-legacy-frankenphp", "paths": ["images/frankenphp/", "plugins/packs/php-legacy-frankenphp/"] },
+              { "image": "frankenphp-php8.3", "context": "images/frankenphp", "file": "images/frankenphp/Containerfile", "php": "8.3", "pack": "php-legacy-frankenphp", "paths": ["images/frankenphp/", "plugins/packs/php-legacy-frankenphp/"] },
+              { "image": "apache-php8.2", "context": "images/apache-php-fpm", "file": "images/apache-php-fpm/Containerfile", "php": "8.2", "pack": "php-legacy-apache", "paths": ["images/apache-php-fpm/", "plugins/packs/php-legacy-apache/"] },
+              { "image": "apache-php8.3", "context": "images/apache-php-fpm", "file": "images/apache-php-fpm/Containerfile", "php": "8.3", "pack": "php-legacy-apache", "paths": ["images/apache-php-fpm/", "plugins/packs/php-legacy-apache/"] }
+            ]
+        run: |
+          set -eu
+          git diff --name-only HEAD^1 HEAD >"$RUNNER_TEMP/changed"
+          images=$(jq -c --rawfile changed "$RUNNER_TEMP/changed" '
+            ($changed | split("\n") | map(select(. != ""))) as $files
+            | map((.paths + [".github/workflows/pack-images.yml"]) as $paths
+              | select(any($files[]; . as $file | any($paths[]; . as $path | $file | startswith($path))))
+              | del(.paths))' <<<"$IMAGES")
+          echo "Images to build: $(jq -r 'map(.image) | join(", ")' <<<"$images")"
+          echo "images=$images" >>"$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.image }}
+    needs: changes
+    if: needs.changes.outputs.images != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { image: frankenphp-php8.2, context: images/frankenphp, file: images/frankenphp/Containerfile, php: '8.2', pack: php-legacy-frankenphp }
-          - { image: frankenphp-php8.3, context: images/frankenphp, file: images/frankenphp/Containerfile, php: '8.3', pack: php-legacy-frankenphp }
-          - { image: apache-php8.2, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, php: '8.2', pack: php-legacy-apache }
-          - { image: apache-php8.3, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, php: '8.3', pack: php-legacy-apache }
+        include: ${{ fromJSON(needs.changes.outputs.images) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
