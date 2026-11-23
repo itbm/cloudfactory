@@ -1,0 +1,123 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000001/wordpress",
+    "status": 200,
+    "body": {
+        "wordpress": {
+            "status": "ready",
+            "version": "6.8.3",
+            "coreMinor": null,
+            "coreLatest": "6.9",
+            "siteUrl": "https://acme.example.com",
+            "adminUrl": "https://acme.example.com/wp-admin/",
+            "adminUser": "acme-admin",
+            "databaseId": "01m7cqzs803h34e20000000001",
+            "plugins": [
+                {
+                    "name": "akismet",
+                    "title": "Akismet Anti-spam: Spam Protection",
+                    "status": "active",
+                    "version": "5.5",
+                    "update": null
+                },
+                {
+                    "name": "wordpress-seo",
+                    "title": "Yoast SEO",
+                    "status": "active",
+                    "version": "26.3",
+                    "update": "26.4"
+                },
+                {
+                    "name": "contact-form-7",
+                    "title": "Contact Form 7",
+                    "status": "active",
+                    "version": "6.1.2",
+                    "update": null
+                },
+                {
+                    "name": "wordfence",
+                    "title": "Wordfence Security",
+                    "status": "active",
+                    "version": "8.1.0",
+                    "update": "8.1.2"
+                }
+            ],
+            "themes": [
+                {
+                    "name": "twentytwentyfive",
+                    "title": "Twenty Twenty-Five",
+                    "status": "active",
+                    "version": "1.3",
+                    "update": null
+                },
+                {
+                    "name": "astra",
+                    "title": "Astra",
+                    "status": "inactive",
+                    "version": "4.11.13",
+                    "update": "4.11.15"
+                }
+            ],
+            "checkedAt": "2026-11-14T07:00:00+00:00",
+            "autoUpdates": {
+                "core": "minor",
+                "plugins": true,
+                "themes": false
+            },
+            "lastUpdate": {
+                "jobId": null,
+                "at": "2026-11-12T08:00:00+00:00",
+                "automatic": true,
+                "core": "minor",
+                "plugins": [
+                    "akismet"
+                ],
+                "themes": [],
+                "state": "succeeded",
+                "from": "6.8.2",
+                "to": "6.8.3"
+            },
+            "restorePoint": {
+                "at": "2026-11-12T08:00:00+00:00",
+                "version": "6.8.2",
+                "database": true
+            },
+            "error": null
+        },
+        "commands": [
+            {
+                "id": "01m7cqzs801c3ajs0000000003",
+                "command": "wp user update 2 --user_pass=***",
+                "status": "done",
+                "exitCode": 0,
+                "output": "Success: Updated user 2.",
+                "ranAt": "2026-11-14T09:20:00+00:00",
+                "createdAt": "2026-11-14T09:20:00+00:00",
+                "user": "Olu Owner",
+                "jobId": "01m7cqzs802ghns6000000000m"
+            },
+            {
+                "id": "01m7cqzs801c3ajs0000000002",
+                "command": "wp cache flush",
+                "status": "done",
+                "exitCode": 0,
+                "output": "Success: The cache was flushed.",
+                "ranAt": "2026-11-14T08:25:00+00:00",
+                "createdAt": "2026-11-14T08:25:00+00:00",
+                "user": "Olu Owner",
+                "jobId": "01m7cqzs802ghns6000000000k"
+            },
+            {
+                "id": "01m7cqzs801c3ajs0000000001",
+                "command": "wp plugin list",
+                "status": "done",
+                "exitCode": 0,
+                "output": "name\tstatus\tupdate\tversion\nakismet\tactive\tnone\t5.5\nwordpress-seo\tactive\tavailable\t26.3\ncontact-form-7\tactive\tnone\t6.1.2\nwordfence\tactive\tavailable\t8.1.0",
+                "ranAt": "2026-11-14T07:00:00+00:00",
+                "createdAt": "2026-11-14T07:00:00+00:00",
+                "user": "Olu Owner",
+                "jobId": "01m7cqzs802ghns6000000000j"
+            }
+        ],
+        "busy": null
+    }
+}

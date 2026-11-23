@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
+	"github.com/itbm/cloudfactory/agent/internal/stalwart"
 	"github.com/itbm/cloudfactory/agent/internal/status"
 )
 
@@ -54,6 +56,14 @@ func (s *Service) AddDomain(_ context.Context, r *connect.Request[agentv1.Domain
 
 func (s *Service) Backup(_ context.Context, r *connect.Request[agentv1.BackupRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.Backup(r.Msg))
+}
+
+func (s *Service) BackupMailbox(_ context.Context, r *connect.Request[agentv1.BackupMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.BackupMailbox(r.Msg))
+}
+
+func (s *Service) CheckWordPress(_ context.Context, r *connect.Request[agentv1.CheckWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.CheckWordPress(r.Msg))
 }
 
 func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.ConfigureHostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
@@ -136,6 +146,10 @@ func (s *Service) InstallHostUpdates(_ context.Context, r *connect.Request[agent
 	return s.submit(s.Deps.InstallHostUpdates(r.Msg))
 }
 
+func (s *Service) InstallWordPress(_ context.Context, r *connect.Request[agentv1.InstallWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.InstallWordPress(r.Msg))
+}
+
 func (s *Service) MakeArchive(_ context.Context, r *connect.Request[agentv1.MakeArchiveRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.MakeArchive(r.Msg))
 }
@@ -172,6 +186,14 @@ func (s *Service) Restore(_ context.Context, r *connect.Request[agentv1.RestoreR
 	return s.submit(s.Deps.Restore(r.Msg))
 }
 
+func (s *Service) RestoreMailbox(_ context.Context, r *connect.Request[agentv1.RestoreMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RestoreMailbox(r.Msg))
+}
+
+func (s *Service) RestoreWordPress(_ context.Context, r *connect.Request[agentv1.RestoreWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RestoreWordPress(r.Msg))
+}
+
 func (s *Service) RotateMeshKey(_ context.Context, r *connect.Request[agentv1.RotateMeshKeyRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.RotateMeshKey(r.Msg))
 }
@@ -182,6 +204,10 @@ func (s *Service) RunCommand(_ context.Context, r *connect.Request[agentv1.RunCo
 
 func (s *Service) RunCronJob(_ context.Context, r *connect.Request[agentv1.RunCronJobRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.RunCronJob(r.Msg))
+}
+
+func (s *Service) RunWpCli(_ context.Context, r *connect.Request[agentv1.RunWpCliRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunWpCli(r.Msg))
 }
 
 func (s *Service) ScanWebsite(_ context.Context, r *connect.Request[agentv1.ScanWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
@@ -212,6 +238,10 @@ func (s *Service) SetDatabaseUser(_ context.Context, r *connect.Request[agentv1.
 	return s.submit(s.Deps.SetDatabaseUser(r.Msg))
 }
 
+func (s *Service) SetDnsSecondaries(_ context.Context, r *connect.Request[agentv1.SetDnsSecondariesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDnsSecondaries(r.Msg))
+}
+
 func (s *Service) SetDnsZones(_ context.Context, r *connect.Request[agentv1.SetDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetDnsZones(r.Msg))
 }
@@ -234,6 +264,10 @@ func (s *Service) SetMailNode(_ context.Context, r *connect.Request[agentv1.SetM
 
 func (s *Service) SetMailServer(_ context.Context, r *connect.Request[agentv1.SetMailServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetMailServer(r.Msg))
+}
+
+func (s *Service) SetMailSettings(_ context.Context, r *connect.Request[agentv1.SetMailSettingsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailSettings(r.Msg))
 }
 
 func (s *Service) SetMailbox(_ context.Context, r *connect.Request[agentv1.SetMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
@@ -274,6 +308,10 @@ func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agent
 
 func (s *Service) UpdateAgent(_ context.Context, r *connect.Request[agentv1.UpdateAgentRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.UpdateAgent(r.Msg))
+}
+
+func (s *Service) UpdateWordPress(_ context.Context, r *connect.Request[agentv1.UpdateWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.UpdateWordPress(r.Msg))
 }
 
 // fileError gives the error of a file operation or of the logs its code for the panel.
@@ -393,6 +431,38 @@ func (s *Service) GetFirewallEvents(ctx context.Context, r *connect.Request[agen
 		return nil, fileError(err)
 	}
 	return connect.NewResponse(&agentv1.FirewallEvents{Events: events}), nil
+}
+
+// mailError gives the error of a request for the mail server its code for the panel.
+func mailError(err error) error {
+	var invalid *actions.InvalidError
+	switch {
+	case errors.As(err, &invalid):
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	case errors.Is(err, stalwart.ErrNoMailbox):
+		return connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, actions.ErrNoMail):
+		return connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, err)
+	}
+	return connect.NewError(connect.CodeUnavailable, fmt.Errorf("the mail server did not answer: %w", err))
+}
+
+func (s *Service) GetAutoresponder(ctx context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.Autoresponder], error) {
+	a, err := s.Deps.GetAutoresponder(ctx, r.Msg)
+	if err != nil {
+		return nil, mailError(err)
+	}
+	return connect.NewResponse(a), nil
+}
+
+func (s *Service) SetAutoresponder(ctx context.Context, r *connect.Request[agentv1.SetAutoresponderRequest]) (*connect.Response[agentv1.Autoresponder], error) {
+	a, err := s.Deps.SetAutoresponder(ctx, r.Msg)
+	if err != nil {
+		return nil, mailError(err)
+	}
+	return connect.NewResponse(a), nil
 }
 
 // CheckBranches gives the last commit of the branch of each Git source (FR-1004).

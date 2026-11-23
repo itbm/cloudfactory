@@ -1,0 +1,51 @@
+{
+    "request": "GET /dns-secondaries",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80b2bpww0000000001",
+                "name": "Backup DNS service",
+                "addresses": [
+                    "198.51.100.53",
+                    "2001:db8:5300::53"
+                ],
+                "nameServer": "ns3.backup-dns.example",
+                "tsig": {
+                    "name": "cf-backup-dns",
+                    "algorithm": "hmac-sha256"
+                },
+                "notify": true,
+                "catalog": true,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ],
+        "catalogZone": "catalog.cloudfactory.invalid",
+        "primaries": [
+            {
+                "nameServer": "ns1.panel.example",
+                "addresses": [
+                    "203.0.113.10",
+                    "2001:db8:10::1"
+                ]
+            },
+            {
+                "nameServer": "ns2.panel.example",
+                "addresses": [
+                    "203.0.113.20",
+                    "2001:db8:20::1"
+                ]
+            }
+        ],
+        "servers": [
+            {
+                "server": "ns1.panel.example",
+                "state": "ok"
+            },
+            {
+                "server": "ns2.panel.example",
+                "state": "ok"
+            }
+        ]
+    }
+}

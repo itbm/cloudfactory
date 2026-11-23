@@ -167,6 +167,39 @@ The product specification, section 6.4, gives the requirements.
   manager. The agent removes the control characters from each entry (finding G5-09), and the
   CLI removes them again before it writes to a terminal.
 
+## WordPress
+
+- The agent runs WP-CLI in the gVisor container of the website, as the website user. WP-CLI
+  thus has the same rights as the code of the website. The root helper has no new command and
+  no new operation for WordPress.
+- No shell is between the panel and WP-CLI. The agent gives each argument to `podman exec`
+  as it is. The API and the agent refuse control characters in an argument
+  (`wpCliArgument` in `schema/input-rules.json`) and more than 40 arguments.
+- The passwords of a new site go to WP-CLI on standard input (`--prompt`), not in the
+  arguments of a process. The panel encrypts the install request and the payload of the job
+  in its database. It removes the install request when it sends the job, and removes the
+  passwords and the WP-CLI arguments from the job when the job ends. The API gives the
+  password of the first administrator one time.
+- The history of the WP-CLI commands and the audit log have each command with `***` in place
+  of the value of a password option, for example `--user_pass`. The command `wp eval` and
+  other commands can still have a secret in a different argument. The history is visible to
+  the users of the customer.
+- A user with access to the website can run each WP-CLI command, for example `wp eval` or
+  `wp plugin install`. This gives the user no new rights: the user can upload the same code
+  with SFTP.
+- The restore point is in the home directory of the website user, outside the directory of
+  the website. The website, its cron jobs and SFTP see only the directory of the website,
+  so they cannot read or change the restore point. It has a dump of the database with the
+  data of the site: the files have the mode `0600`.
+- WordPress does not update itself: the panel writes `AUTOMATIC_UPDATER_DISABLED` to
+  `wp-config.php`. The panel does each update with a restore point and a health check, in
+  the maintenance window of the server or when a user starts it.
+- A token needs the scope `websites:write` for WordPress, and also `databases:write` to
+  install WordPress, because the install makes a database. For a suspended customer, the
+  panel refuses each WordPress change.
+- The panel records each install, check, update, roll back, change of the settings and
+  WP-CLI command in the audit log.
+
 ## The web terminal
 
 - The shell of the web terminal runs in the gVisor container of the website as the website
@@ -302,9 +335,13 @@ The product specification, section 6.4, gives the requirements.
   the mailbox keeps its password. The mail server can check these hashes.
 - A customer adds a domain that a different customer could own only after a DNS TXT record
   shows that the customer controls the domain, as for a website domain.
-- The mail server opens connections only to the DNS and to port 25 of public addresses. It
-  cannot connect to a service of the server, to a private network or to the metadata service
-  of a cloud provider.
+- The mail server opens connections only to the DNS and to the ports 25, 465, 587 and 2525 of
+  public addresses. The ports 465, 587 and 2525 are for an outbound relay. It cannot connect
+  to a service of the server, to a private network or to the metadata service of a cloud
+  provider.
+- The panel keeps the password of an outbound relay encrypted with the key of the
+  application. The job record does not have it: the panel adds it each time that it sends the
+  job. The API never shows it again.
 - The mail server refuses mail for a domain that it does not have (no open relay). A mail
   program must sign in to send mail.
 - A private key that the panel makes is protected with the password of the mailbox, and the
@@ -423,7 +460,11 @@ The product specification, section 6.4, gives the requirements.
 - The container `cf-dns` runs in gVisor with a Unix user that has no other work. It can read
   the zone files and cannot change them. It can write only its keys and signatures.
 - The private DNSSEC key of a zone is encrypted in the panel database. On a DNS server, only
-  the user `cf-dns` and root can read it.
+  the user `cf-dns` and root can read it. During a change of the key, the same is true for
+  the new key. The DNS servers remove the old key after the change.
+- The panel asks the public DNS for the DS records of each zone with DNSSEC each day. The page
+  of the zone shows a DS record for a different key, which stops the domain for the
+  resolvers that check DNSSEC.
 - The DNS server answers only for its zones. It has no recursion, and it limits the rate of
   the answers to one network.
 
@@ -447,6 +488,32 @@ The product specification, section 6.4, gives the requirements.
   `POWERDNS_ALLOW`. It checks each address of the host name, connects to the address that it
   checked, does not follow redirects, and needs HTTPS. Do the same in a plugin that connects to
   an address from a user.
+
+### Zone transfers to secondary DNS servers
+
+- A DNS server of the panel gives a zone transfer only to an address in the list of the
+  secondaries of the zone. A TSIG key signs the transfer and the NOTIFY messages, unless the
+  user turns off the key. Without a key, only the address limits the transfers.
+- The owner of a zone can give only public addresses for the transfers of the zone. The panel
+  and the agent refuse private, loopback, link-local, multicast and other special addresses,
+  and IPv4 addresses in IPv6 form. Thus a user cannot let a container or a different server
+  in a private network copy a zone. Only an administrator can give a private address, for a
+  secondary of the panel.
+- The panel keeps each TSIG secret encrypted. The secrets are not in the jobs table: the panel
+  adds them when it sends the job to the agent. On a DNS server, the secrets are in
+  `keys.conf`, which only root and the user `cf-dns` can read.
+- The API gives a secret only through the routes `GET /v1/dns-secondaries/{id}/secret` and
+  `GET /v1/dns-zones/{id}/transfers/secret`. Each user can call them 10 times in one minute,
+  and the audit log records each call. The other answers give only the name and the algorithm
+  of the key.
+- The panel makes each secret from random bytes: 32 bytes for HMAC-SHA256 and 64 bytes for
+  HMAC-SHA512. A user can give the secret of a secondary DNS service. It must have 16 to 64
+  bytes in base64.
+- The TSIG key of the transfers of one zone has the name `transfer.<zone>`. A secondary of the
+  panel cannot have a key name that starts with `transfer.`, so a key of one zone cannot open
+  the transfers of all zones.
+- Only an administrator can see and change the secondaries of the panel, because they copy
+  the zones of all customers.
 
 ## Account imports
 
@@ -1057,13 +1124,13 @@ Known limits:
 
 ## Backups
 
-- Each server with the role `web` has its own restic repository and its own repository
-  password. The panel sends a password only to its server, with each backup job. A person who
+- Each server with the role `web` or `email` has its own restic repository and its own
+  repository password. The panel sends a password only to its server, with each backup job. A person who
   has root access to one server cannot read the backups of the other servers.
 - The agent does not keep the repository password or the credentials of the object storage
   in a file. It gets them with each job and gives them to restic in the environment, not in
   the command line.
-- Each server with the role `web` can have its own key for the object storage. The storage
+- Each server with the role `web` or `email` can have its own key for the object storage. The storage
   provider limits the key to the repository of that server. The panel sends the key only to
   that server, with each backup job. A person who has root access to one server can then not
   read, delete or change the backups of the other servers. Refer to
@@ -1298,7 +1365,7 @@ The table also limits the outgoing connections:
 - On a server with email, the agent adds the file `/etc/cloudfactory/firewall/mail.nft`. It
   opens the mail ports 25, 465, 587 and 993 and redirects them to the ports of the mail
   container. The chain `mail` gets each new connection of the user `cf-mail`. It permits DNS
-  and port 25 of public addresses, and refuses all other connections.
+  and the ports 25, 465, 587 and 2525 of public addresses, and refuses all other connections.
 - The chain `webmail` gets each new connection of the user `cf-webmail`. It permits DNS, the
   edge proxy of the server (port 443, which the firewall sends to 8443) and port 443 of public
   addresses. It refuses all other addresses of the server and the private networks.

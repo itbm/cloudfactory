@@ -1,0 +1,14 @@
+{
+    "request": "GET /mail/mailboxes/01m7cqzs80ytymcv0000000001/autoresponder",
+    "status": 200,
+    "body": {
+        "autoresponder": {
+            "enabled": false,
+            "subject": null,
+            "text": "",
+            "startsAt": null,
+            "endsAt": null,
+            "filterScript": null
+        }
+    }
+}

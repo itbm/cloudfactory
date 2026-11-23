@@ -493,7 +493,7 @@
                     "proto": "HTTP/2.0",
                     "status": 200,
                     "sizeBytes": 19031,
-                    "durationMs": 33.4,
+                    "durationMs": 33.3,
                     "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
                     "referer": "https://www.google.com/"
                 }

@@ -1,14 +1,16 @@
+import { Check, Circle, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { contextCustomers, inContext, visibleWebsites } from "../api/selectors";
-import { checkDnsZone, createDnsZone, deleteDnsRecord, deleteDnsZone, exportDnsZone, importDnsZone, saveDnsRecord, setDnssec, showDnsZone, syncDnsZone, type DnsImportResult } from "../api/store";
-import type { DnsRecord, DnsRecordType, DnsZone, State } from "../api/types";
+import { cancelDnssecRollover, checkDnsZone, createDnsZone, deleteDnsRecord, deleteDnsZone, exportDnsZone, importDnsZone, saveDnsRecord, setDnssec, showDnsZone, startDnssecRollover, syncDnsZone, type DnsImportResult } from "../api/store";
+import type { DnsRecord, DnsRecordType, DnssecParent, DnssecRolloverStep, DnsZone, State } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Empty, Field, FormError, JobError, Modal, PageHeader, RowMenu, Status, TableWrap } from "../components/ui";
 import { relativeTime } from "../lib/format";
 import { DNS_DELEGATION, DNS_RECORD_TYPES, DNS_ZONE_STATUS, jobActive, ttlText } from "../lib/labels";
 import { AccountsCard, delegationText, DNSSEC_ALGORITHMS, DS_DIGESTS, MoveDialog, ProviderCard, usableAccounts } from "./DnsProviders";
+import { SecondariesCard, TransfersCard } from "./DnsTransfers";
 import { CopyField } from "./website/AccessTab";
 
 /**
@@ -19,6 +21,37 @@ import { CopyField } from "./website/AccessTab";
 export function DnsPage() {
   const { id } = useParams();
   return id ? <ZonePage id={id} /> : <ZoneList />;
+}
+
+const ROLLOVER_STEPS = ["Publish the new key on the DNS servers", "Give the new DS record to the registrar", "Sign with both keys, then remove the old key"];
+const ROLLOVER_STEP_INDEX: Record<DnssecRolloverStep, number> = { publish: 0, submit: 1, retire: 2 };
+
+/** The DS records of the zone at the registry, as the public DNS gives them. */
+function RegistryState({ parent }: { parent: DnssecParent }) {
+  const tags = (t: number[]) => t.join(", ");
+  const [tone, label, note] = {
+    ok: ["success", "Has the DS record", `For key ${tags(parent.keyTags)}.`],
+    none: ["neutral", "No DS record", "Resolvers do not check the signatures."],
+    other: ["danger", "Wrong DS record", `The DS record is for key ${tags(parent.otherKeyTags)}, which the zone does not have. Resolvers that check DNSSEC refuse the answers of the domain.`],
+    unknown: ["warning", "Not known", "The panel could not ask the public DNS."],
+  }[parent.state] as ["success" | "neutral" | "danger" | "warning", string, string];
+  return (
+    <table className="kv" style={{ marginTop: 10 }}>
+      <tbody>
+        <tr>
+          <th scope="row">Registry</th>
+          <td>
+            <Status tone={tone}>{label}</Status>
+            <span className="cell-sub">
+              {note}
+              {parent.state === "ok" && parent.otherKeyTags.length > 0 && ` The registry also has a DS record for key ${tags(parent.otherKeyTags)}, which the zone does not have. Remove it at the registrar.`}
+              {parent.checkedAt && ` Checked ${relativeTime(parent.checkedAt)}.`}
+            </span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
 }
 
 /** The zone that has the domain: the zone with the longest name that the domain is in. */
@@ -153,6 +186,8 @@ function ZoneList() {
           </Card>
 
           <AccountsCard />
+
+          <SecondariesCard />
 
           {available && (
             <Card title="Name servers of this panel">
@@ -316,6 +351,7 @@ function ZonePage({ id }: { id: string }) {
   const [removingRecord, setRemovingRecord] = useState<DnsRecord | null>(null);
   const [removing, setRemoving] = useState(false);
   const [dnssecDialog, setDnssecDialog] = useState(false);
+  const [rolloverDialog, setRolloverDialog] = useState<"start" | "cancel" | null>(null);
   const [importing, setImporting] = useState(false);
   const [moving, setMoving] = useState(false);
   const [type, setType] = useState<"all" | DnsRecordType>("all");
@@ -325,6 +361,8 @@ function ZonePage({ id }: { id: string }) {
   const remove = useAction(deleteDnsZone);
   const removeRecord = useAction(deleteDnsRecord);
   const dnssec = useAction(setDnssec);
+  const startRollover = useAction(startDnssecRollover);
+  const cancelRollover = useAction(cancelDnssecRollover);
 
   if (!zone) {
     return (
@@ -347,6 +385,9 @@ function ZonePage({ id }: { id: string }) {
   const account = provider ? state.dnsAccounts.find((a) => a.id === provider.accountId) : undefined;
   const canSign = !provider || (account?.dnssec ?? true);
   const signer = provider?.name ?? "The DNS servers";
+  const rollover = zone.dnssec.rollover;
+  // The panel changes the key only on its own DNS servers. A DNS provider changes its key by itself.
+  const canRoll = !locked && !provider && !!zone.dnssec.ds && !rollover;
   // The registrar has the name servers of the provider, and the panel waits for its TXT record in the public DNS.
   const waitsForProvider = !!provider && zone.delegation.state === "unknown" && zone.delegation.nameServers.length > 0;
 
@@ -370,7 +411,7 @@ function ZonePage({ id }: { id: string }) {
             </div>
           )}
         </div>
-        <FormError error={check.error ?? sync.error ?? remove.error ?? removeRecord.error ?? dnssec.error ?? exportZone.error} />
+        <FormError error={check.error ?? sync.error ?? remove.error ?? removeRecord.error ?? dnssec.error ?? startRollover.error ?? cancelRollover.error ?? exportZone.error} />
 
         {zone.status === "failed" && provider?.state === "failed" && (
           <div className="alert alert-danger alert-stack mt" role="alert">
@@ -433,7 +474,12 @@ function ZonePage({ id }: { id: string }) {
 
           <Card
             title="DNSSEC"
-            actions={!locked && (canSign || zone.dnssec.enabled) && <button type="button" className="btn btn-sm" disabled={dnssec.busy} onClick={() => setDnssecDialog(true)}>{zone.dnssec.enabled ? "Turn off" : "Turn on"}</button>}
+            actions={!locked && (canSign || zone.dnssec.enabled) && (
+              <div className="btn-group">
+                {canRoll && <button type="button" className="btn btn-sm" disabled={startRollover.busy} onClick={() => setRolloverDialog("start")}>Change key</button>}
+                <button type="button" className="btn btn-sm" disabled={dnssec.busy} onClick={() => setDnssecDialog(true)}>{zone.dnssec.enabled ? "Turn off" : "Turn on"}</button>
+              </div>
+            )}
           >
             <div className="card-body">
               {zone.dnssec.enabled && !zone.dnssec.ds ? (
@@ -444,8 +490,48 @@ function ZonePage({ id }: { id: string }) {
               ) : zone.dnssec.enabled && zone.dnssec.ds ? (
                 <>
                   <p><Status tone="success">On</Status> <span className="muted">{signer} {provider ? "signs" : "sign"} each answer of the zone.</span></p>
-                  <p className="muted" style={{ margin: "10px 0" }}>Give this DS record to the registrar of the domain. Resolvers check the signatures only when the registrar has the record.</p>
-                  <CopyField value={zone.dnssec.ds.record} label="DS record" />
+                  {zone.dnssec.parent && <RegistryState parent={zone.dnssec.parent} />}
+                  {rollover ? (
+                    <div className="key-change">
+                      <h3 className="section-title">The key changes</h3>
+                      <ol className="cluster-steps" aria-label="Steps of the change of the key">
+                        {ROLLOVER_STEPS.map((label, i) => {
+                          const at = ROLLOVER_STEP_INDEX[rollover.step];
+                          const state = i < at ? "done" : i > at ? "todo" : "now";
+                          const Icon = { done: Check, now: LoaderCircle, todo: Circle }[state];
+                          return (
+                            <li key={label} className={`cluster-step cluster-step-${state}`}>
+                              <Icon size={16} aria-hidden="true" />
+                              <span>{label}</span>
+                              <span className="visually-hidden">{{ done: "Done", now: "In progress", todo: "Not started" }[state]}</span>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                      <p className="muted">
+                        {rollover.step === "publish"
+                          ? <>The DNS servers publish the new key, but the old key continues to sign the zone. Do not change the DS record at the registrar yet. {rollover.until ? <>The next step starts {relativeTime(rollover.until)}.</> : "The next step starts 3 hours after each DNS server has the new key."}</>
+                          : rollover.step === "submit"
+                            ? "Give the new DS record below to the registrar of the domain. You can add it next to the old DS record, or replace the old DS record. The panel checks the registry each 15 minutes, and starts the next step when the registry has the new DS record."
+                            : <>Both keys sign the zone, so that the resolvers that keep the old DS record can still check the answers. {rollover.until ? <>The panel removes the old key {relativeTime(rollover.until)}.</> : "Then the panel removes the old key."}</>}
+                      </p>
+                      {rollover.step === "retire" && zone.dnssec.parent?.keyTags.includes(rollover.oldDs.keyTag) && (
+                        <>
+                          <p className="muted" style={{ margin: "10px 0" }}>The registry has the DS records of the two keys. Remove the old DS record at the registrar now, or after the change.</p>
+                          <CopyField value={rollover.oldDs.record} label="Old DS record" />
+                        </>
+                      )}
+                      {!locked && (
+                        <div className="btn-group" style={{ marginTop: 10 }}>
+                          <button type="button" className="btn btn-sm" disabled={check.busy} onClick={() => void check.run(zone.id)}>{check.busy ? "Checking…" : "Check now"}</button>
+                          {rollover.step !== "retire" && <button type="button" className="btn btn-sm" disabled={cancelRollover.busy} onClick={() => setRolloverDialog("cancel")}>Stop the change</button>}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="muted" style={{ margin: "10px 0" }}>Give this DS record to the registrar of the domain. Resolvers check the signatures only when the registrar has the record.</p>
+                  )}
+                  <CopyField value={zone.dnssec.ds.record} label={rollover && rollover.step !== "publish" ? "New DS record" : "DS record"} />
                   <table className="kv" style={{ marginTop: 8 }}>
                     <tbody>
                       <tr><th scope="row">Key tag</th><td><code>{zone.dnssec.ds.keyTag}</code></td></tr>
@@ -470,6 +556,8 @@ function ZonePage({ id }: { id: string }) {
             </div>
           </Card>
         </div>
+
+        <TransfersCard zone={zone} locked={locked} />
 
         <Card
           className="mt"
@@ -531,6 +619,31 @@ function ZonePage({ id }: { id: string }) {
         </Modal>
       )}
       {removing && <RemoveDialog zone={zone} onClose={() => setRemoving(false)} onRemove={(keep) => void remove.run(zone.id, keep).then((r) => { if (r.ok) navigate("/dns"); })} />}
+      {rolloverDialog === "start" && (
+        <Modal
+          title={`Change the DNSSEC key of ${zone.name}?`}
+          onClose={() => setRolloverDialog(null)}
+          footer={<><button type="button" className="btn" onClick={() => setRolloverDialog(null)}>Cancel</button><button type="button" className="btn btn-primary" onClick={() => { setRolloverDialog(null); void startRollover.run(zone.id); }}>Change the key</button></>}
+        >
+          <p>The panel makes a new key, and changes the key in three steps. Each step keeps valid signatures, so the resolvers can always check the answers of the zone.</p>
+          <ol style={{ margin: "10px 0 0 20px" }}>
+            <li>The DNS servers publish the new key. This takes approximately 3 hours.</li>
+            <li>You give the new DS record to the registrar of the domain. The panel checks the registry each 15 minutes.</li>
+            <li>Both keys sign the zone for at least one day. Then the panel removes the old key.</li>
+          </ol>
+          <p style={{ marginTop: 10 }}>You can stop the change until the registry has the new DS record.</p>
+        </Modal>
+      )}
+      {rolloverDialog === "cancel" && (
+        <Modal
+          title="Stop the change of the key?"
+          onClose={() => setRolloverDialog(null)}
+          footer={<><button type="button" className="btn" onClick={() => setRolloverDialog(null)}>Cancel</button><button type="button" className="btn btn-danger-solid" onClick={() => { setRolloverDialog(null); void cancelRollover.run(zone.id); }}>Stop the change</button></>}
+        >
+          <p>The panel removes the new key. The old key continues to sign the zone.</p>
+          <p style={{ marginTop: 10 }}><strong>Do not stop the change if you removed the old DS record at the registrar.</strong> Resolvers then refuse the answers of the zone. If you gave the new DS record to the registrar, remove it there after you stop the change.</p>
+        </Modal>
+      )}
       {dnssecDialog && (
         <Modal
           title={zone.dnssec.enabled ? `Turn off DNSSEC for ${zone.name}?` : `Turn on DNSSEC for ${zone.name}?`}

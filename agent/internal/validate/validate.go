@@ -168,6 +168,15 @@ func Port(p int32) error {
 	return nil
 }
 
+// TSIGAlgorithm checks the algorithm of a TSIG key: one of the set "tsigAlgorithms" of
+// schema/input-rules.json.
+func TSIGAlgorithm(s string) error {
+	if !slices.Contains(tsigAlgorithms, s) {
+		return fmt.Errorf("validate: %q is not a TSIG algorithm that the agent can use", s)
+	}
+	return nil
+}
+
 // DNSRecordType checks the type of a DNS record: one of the set "dnsRecordTypes" of
 // schema/input-rules.json.
 func DNSRecordType(s string) error {

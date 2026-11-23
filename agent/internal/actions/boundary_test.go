@@ -73,6 +73,7 @@ const (
 	adminPodman = "runuser -u " + adminDBUser + " -- env XDG_RUNTIME_DIR=/run/user/1001 podman "
 	resticHead  = "restic --repo s3:b/c --password-file /etc/cloudfactory/restic.key --json --retry-lock 30m "
 	tagOne      = "website=" + websiteID
+	mailboxTag  = "mailbox=" + websiteID
 )
 
 func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
@@ -135,6 +136,11 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		jailOf(root, dumps) + resticHead + "backup " + dumps + " --tag " + tagOne + " --tag kind=scheduled-databases",
 		resticHead + "forget --tag " + tagOne + ",kind=manual-databases --group-by  --keep-last 10",
 		resticHead + "restore 1a2b3c4d --target " + stage + " --include " + app + "/public/index.php",
+		// The backup of a mailbox reads stdin and its restore writes to stdout: no jail.
+		resticHead + "backup --stdin --stdin-filename mailbox.tar --tag " + mailboxTag + " --tag kind=scheduled",
+		resticHead + "dump 1a2b3c4d /mailbox.tar",
+		resticHead + "snapshots --tag " + mailboxTag,
+		resticHead + "forget --tag " + mailboxTag + ",kind=manual --group-by  --keep-last 10",
 	} {
 		if _, err := d.Run.Run(context.Background(), words(command)[0], words(command)[1:]...); err != nil {
 			t.Errorf("%s: %v", command, err)
@@ -351,6 +357,18 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		resticHead + "restore 1a2b3c4d --target " + stage + " --include " + root.Host.SitesDir + "/../etc",
 		resticHead + "restore latest:/etc --target " + stage + " --include " + app,
 		resticHead + "restore 1a2b3c4d --target " + stage + " --include " + app + " --overwrite always",
+		// The backup of a mailbox reads only stdin, and its restore writes only to stdout.
+		resticHead + "backup --stdin --stdin-filename mailbox.tar --tag " + mailboxTag + " --tag kind=manual " + app,
+		resticHead + "backup --stdin --stdin-filename ../x --tag " + mailboxTag + " --tag kind=manual",
+		resticHead + "backup --stdin --stdin-from-command --tag " + mailboxTag + " --tag kind=manual -- sh -c id",
+		resticHead + "backup --stdin --stdin-filename mailbox.tar --tag " + tagOne + " --tag kind=manual",
+		resticHead + "backup --stdin --stdin-filename mailbox.tar --tag mailbox=x --tag kind=manual",
+		jailOf(root) + resticHead + "backup --stdin --stdin-filename mailbox.tar --tag " + mailboxTag + " --tag kind=manual",
+		resticHead + "dump 1a2b3c4d /etc/shadow",
+		resticHead + "dump 1a2b3c4d /mailbox.tar --target /etc/shadow",
+		resticHead + "dump latest /mailbox.tar",
+		resticHead + "forget --tag " + mailboxTag + ",kind=scheduled-databases --group-by  --keep-last 10",
+		resticHead + "restore 1a2b3c4d --target " + stage + " --include /mailbox.tar",
 	} {
 		argv := words(command)
 		if _, err := d.Run.Run(context.Background(), argv[0], argv[1:]...); err == nil {

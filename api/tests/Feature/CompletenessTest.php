@@ -107,8 +107,8 @@ class CompletenessTest extends TestCase
         Setting::put('backup_repository_password', Crypt::encryptString('the-old-password'));
         $website = $this->website($this->customer(), $this->server(), $this->image());
         $website->server->update(['certificate_pem' => 'x', 'certificate_fingerprint' => str_repeat('a', 64)]);
-        $old = Snapshot::create(['website_id' => $website->id, 'kind' => 'scheduled', 'restic_id' => 'abc12345', 'databases' => [], 'mailboxes' => [], 'shared_repository' => true]);
-        $new = Snapshot::create(['website_id' => $website->id, 'kind' => 'scheduled', 'restic_id' => 'def67890', 'databases' => [], 'mailboxes' => []]);
+        $old = Snapshot::create(['website_id' => $website->id, 'kind' => 'scheduled', 'restic_id' => 'abc12345', 'databases' => [], 'shared_repository' => true]);
+        $new = Snapshot::create(['website_id' => $website->id, 'kind' => 'scheduled', 'restic_id' => 'def67890', 'databases' => []]);
         $this->actingWith($this->user());
         Http::fake(['*' => Http::response(['jobId' => 'x'])]);
 
@@ -131,7 +131,7 @@ class CompletenessTest extends TestCase
     {
         $website = $this->website($this->customer(), $this->server(), $this->image());
         Setting::put('backup_policy', self::POLICY);
-        $old = Snapshot::create(['website_id' => $website->id, 'kind' => 'scheduled', 'restic_id' => 'old1', 'databases' => [], 'mailboxes' => []]);
+        $old = Snapshot::create(['website_id' => $website->id, 'kind' => 'scheduled', 'restic_id' => 'old1', 'databases' => []]);
 
         // Sunday 2 November 2026, 03:00 UTC.
         Carbon::setTestNow(Carbon::parse('2026-11-01 03:00:00', 'UTC'));

@@ -40,7 +40,7 @@ func TestTheRootHelperPreparesTheMailServer(t *testing.T) {
 	if info, err := d.mailInfo(ctx); err != nil || info.Hostname != "" {
 		t.Fatalf("a server with no mail server: %+v, %v", info, err)
 	}
-	if _, err := d.mailClient(ctx); err != errNoMail {
+	if _, err := d.mailClient(ctx); err != ErrNoMail {
 		t.Fatalf("mailClient: %v", err)
 	}
 	prepared, err := d.prepareMail(ctx, mailHost)
@@ -165,13 +165,13 @@ func TestTheMailFirewallRulesAreValid(t *testing.T) {
 	if strings.Contains(rules, "webmail") {
 		t.Error("with no webmail, the rules have a chain for the webmail")
 	}
-	for _, want := range []string{"tcp dport 25 redirect to :2025", "tcp dport 993 redirect to :2993", "meta skuid 985 jump mail", "tcp dport 25 accept"} {
+	for _, want := range []string{"tcp dport 25 redirect to :2025", "tcp dport 993 redirect to :2993", "meta skuid 985 jump mail", "tcp dport { 25, 465, 587, 2525 } accept"} {
 		if !strings.Contains(rules, want) {
 			t.Errorf("the rules do not have %q", want)
 		}
 	}
 	// The mail server must not connect to a service of this server or to a private network.
-	if strings.Index(rules, "169.254.0.0/16") > strings.Index(rules, "    tcp dport 25 accept") {
+	if strings.Index(rules, "169.254.0.0/16") > strings.Index(rules, "    tcp dport { 25, 465") {
 		t.Error("the rule for port 25 is before the rule for the private networks")
 	}
 	checkFirewall(t, rules)
@@ -296,12 +296,37 @@ func TestTheMailJobsCheckTheirValues(t *testing.T) {
 			t.Errorf("SetMailAlias accepted %s", name)
 		}
 	}
+	for name, req := range map[string]*agentv1.SetMailSettingsRequest{
+		"a spam score of 0":           {SpamScore: 0},
+		"a very high spam score":      {SpamScore: 51},
+		"a reject score below":        {SpamScore: 5, RejectScore: 4},
+		"a very high reject score":    {SpamScore: 5, RejectScore: 101},
+		"a relay with no host":        {SpamScore: 5, Relay: &agentv1.MailRelay{Port: 587}},
+		"a relay on port 22":          {SpamScore: 5, Relay: &agentv1.MailRelay{Host: "smtp.example.net", Port: 22}},
+		"a relay with an IP address":  {SpamScore: 5, Relay: &agentv1.MailRelay{Host: "10.0.0.1", Port: 587}},
+		"a password with no user":     {SpamScore: 5, Relay: &agentv1.MailRelay{Host: "smtp.example.net", Port: 587, Password: "x"}},
+		"a user name with a new line": {SpamScore: 5, Relay: &agentv1.MailRelay{Host: "smtp.example.net", Port: 587, Username: "a\nb", Password: "x"}},
+	} {
+		if _, err := d.SetMailSettings(req); err == nil {
+			t.Errorf("SetMailSettings accepted %s", name)
+		}
+	}
+	for name, req := range map[string]*agentv1.SetMailSettingsRequest{
+		"no relay":            {SpamFilter: true, SpamScore: 5, RejectScore: 15},
+		"a relay with a user": {SpamScore: 5.5, Relay: &agentv1.MailRelay{Host: "smtp.example.net", Port: 587, Username: "mailer", Password: "p"}},
+		"a relay on 465":      {SpamScore: 5, Relay: &agentv1.MailRelay{Host: "smtp.example.net", Port: 465}},
+	} {
+		job, err := d.SetMailSettings(req)
+		if err != nil || job.Key != mailKey || len(job.Steps) != 2 || job.Steps[0].Name != "Set spam filter" || job.Steps[1].Name != "Set outbound relay" {
+			t.Errorf("%s: %+v, err %v", name, job.Steps, err)
+		}
+	}
 	// A job on a server with no mail server fails with a clear message.
 	job, err := d.DeleteMailbox(&agentv1.MailAddressRequest{JobId: jobID, Domain: "acme.example.com", LocalPart: "info"})
 	if err != nil || job.Key != mailKey {
 		t.Fatalf("DeleteMailbox: %v", err)
 	}
-	if err := job.Steps[0].Do(context.Background()); err != errNoMail {
+	if err := job.Steps[0].Do(context.Background()); err != ErrNoMail {
 		t.Errorf("the step: %v", err)
 	}
 	if r := d.mailReport(context.Background()); r != nil {

@@ -964,6 +964,14 @@
         }
       ]
     },
+    "tsigName": {
+      "valid": ["cf-transfer.example.net", "transfer.example.com", "key1", "a-b.c-d", {"repeat": [["a", 63]]}],
+      "invalid": ["", "Key", "key.", ".key", "-key", "a..b", "key name", "key\nx", "key_1", "transfer.example.com.\nacl:", {"repeat": [["a", 64]]}]
+    },
+    "tsigSecret": {
+      "valid": ["c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MTI=", "MDEyMzQ1Njc4OWFiY2RlZg==", "AAAAAAAAAAAAAAAAAAAAAAAA", {"repeat": [["A", 86], ["=", 2]]}],
+      "invalid": ["", "c2hvcnQ=", "not base64!", "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MTI", "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MTI=\n", "c2VjcmV0 c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MTI=", {"repeat": [["A", 88]]}]
+    },
     "envName": {
       "valid": [
         "DATABASE_URL",
@@ -1345,6 +1353,14 @@
         "$2y$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234\n"
       ]
     },
+    "autoresponderSubject": {
+      "valid": ["", "Out of office", "Abwesenheit: zurück am 3. Dezember", "\"Away\" \\ back soon", {"repeat": [["a", 200]]}],
+      "invalid": ["Out of office\n", "Away\r\nBcc: someone@example.com", "Away\tnow", "Away\u0000", {"repeat": [["a", 201]]}]
+    },
+    "autoresponderText": {
+      "valid": ["", "I am away until Monday.", "Hello,\n\nI am away.\r\n\tAnn\n", "Café ünïcode \"; discard; \"", {"repeat": [["a", 2000]]}],
+      "invalid": ["Away\u0000", "Away\u001b[31m", "Away\u007f", "Away\u000c", {"repeat": [["a", 2001]]}, {"repeat": [["é", 1001]]}]
+    },
     "securityPath": {
       "valid": ["/", "/wp-login.php", "/admin/", "/admin", "/user/login", "/a/b/c.php", "/.well-known/x", "/~me/", "/a@b:c+d,e=f-g_h"],
       "invalid": ["", "admin", "//", "/admin//", "/./x", "/x/..", "/x/../y", "/x/./", "/a b", "/a%2e", "/a*", "/a?b", "/a#b", "/a\\b", "/a\n", {"repeat": ["/", ["a", 200]]}]
@@ -1368,6 +1384,26 @@
     "packImageVersion": {
       "valid": ["1.25", "3.4.1", "1.25-alpine", "2024_1", "1+r2", "abcdefghijklmnop"],
       "invalid": ["", "-1.25", ".1", "1 25", "1/25", "1.25\n", "abcdefghijklmnopq"]
+    },
+    "wordpressUser": {
+      "valid": ["editor", "site_owner", "jane.doe@example.com", "Admin2", "a-b", {"repeat": [["a", 60]]}],
+      "invalid": ["", "ab", "admin", "Admin", "ADMINISTRATOR", "-admin", ".abc", "jane doe", "user\n", {"repeat": [["a", 61]]}]
+    },
+    "wordpressTitle": {
+      "valid": ["My shop", "Caf\u00e9 & Co \u2014 B\u00fccher", "A", {"repeat": [["a", 100]]}],
+      "invalid": ["", "line\nbreak", "tab\there", "\u007f", {"repeat": [["a", 101]]}]
+    },
+    "wordpressLocale": {
+      "valid": ["en_GB", "de_DE_formal", "fr_FR", "ja", "pt_PT_ao90", "haw_US"],
+      "invalid": ["", "EN_GB", "en-GB", "en_GBR", "e", "english", "en_GB\n"]
+    },
+    "wordpressSlug": {
+      "valid": ["akismet", "woocommerce", "twentytwentyfive", "hello", "my_plugin.v2", "Plugin-Name"],
+      "invalid": ["", "-x", "--all", ".hidden", "../x", "a..b", "a/b", "a b", {"repeat": [["a", 101]]}]
+    },
+    "wpCliArgument": {
+      "valid": ["", "plugin", "--format=json", "option update blogname 'My shop'", "--user_pass=s3cret"],
+      "invalid": ["a\nb", "a\u0000b", "\u001b[31m", {"repeat": [["a", 1001]]}]
     },
     "logSearch": {
       "valid": ["/checkout", "500 -bot", "\"PHP Fatal error\" stock", "café", { "repeat": [["a", 200]] }],

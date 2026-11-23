@@ -649,6 +649,9 @@ job only for a domain of that customer.
 | Password of the administrator of the management API | `/etc/cloudfactory/mail/admin.env` | Only root and the group `cf-mail` can read the file. The root helper gives the password to the worker. |
 | TLS certificate | `/etc/cloudfactory/mail/certs` | The edge proxy gets and renews the certificate of the mail host name. The root helper copies it for the mail server, at the start of the agent and one time each day. |
 | Passwords of the mailboxes | The mail server keeps a bcrypt hash | The panel makes the hash and sends only the hash. The panel shows the password one time. The agent never has it. |
+| Backups of the mailboxes | The restic repository of the server of the mail domain | Refer to [Backups of the mailboxes](#backups-of-the-mailboxes). |
+| Autoresponders | The data store of the mail server (JMAP `VacationResponse`) | The mail server is the source. The panel reads and changes an autoresponder through the agent at once, with no job, and keeps no copy. |
+| Spam filter and outbound relay | `mail_settings` of the server in the panel, and the data store of the mail server | An administrator sets them (`PUT /v1/servers/{id}/mail/settings`, or `cf servers mail-settings SERVER`). The panel keeps the password of the relay encrypted, and adds it to the `SetMailSettings` job each time that it sends the job. |
 
 The first start of the mail server is in the recovery mode of Stalwart, which has only the
 management API. The agent sets the listeners, the host name and the certificate, and then
@@ -669,6 +672,28 @@ values are fixed: the thresholds of the usage alerts do not change them. The pan
 the alert of a mailbox that the status report does not have, for example a removed mailbox.
 The users get the usage alert email, and the email page shows the mailboxes that are almost
 full. A full mailbox refuses new mail.
+
+### Spam filter and outbound relay
+
+The spam filter of Stalwart gives each new message a score. A message with the spam score or
+more goes to the junk folder of the mailbox. With a reject score, the mail server refuses a
+message with that score or more. The default settings are the settings of a new mail server:
+the filter is on, the spam score is 5, and the mail server refuses no message for its score.
+
+By default, Stalwart downloads the rules of the filter from GitHub. The firewall stops that
+download, and with no rules the filter gives each message the score 0. Thus the image `mail`
+has a pinned release of the rules (`/usr/local/share/stalwart/spam-filter-rules.json.gz`).
+At each start of the agent, the agent sets the mail server to read the rules from that file.
+A new release of the rules needs a new image.
+
+An outbound relay sends the outgoing mail for the mail server, for example when the provider
+of the server blocks port 25. The agent adds the route `relay` (`x:MtaRoute`) and sets the
+outbound strategy to use it. Mail for a domain of the server stays on the server. The relay
+must have a public address and one of the ports 25, 465, 587 or 2525. Port 465 uses TLS from
+the start, and the other ports use STARTTLS.
+
+A member of a mail cluster has the default settings: the panel does not change the settings
+of a cluster.
 
 ### Encryption of the stored mail (OpenPGP)
 
@@ -695,6 +720,38 @@ old protection and shows that the key has an older password (`privateKey.passwor
 The mail server encrypts only new mail. It does not encrypt the messages that the mailbox has
 before the key, and it cannot decrypt the stored mail. Search on the server does not find
 words in an encrypted message.
+
+### Autoresponder
+
+A mailbox can have an autoresponder. When it is on, the mail server answers each new message
+with a text. It answers each sender one time in 30 days (the default of Stalwart). It does not
+answer a mailing list or an automatic message (RFC 5230). The autoresponder can have a first
+day and a last day.
+
+The mail server keeps the autoresponder as JMAP `VacationResponse`, and the webmail changes the
+same object. Thus the panel keeps no copy. The panel reads and sets it at once through the
+agent, with no job:
+
+```text
+ web panel ──► GET|PUT /v1/mail/mailboxes/{id}/autoresponder ──► GetAutoresponder|SetAutoresponder
+           ──► worker of the agent ──► VacationResponse/get|set (management API)
+```
+
+- The panel and the agent check the subject and the text with the rules
+  `autoresponderSubject` and `autoresponderText` (`schema/input-rules.json`). Stalwart refuses
+  a text of 2048 bytes or more, so the limit is 2000 bytes.
+- The agent sends only the plain text. It removes the HTML text that a mail program can set.
+  When the mail server has only HTML text, the agent gives the text without the tags.
+- The agent sends each time in UTC. The web panel uses days in the time zone of the browser:
+  the first day starts at 00:00 and the last day ends at 23:59:59.
+- In a mail cluster, a different member answers when the server of the mail domain is offline
+  (`MailClusters::member`).
+
+The mail server makes a Sieve script with the name `vacation` from the autoresponder. Stalwart
+runs one active Sieve script for each mailbox. When the autoresponder is on, the filter rules
+that the user made in the webmail stop. They do not start again when the autoresponder is off.
+The answer has `filterScript`, the name of the other active script, and the web panel tells the
+user about it.
 
 ### Webmail (Bulwark)
 
@@ -826,13 +883,15 @@ customers. It does not resolve other names.
 
 ### The panel sends full zones
 
-The DNS servers do not use zone transfers between them. The panel has the records, and it
-sends each changed zone to each DNS server in a job:
+The DNS servers of the panel do not use zone transfers between them. The panel has the
+records, and it sends each changed zone to each DNS server in a job. A secondary DNS server
+outside the panel can copy the zones (refer to [Secondary DNS servers](#secondary-dns-servers)).
 
 | Job | Work |
 | --- | ---- |
 | `SetDnsZones` | Start the DNS server if necessary, write the zone files, and load the zones. One job has 100 zones at most. |
 | `DeleteDnsZones` | Remove the zones, their files and their keys. |
+| `SetDnsSecondaries` | Start the DNS server if necessary, and write the list of the secondary DNS servers of the panel. |
 
 A zone in a job has its name, its serial and all its records. The root helper does not accept
 a zone file from the worker. It checks each record with the shared input rules and writes the
@@ -943,6 +1002,63 @@ source of the records:
   servers (`handover`) until two days after the public DNS stops showing the name servers of
   the panel. The panel does not remove a zone from the DNS servers during the handover.
 
+### Secondary DNS servers
+
+A secondary DNS server outside the panel can copy zones from the DNS servers of the panel with
+zone transfers (AXFR and IXFR). For example, a secondary DNS service of a different company
+gives more name servers in other networks. The panel never copies a zone from a different
+server. The panel is always the source of the records.
+
+```text
+ panel ──► SetDnsZones, SetDnsSecondaries ──► DNS servers of the panel (Knot DNS, primaries)
+                                                │ NOTIFY after each change, signed with TSIG
+                                                ▼
+                                   secondary ──► AXFR or IXFR, signed with TSIG ──► port 53
+```
+
+There are two types of secondaries:
+
+| Type | Who manages it | Zones | TSIG key |
+| ---- | -------------- | ----- | -------- |
+| A secondary of the panel (`dns_secondaries`) | An administrator | All zones on the DNS servers of the panel, and the catalog zone if the administrator selects it | One key for each secondary. The administrator gives the name, or the panel makes the name `cf-<ULID>`. |
+| The zone transfers of one zone (`dns_zones.transfer_*`) | The owner of the zone | Only that zone | `transfer.<zone>` |
+
+- The list of the secondaries of the panel has a version (the setting
+  `dns.secondaries.version`). Each change of the list gives it a higher version. The panel
+  then sends a `SetDnsSecondaries` job with only the version to each DNS server. When the panel
+  sends the job to the agent, it adds the full list from the database, with the secrets
+  (`Secondaries::forAgent`). Thus the secrets are not in the jobs table, and a job that waits
+  in the queue gets the last list.
+- The panel adds the zone transfers of a zone, with the secret, to the zone in `SetDnsZones` in
+  the same way.
+- The report of each agent has the version of the list on its DNS server (`dnsSecondaries`).
+  When the version is not the version of the panel, the panel sends the list again. It does
+  nothing while a `SetDnsSecondaries` job of the server is in the queue or runs, and it waits
+  10 minutes after a job that failed.
+- The root helper writes the keys to `keys.conf`, which only root and the user `cf-dns` can
+  read. It writes the remotes and the ACLs to `knot.conf`. Knot DNS gives a transfer only to an
+  address of a secondary, and only with the key of that secondary. After each change of a
+  zone, it sends NOTIFY, signed with the key, to each secondary with **Send NOTIFY**.
+- The addresses of the zone transfers of one zone must be public addresses. Thus the owner of
+  a zone cannot let an address in a private network or on the server copy the zone. An
+  administrator can give a private address to a secondary of the panel, for example for a
+  secondary in the same private network.
+- The catalog zone (RFC 9432) lists all zones on the DNS servers of the panel. Its name is in
+  `CF_DNS_CATALOG_ZONE` (default `catalog.cloudfactory.invalid`). A secondary that copies the
+  catalog zone finds each new zone and each removed zone itself. Knot DNS reads the catalog
+  role of a zone only when it makes the zone. Thus the agent restarts the DNS server when the
+  catalog zone starts, stops or gets a new name. For other changes of the list, the agent
+  only loads the configuration again. When `CF_DNS_CATALOG_ZONE` changes, the next report of
+  an agent gives the list a new version, so each DNS server gets the new name.
+- A secondary of the panel with a name server host name is a name server of each zone. Each
+  zone gets an NS record for it, and the panel sends all zones again when this host name
+  changes. The owner of a zone can give the host names of the secondaries of the zone, at most
+  4. The zone gets an NS record for each of them.
+- The domain uses the zone ("here") only when each public name server of the domain is a
+  name server of the panel, of a secondary of the panel or of the zone, and at least one is a
+  DNS server of the panel.
+- A zone at an external DNS provider has no zone transfers. The provider has the zone.
+
 ### DNSSEC
 
 DNSSEC is off for a new zone. When a user turns it on, the panel makes one ECDSA P-256 key
@@ -952,8 +1068,44 @@ each DNS server with the zone, so all servers sign with the same key. The root h
 the key to Knot DNS, and Knot DNS signs the zone with NSEC3 (no more iterations, no salt).
 The panel shows the DS record that the customer gives to the registrar.
 
-The panel does not change the key of a zone on a schedule. To change the key, remove the DS
-record at the registrar, turn DNSSEC off and on, and give the new DS record to the registrar.
+#### Change of the key
+
+A user can change the key of a zone on the DNS servers of the panel. The change is a key
+rollover with double signatures (RFC 6781 and RFC 7583). The panel changes the key only when
+a user asks, because the registrar must get the new DS record. The change has three steps:
+
+| Step | Keys in the zone | The step ends |
+| --- | --- | --- |
+| `publish` | The old key signs the zone. The new key signs only the DNSKEY records. | Each DNS server has the new key. Then the panel waits 3 hours: the TTL of the DNSKEY records, the refresh time of the secondary servers and a margin, each 1 hour. |
+| `submit` | As in `publish`. The DNS servers also publish CDS and CDNSKEY records for the new key. The user gives the new DS record to the registrar. | The public DNS gives the new DS record, or no DS record. |
+| `retire` | Both keys sign each record. | The panel waits the largest of one day, the TTL of the DS records and the largest TTL of the zone, plus 1 hour. The step does not end while the registry has only the old DS record. |
+
+Then the new key replaces the old key, and the DNS servers remove the old key. In each step,
+a resolver that has the old DS record or the new DS record in its cache can check the zone.
+
+- The command `cloudfactory:check-dns` (each 15 minutes) and "Check now" on the page of the
+  zone move a change to the next step.
+- The panel sends the keys to each DNS server with the zone. Each key has a state: `active`
+  (it signs the zone), `ready` (it signs only the DNSKEY records) or `submit` (as `ready`,
+  and the server publishes CDS and CDNSKEY records for it). The root helper gives the keys and
+  their times to Knot DNS with `keymgr`, and Knot DNS signs the zone again.
+- A registry that reads CDS records (RFC 7344 and RFC 8078) can get the new DS record by itself.
+- A user can stop a change in the steps `publish` and `submit`. The panel refuses to stop it
+  when the registry has the new DS record. When a change stops, the new key goes.
+
+#### DS records at the registry
+
+The panel asks the public DNS for the DS records of each zone with DNSSEC. The command
+`cloudfactory:check-dns` asks once each day for each zone, and each 15 minutes for a zone
+with a change of the key. The panel compares each DS record with the keys of the zone and
+keeps the result (`dnssec_parent`):
+
+| State | Meaning |
+| --- | --- |
+| `ok` | A DS record is for a key of the zone. |
+| `none` | The registry has no DS record. Resolvers do not check the signatures. |
+| `other` | No DS record is for a key of the zone. Resolvers that check DNSSEC refuse the answers for the domain. |
+| `unknown` | The lookup failed. |
 
 For a zone at an external DNS provider, the provider makes the key and signs the zone. The
 plugin gives the DS record in the answer to `sync`.
@@ -1296,6 +1448,115 @@ How the panel makes a preview:
 - A CI pipeline can make a preview with `POST /api/v1/websites/<id>/previews`, or with
   `cf previews create`. This is for a Git host that the panel does not read.
 - The plugin events `website.created` and `website.removed` also occur for a preview.
+
+## WordPress sites
+
+The panel installs WordPress, updates it with a restore point, and runs WP-CLI commands
+(FR-206). The PHP images (FrankenPHP and Apache with PHP-FPM) have WP-CLI at
+`/usr/local/bin/wp`. The build checks the SHA-512 hash of the WP-CLI release. The agent runs
+each WP-CLI command with `podman exec` in the gVisor container of the website, as the
+website user, with `--path=<document root>`. No shell is between the panel and WP-CLI: each
+argument goes to WP-CLI as it is.
+
+```text
+ web panel or cf ──► API ──► job ──► worker ──► runuser -u <user> -- podman exec <container> wp ...
+```
+
+The table `wordpress_sites` has one row for each website with WordPress: the versions, the
+plugins, the themes, the available updates, the settings of the automatic updates, the last
+update and the restore point. A server shows the agent feature `wordpress` when its agent
+has the WordPress jobs. On a server with no feature, the panel refuses to install WordPress,
+to look for it and to run WP-CLI.
+
+### Install
+
+A user installs WordPress in one of two ways:
+
+- On the **New website** page, for a public website with a PHP runtime and the application
+  WordPress or WooCommerce. The panel installs WordPress after the job `CreateWebsite`.
+- With **Install WordPress** on the **WordPress** tab of a website that runs.
+
+The panel makes a MariaDB database and a database user with the name `<Unix user>_wp`, in a
+MariaDB server of the customer on the same server. When the customer has no such server, the
+panel makes one. The panel makes the password of the database user and of the first
+administrator. The API gives the password of the administrator one time. The panel keeps
+the install request with the passwords encrypted until it sends the job. The payload of a job
+is also encrypted, and the panel removes the passwords from it when the job ends.
+
+The job `InstallWordPress` has these steps:
+
+1. **Check the website.** The document root must be empty, or have only the default page of
+   the panel.
+2. **Create database.** The agent makes the database and the user, as for the job
+   `CreateDatabase`.
+3. **Download WordPress.** `wp core download` with the language of the site.
+4. **Install WordPress.** `wp config create`, `wp core install`, the permalinks
+   `/%postname%/`, and `AUTOMATIC_UPDATER_DISABLED` in `wp-config.php`: the panel does the
+   updates, not WordPress. For Apache, the agent writes the rewrite rules to `.htaccess`.
+   FrankenPHP sends each request with no file to `index.php`. The passwords go to WP-CLI on
+   standard input, not in the arguments.
+5. **Check WordPress.** The agent reads the versions and the updates.
+
+The site address is `https://<website name>`. A domain that is not verified is not in the
+records of the agent (CF-03), so the panel gives the address in the job.
+
+**Find WordPress** (the job `CheckWordPress`) reads the versions of a site that a user
+uploaded with SFTP. When the agent finds no WordPress there, the panel removes the new row.
+
+### Updates and the restore point
+
+The job `UpdateWordPress` has these steps:
+
+1. **Check WordPress.** The agent reads the versions before the update.
+2. **Save a restore point.** The agent writes the files of the document root to
+   `~/.cf-wordpress/files.tar.gz` in the home directory of the website user, with no
+   uploads and no caches (`wp-content/uploads`, `cache` and the directories of the usual
+   backup plugins). It writes a dump of the database to `~/.cf-wordpress/database.sql`. The
+   website and SFTP see only the directory of the website, so they cannot change the restore
+   point. A new restore point replaces the previous one only when it is complete.
+3. **Update WordPress.** `wp core update` (with `--minor` for a security and maintenance
+   release), then `wp core update-db`.
+4. **Update plugins.** `wp plugin update` with the selected plugins.
+5. **Update themes.** `wp theme update` with the selected themes.
+6. **Health check.** WP-CLI must load WordPress with the plugins and the theme
+   (`wp eval`), and the website must answer as in a runtime change.
+
+Steps 3 to 5 use `--skip-plugins --skip-themes`, so a plugin with an error does not stop the
+update that repairs it. When step 3, 4, 5 or 6 fails, the agent puts back the restore point:
+it removes the files of the site apart from the uploads and the caches, extracts the files,
+and loads the dump into the database. The job fails with the cause and the words "the agent
+put back the restore point". The restore point stays, so that a user can also roll back a
+successful update with **Roll back** (the job `RestoreWordPress`).
+
+The restore point has the database only when the database is in a MariaDB server of the
+customer on the same server. Otherwise the restore point has the files only.
+
+### Automatic updates
+
+Each site has three settings: WordPress (off, security and maintenance releases, or all
+releases), plugins (on or off) and themes (on or off). The default is security and maintenance
+releases of WordPress only.
+
+Every 10 minutes, the command `cloudfactory:wordpress-updates` looks for sites with an
+automatic update and no check in the last 20 hours, on a server in its maintenance window.
+It starts a check of each site. When the check finds updates that the settings permit, the
+panel starts the job `UpdateWordPress` with a restore point and a health check. It does not
+start a check for a website that does not run, for a suspended customer, or for a website
+with an open WordPress job.
+
+### WP-CLI from the panel
+
+A user runs one WP-CLI command on the **WordPress** tab or with `cf wordpress cli`. The job
+`RunWpCli` runs the command, keeps the last 16 000 bytes of the output and the exit code,
+and then reads the versions again. The job succeeds also when the exit code is not 0: the
+panel shows the exit code. The agent stops a command after 20 minutes.
+
+The panel refuses the commands that need a terminal: `wp shell` and `wp db cli`. The API and
+the agent check each argument with the rule `wpCliArgument` (no control characters) and the
+number of arguments. The table `wordpress_commands` keeps each command, with the user, the
+exit code and the output. The panel replaces the values of the password options, for
+example `--user_pass`, with `***` in the table and in the audit log. The job has the full
+arguments until it ends.
 
 ## Uptime checks
 
@@ -2205,8 +2466,8 @@ The agent makes the backups with restic. The panel sends the address of the repo
 credentials of the object storage and the repository password with each job. The agent does
 not keep them.
 
-- Each server with the role `web` has its own repository, `<target>/servers/<server ID>`, and
-  its own password. The panel makes the password at the first use and keeps it encrypted.
+- Each server with the role `web` or `email` has its own repository,
+  `<target>/servers/<server ID>`, and its own password. The panel makes the password at the first use and keeps it encrypted.
 - Each of these servers can have its own key for the object storage, which an administrator
   sets (`PUT /v1/backup-policy/servers/{serverId}/credentials`). The panel sends that key
   with the jobs of that server only (`BackupController::credentialsFor`). A server with no
@@ -2258,6 +2519,55 @@ them.
   bytes. A download can thus continue at an offset (an HTTP range).
 - The scheduler runs `cloudfactory:expire-exports` each hour. It removes the exports that
   expired and fails an export that is not complete after a day.
+
+### Backups of the mailboxes
+
+Each night, after the backups of the websites, the panel starts a backup of each active
+mailbox (`BackupMailbox`) on the server of its mail domain. The owner can also start a backup
+at any time (`POST /v1/mail/mailboxes/{id}/backups`, or `cf mail mailboxes backup ADDRESS`).
+
+```text
+ mail server ──► JMAP (Mailbox/get, Email/query, Email/get, download) ──► worker of the agent
+             ──► tar stream (cf-mailbox/1) ──► root helper ──► restic backup --stdin ──► repository of the server
+```
+
+- The agent reads the folders and the messages of the mailbox through JMAP, as the
+  administrator of the management API. It writes a tar stream in the format `cf-mailbox/1`
+  (`agent/internal/stalwart/backup.go`):
+  1. `mailbox.json`: the address, the folders (name, parent, role, sort order and
+     subscription) and, for each message, its file, its folders, its keywords (for example
+     `$seen`), its receive time, its size and its `Message-ID`.
+  2. `messages/<email ID>.eml`: each message, as the mail server keeps it.
+  3. `mailbox.end`: the number of messages. A restore refuses a stream without this file. Thus
+     it never uses a backup that stopped before its end.
+- The names, the times and the order of the files are the same each time. Thus restic adds
+  only the new messages to the repository. A second backup of a mailbox with no changes adds
+  less than 1 KB.
+- The stream does not go to the disk, and the backup needs no jail. restic reads it from its
+  standard input (`restic backup --stdin --stdin-filename mailbox.tar`). When the export
+  fails, the agent stops restic before restic reads the end of the stream. Thus restic never
+  makes a snapshot of a part of a mailbox.
+- Each snapshot has the tags `mailbox=<mailbox ID>` and `kind=scheduled` or `kind=manual`. The
+  retention policy of the websites applies to the scheduled backups. The panel keeps the
+  newest manual backups (`CF_MANUAL_BACKUPS`). The table `mailbox_snapshots` has a record of
+  each snapshot.
+- A restore (`POST /v1/mail/mailboxes/{id}/backups/{snapshotId}/restore`) needs a token with
+  the scope `mail:write`. restic writes the stream to its standard output (`restic dump`), and
+  the agent adds each message that the mailbox does not have (JMAP `Email/import`). The key of
+  a message is its `Message-ID`, its receive time and its size. The restore does not change or
+  remove a message of the mailbox. It makes again each folder that is missing. A folder with a
+  role, for example the inbox or the trash, goes to the folder with the same role.
+- A message that is larger than the upload limit of the mail server (`maxSizeUpload`) stays in
+  the backup. The result of the restore has the number of messages that it added, that the
+  mailbox had, that were too large and that failed. The panel keeps the result with the
+  snapshot (`lastRestore`), and the web panel shows it.
+- A mailbox has one backup or restore at a time. The panel does not remove a mailbox while a
+  backup or a restore of it runs.
+- In a mail cluster, each member has all the mail. The panel sends a restore to the agent of
+  the server whose repository has the snapshot. That server must be the server of the mail
+  domain or a member of its cluster.
+- When a mailbox is removed, the panel keeps its backups for 30 days
+  (`CF_DELETED_MAILBOX_BACKUP_DAYS`). Then the weekly job of the server removes its snapshots.
 
 ## Plugins
 

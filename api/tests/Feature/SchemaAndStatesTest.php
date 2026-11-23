@@ -114,7 +114,7 @@ class SchemaAndStatesTest extends TestCase
         $this->putJson("/api/v1/websites/{$website->id}/runtime", ['documentRoot' => 'web/htdocs'])->assertAccepted();
 
         // The agent refuses a path with an empty part or with "/" at the end.
-        $snapshot = $website->snapshots()->create(['kind' => 'manual', 'restic_id' => 'abc12345', 'size_bytes' => 1, 'databases' => [], 'mailboxes' => []]);
+        $snapshot = $website->snapshots()->create(['kind' => 'manual', 'restic_id' => 'abc12345', 'size_bytes' => 1, 'databases' => []]);
         foreach (['/public/', '/a//b', '/a/./b', '/a/../b', 'public'] as $path) {
             $this->postJson("/api/v1/websites/{$website->id}/snapshots/{$snapshot->id}/restore", ['scope' => 'file', 'item' => $path])->assertJsonValidationErrors('item');
         }

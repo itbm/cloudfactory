@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\DatabaseToolController;
 use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DeployController;
 use App\Http\Controllers\Api\DnsAccountController;
+use App\Http\Controllers\Api\DnsSecondaryController;
 use App\Http\Controllers\Api\DnsZoneController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\FileController;
@@ -29,6 +30,8 @@ use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\MailAliasController;
+use App\Http\Controllers\Api\MailAutoresponderController;
+use App\Http\Controllers\Api\MailBackupController;
 use App\Http\Controllers\Api\MailboxController;
 use App\Http\Controllers\Api\MailClusterController;
 use App\Http\Controllers\Api\MailDomainController;
@@ -59,6 +62,7 @@ use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteCommandController;
 use App\Http\Controllers\Api\WebsiteController;
+use App\Http\Controllers\Api\WordPressController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -186,6 +190,15 @@ Route::prefix('v1')->group(function () {
             Route::delete('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'destroy']);
             Route::post('websites/{websiteId}/cron-jobs/{cronJobId}/run', [CronJobController::class, 'run'])->middleware('throttle:30,1,post-websites-x-cron-jobs-x-run');
 
+            // FR-206: WordPress. The agent runs WP-CLI in the container of the website.
+            Route::get('websites/{websiteId}/wordpress', [WordPressController::class, 'show']);
+            Route::post('websites/{websiteId}/wordpress', [WordPressController::class, 'store'])->middleware('throttle:10,1,post-websites-x-wordpress');
+            Route::patch('websites/{websiteId}/wordpress', [WordPressController::class, 'update']);
+            Route::post('websites/{websiteId}/wordpress/check', [WordPressController::class, 'check'])->middleware('throttle:30,1,post-websites-x-wordpress-check');
+            Route::post('websites/{websiteId}/wordpress/updates', [WordPressController::class, 'updates'])->middleware('throttle:30,1,post-websites-x-wordpress-updates');
+            Route::post('websites/{websiteId}/wordpress/restore', [WordPressController::class, 'restore'])->middleware('throttle:10,1,post-websites-x-wordpress-restore');
+            Route::post('websites/{websiteId}/wordpress/cli', [WordPressController::class, 'cli'])->middleware('throttle:30,1,post-websites-x-wordpress-cli');
+            Route::get('websites/{websiteId}/wordpress/commands', [WordPressController::class, 'commands']);
             // Uptime checks: the panel requests an address of a website on a schedule, and sends
             // an email when the website is down and when it is up again.
             Route::get('uptime-checks', [UptimeController::class, 'all']);
@@ -263,11 +276,23 @@ Route::prefix('v1')->group(function () {
             Route::patch('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'updateRecord'])->middleware('throttle:dns-changes');
             Route::delete('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'destroyRecord'])->middleware('throttle:dns-changes');
             Route::put('dns-zones/{id}/dnssec', [DnsZoneController::class, 'dnssec'])->middleware('throttle:dns-changes');
+            Route::post('dns-zones/{id}/dnssec/rollover', [DnsZoneController::class, 'startRollover'])->middleware('throttle:dns-changes');
+            Route::delete('dns-zones/{id}/dnssec/rollover', [DnsZoneController::class, 'cancelRollover'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/check', [DnsZoneController::class, 'check'])->middleware('throttle:domain-checks');
             Route::post('dns-zones/{id}/sync', [DnsZoneController::class, 'sync'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/import', [DnsZoneController::class, 'import'])->middleware('throttle:dns-changes');
             Route::get('dns-zones/{id}/export', [DnsZoneController::class, 'export']);
             Route::post('dns-zones/{id}/move', [DnsZoneController::class, 'move'])->middleware('throttle:dns-changes');
+            // Zone transfers to the secondary DNS servers of the owner of a zone.
+            Route::put('dns-zones/{id}/transfers', [DnsZoneController::class, 'transfers'])->middleware('throttle:dns-changes');
+            Route::delete('dns-zones/{id}/transfers', [DnsZoneController::class, 'destroyTransfers'])->middleware('throttle:dns-changes');
+            Route::get('dns-zones/{id}/transfers/secret', [DnsZoneController::class, 'transfersSecret'])->middleware('throttle:10,1,get-dns-transfers-secret');
+            // The secondary DNS servers of the panel, which copy all zones.
+            Route::get('dns-secondaries', [DnsSecondaryController::class, 'index'])->middleware('admin');
+            Route::post('dns-secondaries', [DnsSecondaryController::class, 'store'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::patch('dns-secondaries/{id}', [DnsSecondaryController::class, 'update'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::delete('dns-secondaries/{id}', [DnsSecondaryController::class, 'destroy'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::get('dns-secondaries/{id}/secret', [DnsSecondaryController::class, 'secret'])->middleware(['admin', 'throttle:10,1,get-dns-secondary-secret']);
             Route::get('dns-accounts', [DnsAccountController::class, 'index']);
             Route::post('dns-accounts', [DnsAccountController::class, 'store'])->middleware('throttle:dns-changes');
             Route::patch('dns-accounts/{id}', [DnsAccountController::class, 'update'])->middleware('throttle:dns-changes');
@@ -287,6 +312,8 @@ Route::prefix('v1')->group(function () {
             Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update'])->middleware('throttle:mail-changes');
             Route::get('mail/mailboxes/{id}/private-key', [MailboxController::class, 'privateKey']);
             Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy'])->middleware('throttle:mail-changes');
+            Route::get('mail/mailboxes/{id}/autoresponder', [MailAutoresponderController::class, 'show']);
+            Route::put('mail/mailboxes/{id}/autoresponder', [MailAutoresponderController::class, 'update'])->middleware('throttle:mail-changes');
             Route::get('mail/aliases', [MailAliasController::class, 'index']);
             Route::post('mail/aliases', [MailAliasController::class, 'store'])->middleware('throttle:mail-changes');
             Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy'])->middleware('throttle:mail-changes');
@@ -305,6 +332,10 @@ Route::prefix('v1')->group(function () {
             Route::get('websites/{websiteId}/snapshots', [BackupController::class, 'index']);
             Route::post('websites/{websiteId}/snapshots', [BackupController::class, 'store'])->middleware('throttle:20,1,post-snapshots');
             Route::post('websites/{websiteId}/snapshots/{snapshotId}/restore', [BackupController::class, 'restore'])->middleware('throttle:20,1,post-restore');
+            // The backups of a mailbox. A restore also needs the scope mail:write.
+            Route::get('mail/mailboxes/{id}/backups', [MailBackupController::class, 'index']);
+            Route::post('mail/mailboxes/{id}/backups', [MailBackupController::class, 'store'])->middleware('throttle:20,1,post-mailbox-backups');
+            Route::post('mail/mailboxes/{id}/backups/{snapshotId}/restore', [MailBackupController::class, 'restore'])->middleware('throttle:20,1,post-mailbox-restore');
             Route::get('backup-policy', [BackupController::class, 'showPolicy']);
             Route::put('backup-policy', [BackupController::class, 'updatePolicy'])->middleware('admin');
             Route::get('backup-policy/repository-password', [BackupController::class, 'showRepositoryPassword'])->middleware(['admin', 'throttle:10,1,get-repository-password']);
@@ -324,6 +355,8 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
             // Turns on email for a server with the email role.
             Route::put('servers/{id}/mail', [ServerController::class, 'setMail']);
+            // The spam filter and the outbound relay of the mail server of a server.
+            Route::put('servers/{id}/mail/settings', [ServerController::class, 'setMailSettings']);
             // Mail clusters: mail servers on three or five servers that share their data.
             Route::get('mail-clusters', [MailClusterController::class, 'index']);
             Route::post('mail-clusters', [MailClusterController::class, 'store']);

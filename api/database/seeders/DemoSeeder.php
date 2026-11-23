@@ -21,6 +21,7 @@ use App\Models\Customer;
 use App\Models\DatabaseServer;
 use App\Models\DnsAccount;
 use App\Models\DnsRecord;
+use App\Models\DnsSecondary;
 use App\Models\DnsZone;
 use App\Models\Domain;
 use App\Models\GitSource;
@@ -29,6 +30,7 @@ use App\Models\Image;
 use App\Models\Import;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
+use App\Models\MailboxSnapshot;
 use App\Models\MailDomain;
 use App\Models\MailServer;
 use App\Models\MalwareScan;
@@ -54,11 +56,15 @@ use App\Models\UsageAlert;
 use App\Models\User;
 use App\Models\Website;
 use App\Models\WebsiteCommand;
+use App\Models\WordPressCommand;
+use App\Models\WordPressSite;
 use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
 use App\Services\Certificates\Certificates;
 use App\Services\Certificates\Pem;
 use App\Services\Dns\Dnssec;
+use App\Services\Dns\Rollover;
+use App\Services\Dns\Secondaries;
 use App\Services\Dns\Zones;
 use App\Services\Exports\Description as ExportDescription;
 use App\Services\Imports\Description;
@@ -158,6 +164,7 @@ class DemoSeeder extends Seeder
         // After the mail: the description of an export has the email addresses.
         $this->exports();
         $this->jobsAndRollout();
+        $this->wordpress();
         $this->imports();
         $this->settingsAndAudit();
         $this->notifications();
@@ -547,7 +554,7 @@ class DemoSeeder extends Seeder
         $common = [
             'agent_version' => self::AGENT, 'os' => 'Debian 13', 'kernel' => '6.12.48', 'arch' => 'x86-64', 'podman_version' => '5.4.2',
             'gvisor_version' => 'release-20261019.0', 'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222,
-            'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true, 'agent_features' => ['imports'],
+            'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true, 'agent_features' => ['wordpress', 'imports'],
         ];
         // Two servers answer DNS queries. The customers give their host names to the registrar of a domain.
         $dns = fn (int $n) => ['dns' => true, 'dns_name' => "ns{$n}.panel.example", 'addresses' => ["203.0.113.{$n}0", "2001:db8:{$n}0::1"]];
@@ -573,7 +580,7 @@ class DemoSeeder extends Seeder
         ]);
         // A necessary service does not run, and the agent is from an earlier release.
         $this->servers['web-3'] = Server::create([
-            ...$common, 'name' => 'web-3', 'location' => 'Frankfurt', 'roles' => ['web'], 'state' => 'degraded', 'agent_version' => '0.1.8', 'agent_url' => 'https://web-3.panel.example:7443', 'addresses' => ['203.0.113.30'],
+            ...$common, 'name' => 'web-3', 'location' => 'Frankfurt', 'roles' => ['web'], 'state' => 'degraded', 'agent_version' => '0.1.8', 'agent_features' => [], 'agent_url' => 'https://web-3.panel.example:7443', 'addresses' => ['203.0.113.30'],
             'services' => [
                 ...$running(['edge', 'firewall', 'podman']),
                 ['name' => 'cf-sftp', 'state' => 'failed', 'detail' => 'The container stopped with exit code 125: the port 2222 is in use.'],
@@ -625,6 +632,9 @@ class DemoSeeder extends Seeder
             'services' => array_map(fn (string $n) => ['name' => $n, 'state' => 'running'], ['edge', 'cf-mail', 'firewall', 'podman']),
             'usage' => ['cpuPercent' => 6, 'memoryPercent' => 31, 'diskPercent' => 18], 'last_update_at' => now()->subDays(5),
             'mail_hostname' => $host, 'mail_status' => 'running',
+            // The provider of mail-1 blocks port 25: the outgoing mail goes through a relay.
+            'mail_settings' => ['spamFilter' => true, 'spamScore' => 5.0, 'rejectScore' => 15.0, 'relay' => ['host' => 'smtp.relay.example.net', 'port' => 587, 'username' => 'mail-1']],
+            'mail_relay_password' => 'demo-relay-password',
         ]);
         $this->servers['mail-1'] = $server;
 
@@ -657,6 +667,22 @@ class DemoSeeder extends Seeder
             'public_key' => $keys['publicKey'], 'private_key' => $keys['privateKey'],
             'encryption' => ['fingerprints' => [$keys['fingerprint']], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
         ]);
+
+        // The backups of the mailboxes of the small customers: one for each of the last seven
+        // nights, and one manual backup of info@acme.example.com. A mailbox gets a little
+        // smaller each night back. The owner restored info@ from the backup of three nights ago
+        // yesterday. One message was too large for the mail server.
+        foreach (Mailbox::whereIn('customer_id', [$this->customers['acme']->id, $this->customers['bakery']->id, $this->customers['books']->id])->with('domain')->orderBy('local_part')->get() as $mailbox) {
+            for ($night = 1; $night <= 7; $night++) {
+                $snapshot = $this->mailboxSnapshot($mailbox, 'scheduled', now()->subDays($night)->setTime(2, 4 + $night), $server->id, 1 - $night * 0.004);
+                if ($mailbox->local_part === 'info' && $night === 3) {
+                    $snapshot->update(['last_restore' => ['at' => now()->subDay()->setTime(9, 41)->toIso8601String(), 'added' => 14, 'present' => $snapshot->messages - 15, 'tooLarge' => 1, 'failed' => 0]]);
+                }
+            }
+            if ($mailbox->local_part === 'info') {
+                $this->mailboxSnapshot($mailbox, 'manual', now()->subHours(3), $server->id, 1);
+            }
+        }
 
         // A large customer, to show the Email page with many mailboxes and aliases.
         $owner = $this->customers['northwind'];
@@ -808,6 +834,13 @@ class DemoSeeder extends Seeder
     private function dns(): void
     {
         $servers = Zones::servers();
+        // A secondary DNS service copies all zones, and is the third name server of each zone.
+        DnsSecondary::create([
+            'name' => 'Backup DNS service', 'addresses' => ['198.51.100.53', '2001:db8:5300::53'], 'name_server' => 'ns3.backup-dns.example',
+            'tsig_name' => 'cf-backup-dns', 'tsig_algorithm' => 'hmac-sha256', 'tsig_secret' => Secondaries::newSecret('hmac-sha256'), 'notify' => true, 'catalog' => true,
+        ]);
+        Setting::put(Secondaries::VERSION, 1);
+        Setting::put(Secondaries::CATALOG, Secondaries::catalogZone());
         $elsewhere = ['ns1.registrar.example', 'ns2.registrar.example'];
         // name, customer, days since creation, name servers in the public DNS (null: the panel), DNSSEC, the DNS server that failed
         $rows = [
@@ -831,8 +864,25 @@ class DemoSeeder extends Seeder
             ]);
             $zone->created_at = now()->subDays($days);
             $zone->save();
+            // The registry has the DS record of each zone with DNSSEC.
+            if ($key) {
+                $zone->update(['dnssec_parent' => ['state' => 'ok', 'keys' => ['current'], 'keyTags' => [$key['keyTag']], 'ttl' => 86400, 'checkedAt' => now()->subMinutes(9)->toIso8601String()]]);
+            }
+            // Acme Ltd changes the DNSSEC key of its main zone. The DNS servers publish the CDS
+            // record of the new key, and the panel waits for the new DS record at the registry.
+            if ($name === 'acme.example.com') {
+                $next = Dnssec::generate(StableValues::ecKey("DNSSEC {$name} next"));
+                $zone->update(['dnssec_rollover' => Rollover::SUBMIT, 'dnssec_next_key' => $next['key'], 'dnssec_next_public_key' => $next['publicKey'],
+                    'dnssec_next_key_tag' => $next['keyTag'], 'dnssec_rollover_at' => now()->subHours(5), 'dnssec_rollover_until' => null]);
+            }
+            // Acme Ltd also sends its main zone to its own secondary DNS server.
+            if ($name === 'acme.example.com') {
+                $zone->update(['transfer_addresses' => ['192.0.2.200'], 'transfer_notify' => true, 'transfer_tsig_algorithm' => 'hmac-sha256',
+                    'transfer_tsig_secret' => Secondaries::newSecret('hmac-sha256'), 'transfer_name_servers' => ['ns.acme-backup.example']]);
+            }
             // The zones of Northwind Agency and of its customers have the name servers of its brand.
-            foreach (Branding::nameServersFor($this->customers[$customer]) as $host) {
+            // Each zone also has the name server of the secondary DNS service.
+            foreach (Zones::panelNameServersFor($zone) as $host) {
                 $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => Zones::NS_TTL, 'value' => $host, 'managed' => DnsRecord::NS]);
             }
             // The A and AAAA records of the domains of the websites of the customer in the zone.
@@ -1143,12 +1193,26 @@ class DemoSeeder extends Seeder
         DemoExport::seed($this->customers['books'], User::where('email', 'reseller@example.com')->first(), now()->subDay()->setTime(11, 5));
     }
 
+    /** A backup of a mailbox, with about 80 KB for each message. */
+    private function mailboxSnapshot(Mailbox $mailbox, string $kind, \DateTimeInterface $at, string $serverId, float $part): MailboxSnapshot
+    {
+        $size = (int) max(64 * 1024, $mailbox->used_bytes * $part);
+        $snapshot = new MailboxSnapshot([
+            'mailbox_id' => $mailbox->id, 'address' => $mailbox->address(), 'server_id' => $serverId, 'kind' => $kind,
+            'restic_id' => hash('sha256', $mailbox->id.$kind.$at->format('c')), 'size_bytes' => $size, 'messages' => intdiv($size, 80 * 1024),
+        ]);
+        $snapshot->created_at = $at;
+        $snapshot->save();
+
+        return $snapshot;
+    }
+
     /** @param  ?string  $serverId  The server of a part with only databases. Null is a backup of the website. */
     private function snapshot(Website $website, string $kind, int $size, array $databases, \DateTimeInterface $at, ?string $serverId = null): void
     {
         $snapshot = new Snapshot([
             'website_id' => $website->id, 'kind' => $kind, 'restic_id' => hash('sha256', $website->id.$kind.$at->format('c').$serverId), 'size_bytes' => max($size, self::MB),
-            'databases' => $databases, 'mailboxes' => [], 'dump_hashes' => [],
+            'databases' => $databases, 'dump_hashes' => [],
             'server_id' => $serverId ?? $website->server_id, 'part' => $serverId ? Snapshot::DATABASES : Snapshot::WEBSITE,
         ]);
         $snapshot->created_at = $at > now() ? now()->subHours(20) : $at;
@@ -1462,6 +1526,10 @@ class DemoSeeder extends Seeder
         foreach (['web-1', 'web-2'] as $server) {
             $job($server, AgentAction::SetDnsZones, 'Add TXT record to acme.example.com', JobState::Succeeded, 140, null, ['ref' => 'acme.example.com', 'dns_zone_id' => $this->zones['acme.example.com']->id]);
         }
+        // The DNS servers have the list of the secondary DNS servers.
+        foreach (['web-1', 'web-2'] as $server) {
+            $job($server, AgentAction::SetDnsSecondaries, 'Add secondary DNS server Backup DNS service', JobState::Succeeded, 400, null, ['payload' => ['version' => 1]]);
+        }
         $books = ['ref' => 'harbourbooks.example.net', 'dns_zone_id' => $this->zones['harbourbooks.example.net']->id];
         $job('web-1', AgentAction::SetDnsZones, 'Add TXT record to harbourbooks.example.net', JobState::Succeeded, 33, null, $books);
         $job('web-2', AgentAction::SetDnsZones, 'Add TXT record to harbourbooks.example.net', JobState::Failed, 33, null, [
@@ -1478,6 +1546,78 @@ class DemoSeeder extends Seeder
         $rollout->created_at = now()->subHours(30);
         $rollout->updated_at = now()->subHours(29);
         $rollout->save();
+    }
+
+    /**
+     * FR-206: the WordPress sites. The panel updated Acme two days ago in the maintenance window,
+     * and the update of Corner Bakery failed the health check, so the agent put back the
+     * restore point. The site of Lawson is from before the suspension and has old versions.
+     */
+    private function wordpress(): void
+    {
+        $plugin = fn (string $name, string $title, string $version, ?string $update = null, string $status = 'active') => compact('name', 'title', 'status', 'version', 'update');
+        $theme = fn (string $name, string $title, string $version, ?string $update = null, string $status = 'inactive') => compact('name', 'title', 'status', 'version', 'update');
+        $twentyFive = $theme('twentytwentyfive', 'Twenty Twenty-Five', '1.3', null, 'active');
+        $woo = [$plugin('woocommerce', 'WooCommerce', '10.3.4', '10.3.5'), $plugin('woocommerce-payments', 'WooPayments', '9.9.1'), $plugin('mailpoet', 'MailPoet', '5.16.2', '5.17.0', 'inactive')];
+        $update = fn (int $hoursAgo, string $from, string $to, array $plugins, array $more = []) => [
+            'jobId' => null, 'at' => now()->subHours($hoursAgo)->toIso8601String(), 'automatic' => true, 'core' => $from === $to ? '' : 'minor',
+            'plugins' => $plugins, 'themes' => [], 'state' => 'succeeded', 'from' => $from, 'to' => $to, ...$more,
+        ];
+        $restorePoint = fn (int $hoursAgo, string $version) => ['at' => now()->subHours($hoursAgo)->toIso8601String(), 'version' => $version, 'database' => true];
+        // website, admin user, version, minor update, latest version, plugins, themes, automatic updates (core, plugins, themes), more
+        $rows = [
+            ['acme.example.com', 'acme-admin', '6.8.3', null, '6.9', [
+                $plugin('akismet', 'Akismet Anti-spam: Spam Protection', '5.5'), $plugin('wordpress-seo', 'Yoast SEO', '26.3', '26.4'),
+                $plugin('contact-form-7', 'Contact Form 7', '6.1.2'), $plugin('wordfence', 'Wordfence Security', '8.1.0', '8.1.2'),
+            ], [$twentyFive, $theme('astra', 'Astra', '4.11.13', '4.11.15')], ['minor', true, false], [
+                'last_update' => $update(50, '6.8.2', '6.8.3', ['akismet']), 'restore_point' => $restorePoint(50, '6.8.2'),
+            ]],
+            ['shop.acme.example.com', 'acme-admin', '6.9', null, null, $woo, [$theme('storefront', 'Storefront', '4.6.1', null, 'active'), $twentyFive], ['minor', false, false], []],
+            ['northwind.example.com', 'northwind', '6.9', null, null, [$plugin('akismet', 'Akismet Anti-spam: Spam Protection', '5.5'), $plugin('wp-mail-smtp', 'WP Mail SMTP', '4.6.0')], [$twentyFive], ['all', true, true], [
+                'last_update' => $update(26, '6.9', '6.9', ['wp-mail-smtp']), 'restore_point' => $restorePoint(26, '6.9'),
+            ]],
+            ['cornerbakery.example.org', 'bakery', '6.8.3', null, '6.9', [
+                $plugin('elementor', 'Elementor', '3.32.1', '3.33.0'), $plugin('wp-super-cache', 'WP Super Cache', '3.0.1'), $plugin('hello', 'Hello Dolly', '1.7.2', null, 'inactive'),
+            ], [$theme('hello-elementor', 'Hello Elementor', '3.4.4', null, 'active'), $twentyFive], ['minor', true, false], [
+                'last_update' => $update(120, '6.8.3', '6.8.3', ['elementor'], ['automatic' => false, 'state' => 'rolledBack', 'to' => null,
+                    'error' => 'WordPress does not load after the update: the website gave status 500; the agent put back the restore point']),
+                'restore_point' => $restorePoint(120, '6.8.3'),
+            ]],
+            ['harbourbooks.example.net', 'harbourbooks', '6.9', null, null, $woo, [$theme('storefront', 'Storefront', '4.6.1', null, 'active')], ['minor', false, false], []],
+            ['lawson.example.org', 'lawson', '6.7.2', '6.7.4', '6.9', [$plugin('akismet', 'Akismet Anti-spam: Spam Protection', '5.3.3', '5.5')], [$theme('twentytwentyfour', 'Twenty Twenty-Four', '1.2', '1.3', 'active')], ['off', false, false], [
+                'checked_at' => now()->subDays(41),
+            ]],
+        ];
+        foreach ($rows as [$name, $admin, $version, $minor, $latest, $plugins, $themes, [$core, $autoPlugins, $autoThemes], $more]) {
+            $website = $this->websites[$name];
+            WordPressSite::create([
+                'website_id' => $website->id, 'database_id' => $website->databases()->where('engine', 'mariadb')->value('id'), 'status' => WordPressSite::READY,
+                'version' => $version, 'core_minor' => $minor, 'core_latest' => $latest, 'plugins' => $plugins, 'themes' => $themes, 'site_url' => "https://{$name}",
+                'admin_user' => $admin, 'checked_at' => now()->subHours(3), 'auto_checked_at' => now()->subHours(20), 'auto_update_core' => $core,
+                'auto_update_plugins' => $autoPlugins, 'auto_update_themes' => $autoThemes, ...$more,
+            ]);
+        }
+
+        // The WP-CLI commands that the owner of Acme ran.
+        $acme = $this->websites['acme.example.com'];
+        $owner = User::where('email', 'owner@example.com')->value('id');
+        $commands = [
+            [180, 'wp plugin list', 0, "name\tstatus\tupdate\tversion\nakismet\tactive\tnone\t5.5\nwordpress-seo\tactive\tavailable\t26.3\ncontact-form-7\tactive\tnone\t6.1.2\nwordfence\tactive\tavailable\t8.1.0"],
+            [95, 'wp cache flush', 0, 'Success: The cache was flushed.'],
+            [40, 'wp user update 2 --user_pass=***', 0, 'Success: Updated user 2.'],
+        ];
+        foreach ($commands as [$minutesAgo, $command, $exit, $output]) {
+            $job = new AgentJob([
+                'server_id' => $acme->server_id, 'website_id' => $acme->id, 'action' => AgentAction::RunWpCli, 'title' => 'WP-CLI: '.$command, 'ref' => $acme->name,
+                'payload' => ['websiteId' => $acme->id], 'steps' => AgentAction::RunWpCli->steps(), 'step' => count(AgentAction::RunWpCli->steps()), 'state' => JobState::Succeeded,
+                'started_at' => now()->subMinutes($minutesAgo), 'finished_at' => now()->subMinutes($minutesAgo),
+            ]);
+            $job->created_at = now()->subMinutes($minutesAgo);
+            $job->save();
+            $row = new WordPressCommand(['website_id' => $acme->id, 'agent_job_id' => $job->id, 'user_id' => $owner, 'command' => $command, 'status' => 'done', 'exit_code' => $exit, 'output' => $output, 'ran_at' => now()->subMinutes($minutesAgo)]);
+            $row->created_at = now()->subMinutes($minutesAgo);
+            $row->save();
+        }
     }
 
     /**

@@ -9,6 +9,12 @@ namespace App\Validation;
  */
 final class InputRules
 {
+    /** The subject of the answer of an autoresponder. It is on one line and has no control characters. An empty subject is permitted: the mail server then uses "Auto:" and the subject of the message. */
+    public const AUTORESPONDER_SUBJECT = '/^(?:\\z|(?=[\\s\\S]{0,200}\\z)(?:^[^\\x00-\\x1f\\x7f]+$))/D';
+
+    /** The text of the answer of an autoresponder. It can have line breaks and tabs, but no other control characters. The mail server accepts a text of less than 2048 bytes. */
+    public const AUTORESPONDER_TEXT = '/^(?:\\z|(?=[\\s\\S]{0,2000}\\z)(?:^[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]+$))/D';
+
     /** One argument of the start command of a custom image. It has no control characters. */
     public const COMMAND_ARGUMENT = '/^(?=[\\s\\S]{0,1024}\\z)(?:^[^\\x00-\\x1f\\x7f]+$)/D';
 
@@ -171,14 +177,37 @@ final class InputRules
     /** One public key in the format of authorized_keys, with no options. */
     public const SSH_KEY = '/^(?=[\\s\\S]{0,8192}\\z)(?:^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh\\.com|sk-ecdsa-sha2-nistp256@openssh\\.com) [A-Za-z0-9+\\/]+={0,3}( [ -~]{0,200})?$)/D';
 
+    /** The name of a TSIG key (RFC 8945) for zone transfers: a DNS name in lower case, with no dot at the end. Both servers of a transfer use the same name. */
+    public const TSIG_NAME = '/^(?=[\\s\\S]{0,253}\\z)(?:^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$)/D';
+
+    /** The secret of a TSIG key in base64: 16 to 64 bytes. The panel makes it, or the administrator copies it from the secondary DNS service. */
+    public const TSIG_SECRET = '/^(?=[\\s\\S]{0,88}\\z)(?:^([A-Za-z0-9+\\/]{4}){5,21}([A-Za-z0-9+\\/]{2}==|[A-Za-z0-9+\\/]{3}=)?$)/D';
+
     /** The Unix user of a website, for example "acme_x7k2". */
     public const UNIX_USER = '/^(?:^[a-z][a-z0-9]{0,15}_[a-z0-9]{4}$)/D';
 
     /** An agent version, for example "0.1.0". */
     public const VERSION = '/^(?=[\\s\\S]{0,32}\\z)(?:^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$)/D';
 
+    /** The language of a WordPress site, as a WordPress locale, for example en_GB or de_DE_formal. */
+    public const WORDPRESS_LOCALE = '/^(?=[\\s\\S]{0,20}\\z)(?:^[a-z]{2,3}(_[A-Z]{2})?(_[a-z0-9]+)?$)/D';
+
+    /** The name of a WordPress plugin or theme: the name of its directory in wp-content. It cannot start with "-", so that WP-CLI does not read it as an option. */
+    public const WORDPRESS_SLUG = '/^(?![\\s\\S]*?(?:\\.\\.))(?:^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$)/D';
+
+    /** The title of a WordPress site. It is on one line and has no control characters. */
+    public const WORDPRESS_TITLE = '/^(?=[\\s\\S]{0,100}\\z)(?:^[^\\x00-\\x1f\\x7f]+$)/D';
+
+    /** The user name of the first WordPress administrator. It has 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. It is not "admin" or "administrator", because attackers try these names first. */
+    public const WORDPRESS_USER = '/^(?![\\s\\S]*?(?:^(?i:admin|administrator)$))(?:^[A-Za-z0-9][A-Za-z0-9._@-]{2,59}$)/D';
+
+    /** One argument of a WP-CLI command. The agent gives each argument to WP-CLI as it is, with no shell. It has no control characters. It can be empty. */
+    public const WP_CLI_ARGUMENT = '/^(?:\\z|(?=[\\s\\S]{0,1000}\\z)(?:^[^\\x00-\\x1f\\x7f]*$))/D';
+
     /** Each pattern by the name of its rule in schema/input-rules.json. */
     public const PATTERNS = [
+        'autoresponderSubject' => self::AUTORESPONDER_SUBJECT,
+        'autoresponderText' => self::AUTORESPONDER_TEXT,
         'commandArgument' => self::COMMAND_ARGUMENT,
         'commandLine' => self::COMMAND_LINE,
         'cronSchedule' => self::CRON_SCHEDULE,
@@ -233,12 +262,21 @@ final class InputRules
         'securityPath' => self::SECURITY_PATH,
         'sha256' => self::SHA256,
         'sshKey' => self::SSH_KEY,
+        'tsigName' => self::TSIG_NAME,
+        'tsigSecret' => self::TSIG_SECRET,
         'unixUser' => self::UNIX_USER,
         'version' => self::VERSION,
+        'wordpressLocale' => self::WORDPRESS_LOCALE,
+        'wordpressSlug' => self::WORDPRESS_SLUG,
+        'wordpressTitle' => self::WORDPRESS_TITLE,
+        'wordpressUser' => self::WORDPRESS_USER,
+        'wpCliArgument' => self::WP_CLI_ARGUMENT,
     ];
 
     /** The text that tells a person how to correct a value. */
     public const MESSAGES = [
+        'autoresponderSubject' => 'Enter a subject of up to 200 characters on one line.',
+        'autoresponderText' => 'Enter a text of up to 2000 characters. A letter with an accent counts as two characters.',
         'commandArgument' => 'Each argument must have 1 to 1024 characters and no control characters.',
         'commandLine' => 'Enter a command of 1 to 1000 characters on one line.',
         'cronSchedule' => 'Enter 5 fields: minute, hour, day of the month, month and day of the week. For example */5 * * * * or 0 3 * * 1.',
@@ -293,8 +331,15 @@ final class InputRules
         'securityPath' => 'Enter a path that starts with /, for example /wp-login.php or /admin/. Use letters, digits and . _ ~ @ : + , = -. Do not use "//", "." or ".." parts.',
         'sha256' => 'Enter 64 hexadecimal digits in lower case.',
         'sshKey' => 'Enter one public SSH key on one line, for example: ssh-ed25519 AAAA... name. Do not put options before the key.',
+        'tsigName' => 'Enter a key name in lower-case letters, digits, "-" and ".", for example cf-transfer.example.net.',
+        'tsigSecret' => 'Enter the secret in base64, with 16 to 64 bytes.',
         'unixUser' => 'Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits.',
         'version' => 'Enter a version, for example 0.1.0.',
+        'wordpressLocale' => 'Enter a WordPress locale, for example en_GB.',
+        'wordpressSlug' => 'Enter the name of a plugin or a theme, for example akismet.',
+        'wordpressTitle' => 'Enter a title of 1 to 100 characters on one line.',
+        'wordpressUser' => 'Use 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. Do not use admin or administrator.',
+        'wpCliArgument' => 'Each argument must have at most 1000 characters and no control characters.',
     ];
 
     /** The types of DNS record that a user can make. */
@@ -314,6 +359,9 @@ final class InputRules
 
     /** The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names. */
     public const RESERVED_RUNTIME_NAMES = ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'static', 'edge', 'mail', 'dns', 'database', 'mariadb', 'postgresql', 'valkey'];
+
+    /** The algorithms of a TSIG key for zone transfers. */
+    public const TSIG_ALGORITHMS = ['hmac-sha256', 'hmac-sha512'];
 
     /** The largest number of files and directories that the file manager puts in one new archive. */
     public const MAX_ARCHIVE_PATHS = 2000;
@@ -348,8 +396,14 @@ final class InputRules
     /** The largest number of records in a DNS zone. */
     public const MAX_DNS_RECORDS_PER_ZONE = 1000;
 
+    /** The largest number of secondary DNS servers of the panel. */
+    public const MAX_DNS_SECONDARIES = 10;
+
     /** The smallest TTL of a DNS record, in seconds. */
     public const MIN_DNS_SHORT_TTL = 60;
+
+    /** The largest number of addresses of one secondary DNS server, or of the zone transfers of one zone. */
+    public const MAX_DNS_TRANSFER_ADDRESSES = 10;
 
     /** The largest TTL of a DNS record, in seconds. */
     public const MAX_DNS_TTL = 604800;
@@ -401,4 +455,10 @@ final class InputRules
 
     /** The largest number of sign-in paths of a website. */
     public const MAX_SIGN_IN_PATHS = 20;
+
+    /** The largest number of plugins or themes in one update of a WordPress site. */
+    public const MAX_WORDPRESS_UPDATES = 200;
+
+    /** The largest number of arguments of one WP-CLI command. */
+    public const MAX_WP_CLI_ARGUMENTS = 40;
 }

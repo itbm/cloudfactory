@@ -4,6 +4,30 @@ package validate
 
 import "regexp"
 
+var ruleAutoresponderSubject = rule{
+	what:      "subject of the autoresponder",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
+	maxLength: 200,
+	empty:     true,
+}
+
+// AutoresponderSubject checks a value with the rule "autoresponderSubject" of schema/input-rules.json.
+//
+// The subject of the answer of an autoresponder. It is on one line and has no control characters. An empty subject is permitted: the mail server then uses "Auto:" and the subject of the message.
+func AutoresponderSubject(s string) error { return ruleAutoresponderSubject.check(s) }
+
+var ruleAutoresponderText = rule{
+	what:      "text of the autoresponder",
+	pattern:   regexp.MustCompile(`^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+$`),
+	maxLength: 2000,
+	empty:     true,
+}
+
+// AutoresponderText checks a value with the rule "autoresponderText" of schema/input-rules.json.
+//
+// The text of the answer of an autoresponder. It can have line breaks and tabs, but no other control characters. The mail server accepts a text of less than 2048 bytes.
+func AutoresponderText(s string) error { return ruleAutoresponderText.check(s) }
+
 var ruleCommandArgument = rule{
 	what:      "argument of the start command",
 	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
@@ -627,6 +651,29 @@ var ruleSSHKey = rule{
 // One public key in the format of authorized_keys, with no options.
 func SSHKey(s string) error { return ruleSSHKey.check(s) }
 
+var ruleTSIGName = rule{
+	what:      "TSIG key name",
+	pattern:   regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$`),
+	maxLength: 253,
+	echo:      true,
+}
+
+// TSIGName checks a value with the rule "tsigName" of schema/input-rules.json.
+//
+// The name of a TSIG key (RFC 8945) for zone transfers: a DNS name in lower case, with no dot at the end. Both servers of a transfer use the same name.
+func TSIGName(s string) error { return ruleTSIGName.check(s) }
+
+var ruleTSIGSecret = rule{
+	what:      "TSIG secret",
+	pattern:   regexp.MustCompile(`^([A-Za-z0-9+/]{4}){5,21}([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`),
+	maxLength: 88,
+}
+
+// TSIGSecret checks a value with the rule "tsigSecret" of schema/input-rules.json.
+//
+// The secret of a TSIG key in base64: 16 to 64 bytes. The panel makes it, or the administrator copies it from the secondary DNS service.
+func TSIGSecret(s string) error { return ruleTSIGSecret.check(s) }
+
 var ruleUnixUser = rule{
 	what:    "Unix user",
 	pattern: regexp.MustCompile(`^[a-z][a-z0-9]{0,15}_[a-z0-9]{4}$`),
@@ -650,10 +697,72 @@ var ruleVersion = rule{
 // An agent version, for example "0.1.0".
 func Version(s string) error { return ruleVersion.check(s) }
 
+var ruleWordpressLocale = rule{
+	what:      "language",
+	pattern:   regexp.MustCompile(`^[a-z]{2,3}(_[A-Z]{2})?(_[a-z0-9]+)?$`),
+	maxLength: 20,
+	echo:      true,
+}
+
+// WordpressLocale checks a value with the rule "wordpressLocale" of schema/input-rules.json.
+//
+// The language of a WordPress site, as a WordPress locale, for example en_GB or de_DE_formal.
+func WordpressLocale(s string) error { return ruleWordpressLocale.check(s) }
+
+var ruleWordpressSlug = rule{
+	what:    "plugin or theme",
+	pattern: regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$`),
+	not:     []*regexp.Regexp{regexp.MustCompile(`\.\.`)},
+	echo:    true,
+}
+
+// WordpressSlug checks a value with the rule "wordpressSlug" of schema/input-rules.json.
+//
+// The name of a WordPress plugin or theme: the name of its directory in wp-content. It cannot start with "-", so that WP-CLI does not read it as an option.
+func WordpressSlug(s string) error { return ruleWordpressSlug.check(s) }
+
+var ruleWordpressTitle = rule{
+	what:      "site title",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
+	maxLength: 100,
+	echo:      true,
+}
+
+// WordpressTitle checks a value with the rule "wordpressTitle" of schema/input-rules.json.
+//
+// The title of a WordPress site. It is on one line and has no control characters.
+func WordpressTitle(s string) error { return ruleWordpressTitle.check(s) }
+
+var ruleWordpressUser = rule{
+	what:    "WordPress user name",
+	pattern: regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{2,59}$`),
+	not:     []*regexp.Regexp{regexp.MustCompile(`^(?i:admin|administrator)$`)},
+	echo:    true,
+}
+
+// WordpressUser checks a value with the rule "wordpressUser" of schema/input-rules.json.
+//
+// The user name of the first WordPress administrator. It has 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. It is not "admin" or "administrator", because attackers try these names first.
+func WordpressUser(s string) error { return ruleWordpressUser.check(s) }
+
+var ruleWpCliArgument = rule{
+	what:      "WP-CLI argument",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]*$`),
+	maxLength: 1000,
+	empty:     true,
+}
+
+// WpCliArgument checks a value with the rule "wpCliArgument" of schema/input-rules.json.
+//
+// One argument of a WP-CLI command. The agent gives each argument to WP-CLI as it is, with no shell. It has no control characters. It can be empty.
+func WpCliArgument(s string) error { return ruleWpCliArgument.check(s) }
+
 // rules has each rule by its name in schema/input-rules.json.
 var rules = map[string]*rule{}
 
 func init() {
+	rules["autoresponderSubject"] = &ruleAutoresponderSubject
+	rules["autoresponderText"] = &ruleAutoresponderText
 	rules["commandArgument"] = &ruleCommandArgument
 	rules["commandLine"] = &ruleCommandLine
 	rules["cronSchedule"] = &ruleCronSchedule
@@ -708,8 +817,15 @@ func init() {
 	rules["securityPath"] = &ruleSecurityPath
 	rules["sha256"] = &ruleSHA256
 	rules["sshKey"] = &ruleSSHKey
+	rules["tsigName"] = &ruleTSIGName
+	rules["tsigSecret"] = &ruleTSIGSecret
 	rules["unixUser"] = &ruleUnixUser
 	rules["version"] = &ruleVersion
+	rules["wordpressLocale"] = &ruleWordpressLocale
+	rules["wordpressSlug"] = &ruleWordpressSlug
+	rules["wordpressTitle"] = &ruleWordpressTitle
+	rules["wordpressUser"] = &ruleWordpressUser
+	rules["wpCliArgument"] = &ruleWpCliArgument
 }
 
 // The types of DNS record that a user can make.
@@ -729,6 +845,9 @@ var reservedPackDirs = []string{"tmp", "proc", "sys", "dev", "run", "cf"}
 
 // The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.
 var reservedRuntimeNames = []string{"frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database", "mariadb", "postgresql", "valkey"}
+
+// The algorithms of a TSIG key for zone transfers.
+var tsigAlgorithms = []string{"hmac-sha256", "hmac-sha512"}
 
 // MaxArchivePaths: The largest number of files and directories that the file manager puts in one new archive.
 const MaxArchivePaths = 2000
@@ -763,8 +882,14 @@ const MaxDeploySecrets = 50
 // MaxDnsRecordsPerZone: The largest number of records in a DNS zone.
 const MaxDnsRecordsPerZone = 1000
 
+// MaxDnsSecondaries: The largest number of secondary DNS servers of the panel.
+const MaxDnsSecondaries = 10
+
 // MinDnsShortTtl: The smallest TTL of a DNS record, in seconds.
 const MinDnsShortTtl = 60
+
+// MaxDnsTransferAddresses: The largest number of addresses of one secondary DNS server, or of the zone transfers of one zone.
+const MaxDnsTransferAddresses = 10
 
 // MaxDnsTtl: The largest TTL of a DNS record, in seconds.
 const MaxDnsTtl = 604800
@@ -816,3 +941,9 @@ const MaxSignInLimit = 600
 
 // MaxSignInPaths: The largest number of sign-in paths of a website.
 const MaxSignInPaths = 20
+
+// MaxWordpressUpdates: The largest number of plugins or themes in one update of a WordPress site.
+const MaxWordpressUpdates = 200
+
+// MaxWpCliArguments: The largest number of arguments of one WP-CLI command.
+const MaxWpCliArguments = 40

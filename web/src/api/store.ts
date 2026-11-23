@@ -12,6 +12,8 @@ import * as live from "./live";
 import type {
   AccountExport,
   ApiToken,
+  Autoresponder,
+  AutoresponderInput,
   BackupPolicy,
   BrandFields,
   Confirmation,
@@ -34,6 +36,8 @@ import type {
   Preview,
   Previews,
   MailAlias,
+  MailboxBackup,
+  MailSettingsInput,
   DomainKind,
   FileContent,
   FileEntry,
@@ -58,6 +62,8 @@ import type {
   ResellerBranding,
   ServerRole,
   State,
+  TsigAlgorithm,
+  TsigKey,
   PanelCertificateMethod,
   TokenScope,
   UpdatePolicy,
@@ -75,6 +81,11 @@ import type {
   UsageRange,
   UsageSubject,
   MailCluster,
+  WordPressAdmin,
+  WordPressAutoUpdates,
+  WordPressSite,
+  WordPressState,
+  WpCliCommand,
 } from "./types";
 
 /** An error that the API returns for incorrect input. The UI shows it next to the field. */
@@ -366,11 +377,23 @@ export interface NewWebsite {
   installCommand?: string;
   /** True for a Node.js or Python image. */
   app?: boolean;
+  /** FR-206: install WordPress in the new website. */
+  wordpress?: WordPressInstall;
 }
 
-export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; job: Promise<Job> }> | { websiteId: string; job: Promise<Job> } {
+/** The site and the first administrator of a new WordPress site. */
+export interface WordPressInstall {
+  title: string;
+  adminUser: string;
+  adminEmail: string;
+  locale: string;
+}
+
+const wordpressBody = (w: WordPressInstall) => ({ title: w.title.trim(), adminUser: w.adminUser.trim(), adminEmail: w.adminEmail.trim(), locale: w.locale || undefined });
+
+export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; job: Promise<Job>; wordpress?: WordPressAdmin }> {
   return call(async () => {
-    const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", "/websites", {
+    const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob; wordpress?: { admin: WordPressAdmin } }>("POST", "/websites", {
       // CF-07: only an administrator selects the plan here. The panel uses the plan of the customer.
       // A private website and a worker have no domain: the name is a short name.
       kind: input.kind && input.kind !== "public" ? input.kind : undefined,
@@ -378,11 +401,12 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
       installCommand: input.app && input.installCommand !== undefined ? input.installCommand.trim() : undefined,
       name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: state.session.contextId === "platform" || state.session.user.role === "administrator" ? input.planId : undefined,
       serverId: input.serverId || undefined, customerId: input.customerId && input.customerId !== "platform" ? input.customerId : undefined,
+      wordpress: input.wordpress ? wordpressBody(input.wordpress) : undefined,
     });
     update((d) => {
       d.websites = [live.toWebsite(r.website), ...d.websites.filter((w) => w.id !== r.website.id)];
     });
-    return { websiteId: r.website.id, job: track(r.job) };
+    return { websiteId: r.website.id, job: track(r.job), wordpress: r.wordpress?.admin };
   });
 }
 
@@ -680,6 +704,88 @@ export function removeCronJob(websiteId: string, cronJobId: string): Promise<voi
 /** Runs the command of a cron job now. The promise resolves when the command has finished. */
 export function runCronJob(websiteId: string, cronJobId: string): Promise<Job> {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/cron-jobs/${cronJobId}/run`)).then((r) => track(r.job));
+}
+
+/** FR-206: the WordPress site of a website, or null, and the last WP-CLI commands. */
+export function readWordPress(websiteId: string): Promise<WordPressState> {
+  return call(() => live.request<WordPressState>("GET", `/websites/${websiteId}/wordpress`));
+}
+
+/** Installs WordPress on an empty website. The API gives the password of the administrator one time. */
+export function installWordPress(websiteId: string, input: WordPressInstall): Promise<{ admin: WordPressAdmin; job: Promise<Job> }> {
+  return call(() => live.request<{ wordpress: WordPressSite; admin: WordPressAdmin; job: live.ApiJob }>("POST", `/websites/${websiteId}/wordpress`, wordpressBody(input)))
+    .then((r) => ({ admin: r.admin, job: track(r.job) }));
+}
+
+/** Reads the versions and the updates. On a website with no WordPress record, the agent looks for WordPress. */
+export function checkWordPress(websiteId: string): Promise<Job> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/wordpress/check`)).then((r) => track(r.job));
+}
+
+export interface WordPressUpdateInput {
+  core?: "minor" | "latest" | null;
+  plugins?: string[];
+  themes?: string[];
+  /** Each available update. */
+  all?: boolean;
+}
+
+/** Updates WordPress, plugins and themes, with a restore point and a health check. */
+export function updateWordPress(websiteId: string, input: WordPressUpdateInput): Promise<Job> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/wordpress/updates`, input)).then((r) => track(r.job));
+}
+
+/** Puts back the restore point of the last update: the files with no uploads, and the database. */
+export function restoreWordPress(websiteId: string): Promise<Job> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/wordpress/restore`)).then((r) => track(r.job));
+}
+
+export function setWordPressUpdates(websiteId: string, autoUpdates: Partial<WordPressAutoUpdates>): Promise<WordPressSite> {
+  return call(() => live.request<{ wordpress: WordPressSite }>("PATCH", `/websites/${websiteId}/wordpress`, { autoUpdates })).then((r) => r.wordpress);
+}
+
+/**
+ * Splits a WP-CLI command line into arguments, as a shell does: quotes keep spaces, and a
+ * backslash keeps the next character. The panel sends each argument to WP-CLI with no shell.
+ * The word "wp" at the start is optional.
+ */
+export function wpCliArguments(line: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  let has = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (c === "\\" && quote === '"' && i + 1 < line.length) current += line[++i];
+      else current += c;
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      has = true;
+    } else if (c === "\\" && i + 1 < line.length) {
+      current += line[++i];
+      has = true;
+    } else if (/\s/.test(c)) {
+      if (has || current) args.push(current);
+      current = "";
+      has = false;
+    } else {
+      current += c;
+    }
+  }
+  if (quote) throw new ApiError("A quote has no end.", { args: "A quote has no end." });
+  if (has || current) args.push(current);
+  return args[0] === "wp" ? args.slice(1) : args;
+}
+
+/** Runs one WP-CLI command. The promise gives the command when its job ends. */
+export function runWpCli(websiteId: string, line: string): Promise<{ command: WpCliCommand; job: Promise<Job> }> {
+  return call(async () => {
+    const args = wpCliArguments(line);
+    const r = await live.request<{ command: WpCliCommand; job: live.ApiJob }>("POST", `/websites/${websiteId}/wordpress/cli`, { args });
+    return { command: r.command, job: track(r.job) };
+  });
 }
 
 // The protection of a website in the edge proxy
@@ -1147,6 +1253,31 @@ export function mailboxPrivateKey(mailboxId: string): Promise<string> {
   return call(async () => (await live.request<{ privateKey: string }>("GET", `/mail/mailboxes/${mailboxId}/private-key`)).privateKey);
 }
 
+/** Reads the autoresponder of a mailbox from the mail server. */
+export function getAutoresponder(mailboxId: string): Promise<Autoresponder> {
+  return call(async () => (await live.request<{ autoresponder: Autoresponder }>("GET", `/mail/mailboxes/${mailboxId}/autoresponder`)).autoresponder);
+}
+
+/** Sets the autoresponder of a mailbox. The mail server makes the change at once. */
+export function setAutoresponder(mailboxId: string, input: AutoresponderInput): Promise<Autoresponder> {
+  return call(async () => (await live.request<{ autoresponder: Autoresponder }>("PUT", `/mail/mailboxes/${mailboxId}/autoresponder`, input)).autoresponder);
+}
+
+/** Reads the backups of a mailbox, the newest first. */
+export function listMailboxBackups(mailboxId: string): Promise<MailboxBackup[]> {
+  return call(async () => (await live.request<{ data: MailboxBackup[] }>("GET", `/mail/mailboxes/${mailboxId}/backups`)).data);
+}
+
+/** Starts a backup of a mailbox. The job ends when the backup is in the repository. */
+export function backUpMailbox(mailboxId: string): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<JobAnswer>("POST", `/mail/mailboxes/${mailboxId}/backups`)).then((r) => ({ job: track(r.job) }));
+}
+
+/** Adds the messages of a backup that the mailbox does not have. */
+export function restoreMailbox(mailboxId: string, backupId: string): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<JobAnswer>("POST", `/mail/mailboxes/${mailboxId}/backups/${backupId}/restore`)).then((r) => ({ job: track(r.job) }));
+}
+
 /** Removes a mailbox and its messages. */
 export function deleteMailbox(mailboxId: string): Promise<void> {
   return call(async () => removing("mailboxes", mailboxId, (await live.request<JobAnswer>("DELETE", `/mail/mailboxes/${mailboxId}`)).job));
@@ -1184,6 +1315,15 @@ export function retryMailCluster(clusterId: string) {
 
 export function setServerMail(serverId: string, hostname: string) {
   return call(() => live.request<JobAnswer>("PUT", `/servers/${serverId}/mail`, { hostname: hostname.trim().toLowerCase() })).then((r) => track(r.job).then(() => refresh()));
+}
+
+/** Sets the spam filter and the outbound relay of the mail server of a server. */
+export function setServerMailSettings(serverId: string, settings: MailSettingsInput) {
+  return call(async () => {
+    const r = await live.request<JobAnswer>("PUT", `/servers/${serverId}/mail/settings`, settings);
+    void track(r.job).then(() => refresh());
+    await refresh();
+  });
 }
 
 /**
@@ -1627,6 +1767,98 @@ export function deleteDnsAccount(accountId: string): Promise<void> {
   });
 }
 
+/** Reads the secondary DNS servers of the panel again. */
+async function loadDnsSecondaries() {
+  const r = await live.request<live.ApiDnsSecondaries>("GET", "/dns-secondaries");
+  update((d) => {
+    d.dnsSecondaries = live.toDnsSecondaries(r);
+  });
+}
+
+export interface DnsSecondaryInput {
+  name: string;
+  /** IPv4 and IPv6 addresses. */
+  addresses: string[];
+  /** Empty: the secondary is not a name server of the zones. */
+  nameServer: string;
+  tsig: boolean;
+  algorithm: TsigAlgorithm;
+  /** Empty: the panel makes a new name, or keeps the current one. */
+  keyName: string;
+  /** Empty: the panel makes a new secret, or keeps the current one. */
+  secret: string;
+  newSecret: boolean;
+  notify: boolean;
+  catalog: boolean;
+}
+
+/**
+ * Adds a secondary DNS server of the panel, or changes one. Each DNS server of the panel gets
+ * the new list in a job. When the name servers change, the zones get new NS records.
+ */
+export function saveDnsSecondary(input: DnsSecondaryInput, id?: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ jobs: live.ApiJob[] }>(id ? "PATCH" : "POST", id ? `/dns-secondaries/${id}` : "/dns-secondaries", {
+      name: input.name.trim(), addresses: input.addresses, nameServer: input.nameServer.trim().toLowerCase().replace(/\.$/, "") || null,
+      tsig: input.tsig, ...(input.tsig ? { algorithm: input.algorithm, keyName: input.keyName.trim() || null, secret: input.secret.trim() || null, newSecret: input.newSecret } : {}),
+      notify: input.notify, catalog: input.catalog,
+    });
+    await loadDnsSecondaries();
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => loadDnsSecondaries()).catch(() => undefined);
+  });
+}
+
+/** Removes a secondary DNS server of the panel. */
+export function deleteDnsSecondary(id: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ jobs: live.ApiJob[] }>("DELETE", `/dns-secondaries/${id}`);
+    await loadDnsSecondaries();
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => loadDnsSecondaries()).catch(() => undefined);
+  });
+}
+
+/** The TSIG key of a secondary DNS server of the panel, with its secret. */
+export function dnsSecondarySecret(id: string): Promise<Required<TsigKey>> {
+  return call(() => live.request<Required<TsigKey>>("GET", `/dns-secondaries/${id}/secret`));
+}
+
+export interface DnsTransfersInput {
+  addresses: string[];
+  notify: boolean;
+  nameServers: string[];
+  tsig: boolean;
+  algorithm: TsigAlgorithm;
+  /** Empty: the panel makes a new secret, or keeps the current one. */
+  secret: string;
+  newSecret: boolean;
+}
+
+/** Sends a zone to the secondary DNS servers of its owner with zone transfers, or changes them. */
+export function setDnsTransfers(zoneId: string, input: DnsTransfersInput): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("PUT", `/dns-zones/${zoneId}/transfers`, {
+      addresses: input.addresses, notify: input.notify, nameServers: input.nameServers.map((n) => n.trim().toLowerCase().replace(/\.$/, "")).filter(Boolean),
+      tsig: input.tsig, ...(input.tsig ? { algorithm: input.algorithm, secret: input.secret.trim() || null, newSecret: input.newSecret } : {}),
+    });
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Stops the zone transfers to the secondary DNS servers of the owner of a zone. */
+export function stopDnsTransfers(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("DELETE", `/dns-zones/${zoneId}/transfers`);
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** The TSIG key of the zone transfers of a zone, with its secret. */
+export function dnsTransfersSecret(zoneId: string): Promise<Required<TsigKey>> {
+  return call(() => live.request<Required<TsigKey>>("GET", `/dns-zones/${zoneId}/transfers/secret`));
+}
+
 export interface DnsRecordInput {
   type: DnsRecordType;
   name: string;
@@ -1669,6 +1901,27 @@ export function deleteDnsRecord(zoneId: string, recordId: string): Promise<void>
 export function setDnssec(zoneId: string, enabled: boolean): Promise<void> {
   return call(async () => {
     const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("PUT", `/dns-zones/${zoneId}/dnssec`, { enabled });
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/**
+ * Starts a change of the DNSSEC key of a zone on the DNS servers of the panel. The panel makes a
+ * new key, and moves the change to the next step when it can.
+ */
+export function startDnssecRollover(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", `/dns-zones/${zoneId}/dnssec/rollover`);
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Stops a change of the DNSSEC key before the registry has the new DS record. The new key goes. */
+export function cancelDnssecRollover(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("DELETE", `/dns-zones/${zoneId}/dnssec/rollover`);
     putDnsZone(r.zone);
     trackZone(zoneId, r.jobs);
   });

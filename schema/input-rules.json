@@ -189,6 +189,24 @@
       "echo": false,
       "message": "Enter a bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt hash."
     },
+    "autoresponderSubject": {
+      "what": "subject of the autoresponder",
+      "doc": "The subject of the answer of an autoresponder. It is on one line and has no control characters. An empty subject is permitted: the mail server then uses \"Auto:\" and the subject of the message.",
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "maxLength": 200,
+      "empty": true,
+      "echo": false,
+      "message": "Enter a subject of up to 200 characters on one line."
+    },
+    "autoresponderText": {
+      "what": "text of the autoresponder",
+      "doc": "The text of the answer of an autoresponder. It can have line breaks and tabs, but no other control characters. The mail server accepts a text of less than 2048 bytes.",
+      "pattern": "^[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]+$",
+      "maxLength": 2000,
+      "empty": true,
+      "echo": false,
+      "message": "Enter a text of up to 2000 characters. A letter with an accent counts as two characters."
+    },
     "dnsRecordName": {
       "what": "DNS record name",
       "go": "DNSRecordName",
@@ -253,6 +271,23 @@
       "maxLength": 600,
       "echo": false,
       "message": "Enter a private key in the PKCS #8 PEM format."
+    },
+    "tsigName": {
+      "what": "TSIG key name",
+      "go": "TSIGName",
+      "doc": "The name of a TSIG key (RFC 8945) for zone transfers: a DNS name in lower case, with no dot at the end. Both servers of a transfer use the same name.",
+      "pattern": "^{label}(\\.{label})*$",
+      "maxLength": 253,
+      "message": "Enter a key name in lower-case letters, digits, \"-\" and \".\", for example cf-transfer.example.net."
+    },
+    "tsigSecret": {
+      "what": "TSIG secret",
+      "go": "TSIGSecret",
+      "doc": "The secret of a TSIG key in base64: 16 to 64 bytes. The panel makes it, or the administrator copies it from the secondary DNS service.",
+      "pattern": "^([A-Za-z0-9+/]{4}){5,21}([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+      "maxLength": 88,
+      "echo": false,
+      "message": "Enter the secret in base64, with 16 to 64 bytes."
     },
     "filePath": {
       "what": "path",
@@ -376,6 +411,43 @@
       "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$",
       "message": "Use up to 16 letters, digits and the characters . + _ -, for example 1.25."
     },
+    "wordpressUser": {
+      "what": "WordPress user name",
+      "doc": "The user name of the first WordPress administrator. It has 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. It is not \"admin\" or \"administrator\", because attackers try these names first.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._@-]{2,59}$",
+      "not": ["^(?i:admin|administrator)$"],
+      "message": "Use 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. Do not use admin or administrator."
+    },
+    "wordpressTitle": {
+      "what": "site title",
+      "doc": "The title of a WordPress site. It is on one line and has no control characters.",
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "maxLength": 100,
+      "message": "Enter a title of 1 to 100 characters on one line."
+    },
+    "wordpressLocale": {
+      "what": "language",
+      "doc": "The language of a WordPress site, as a WordPress locale, for example en_GB or de_DE_formal.",
+      "pattern": "^[a-z]{2,3}(_[A-Z]{2})?(_[a-z0-9]+)?$",
+      "maxLength": 20,
+      "message": "Enter a WordPress locale, for example en_GB."
+    },
+    "wordpressSlug": {
+      "what": "plugin or theme",
+      "doc": "The name of a WordPress plugin or theme: the name of its directory in wp-content. It cannot start with \"-\", so that WP-CLI does not read it as an option.",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$",
+      "not": ["\\.\\."],
+      "message": "Enter the name of a plugin or a theme, for example akismet."
+    },
+    "wpCliArgument": {
+      "what": "WP-CLI argument",
+      "doc": "One argument of a WP-CLI command. The agent gives each argument to WP-CLI as it is, with no shell. It has no control characters. It can be empty.",
+      "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+      "maxLength": 1000,
+      "empty": true,
+      "echo": false,
+      "message": "Each argument must have at most 1000 characters and no control characters."
+    },
     "logSearch": {
       "what": "search text of the logs",
       "doc": "The words of a search in the logs of a website. It is on one line and has no control characters. A word that starts with \"-\" must not be in an entry, and words in double quotation marks are one word.",
@@ -440,6 +512,10 @@
       "doc": "The types of DNS record that a user can make.",
       "values": ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"]
     },
+    "tsigAlgorithms": {
+      "doc": "The algorithms of a TSIG key for zone transfers.",
+      "values": ["hmac-sha256", "hmac-sha512"]
+    },
     "phpRuntimes": {
       "doc": "The built-in PHP runtimes. A PHP pack (cf-php/1) adds versions of PHP to one of them.",
       "values": ["frankenphp", "apache-php-fpm"]
@@ -474,6 +550,14 @@
     "dnsZonesPerJob": {
       "doc": "The largest number of DNS zones in one job of the agent.",
       "value": 100
+    },
+    "dnsSecondaries": {
+      "doc": "The largest number of secondary DNS servers of the panel.",
+      "value": 10
+    },
+    "dnsTransferAddresses": {
+      "doc": "The largest number of addresses of one secondary DNS server, or of the zone transfers of one zone.",
+      "value": 10
     },
     "cronJobs": {
       "doc": "The largest number of cron jobs of a website.",
@@ -552,6 +636,14 @@
     "packManifestBytes": {
       "doc": "The largest size of a pack manifest, in bytes.",
       "value": 32768
+    },
+    "wpCliArguments": {
+      "doc": "The largest number of arguments of one WP-CLI command.",
+      "value": 40
+    },
+    "wordpressUpdates": {
+      "doc": "The largest number of plugins or themes in one update of a WordPress site.",
+      "value": 200
     },
     "logEntries": {
       "doc": "The largest number of entries in one page of a search in the logs.",

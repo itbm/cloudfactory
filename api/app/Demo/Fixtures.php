@@ -5,6 +5,8 @@ namespace App\Demo;
 use App\Models\Certificate;
 use App\Models\DnsZone;
 use App\Models\Import;
+use App\Models\Mailbox;
+use App\Models\MailDomain;
 use App\Models\UptimeCheck;
 use App\Models\User;
 use App\Models\Website;
@@ -34,6 +36,7 @@ class Fixtures
         '/database-engines',
         '/database-servers',
         '/dns-accounts',
+        '/dns-secondaries',
         '/dns-zones',
         '/exports',
         '/identity-providers',
@@ -95,6 +98,7 @@ class Fixtures
         '/websites/{id}/snapshots',
         '/websites/{id}/terminal-sessions',
         '/websites/{id}/uptime-checks',
+        '/websites/{id}/wordpress',
     ];
 
     /**
@@ -128,6 +132,13 @@ class Fixtures
             foreach (Import::orderBy('created_at')->pluck('id') as $id) {
                 $paths[] = "/imports/{$id}";
             }
+        }
+        // The dialogs of a mailbox read these answers. The fixtures have the mailboxes of the first
+        // mail domain of the user.
+        $domain = MailDomain::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->first();
+        foreach (Mailbox::where('mail_domain_id', $domain?->id)->orderBy('local_part')->pluck('id') as $id) {
+            $paths[] = "/mail/mailboxes/{$id}/autoresponder";
+            $paths[] = "/mail/mailboxes/{$id}/backups";
         }
         $answers = [];
         foreach ($paths as $path) {

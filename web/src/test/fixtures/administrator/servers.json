@@ -70,7 +70,18 @@
                     "hostname": "mail-1.panel.example",
                     "status": "running",
                     "domains": 4,
-                    "clusterId": null
+                    "clusterId": null,
+                    "settings": {
+                        "spamFilter": true,
+                        "spamScore": 5,
+                        "rejectScore": 15,
+                        "relay": {
+                            "host": "smtp.relay.example.net",
+                            "port": 587,
+                            "username": "mail-1",
+                            "hasPassword": true
+                        }
+                    }
                 },
                 "websites": 0,
                 "lastSeenAt": "2026-11-14T10:00:00+00:00"

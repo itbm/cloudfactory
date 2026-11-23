@@ -283,8 +283,8 @@ environment, then run `cf backups policy set --target REPOSITORY --credentials-f
 
 #### One repository for each server
 
-Each server with the role `web` has its own restic repository below the address that you
-typed, and its own repository password. For example, with the address
+Each server with the role `web` or `email` has its own restic repository below the address
+that you typed, and its own repository password. For example, with the address
 `s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory`, the repository of a server is
 `s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory/servers/SERVER-ID`. restic encrypts each
 snapshot with the password of its repository. The panel sends a password only to its server.
@@ -303,7 +303,7 @@ own gets the shared key. The shared key has access to the repositories of all se
 person who has root access to one of these servers can thus delete or change the data of all
 repositories, but cannot read it.
 
-To prevent this, give each server with the role `web` its own key:
+To prevent this, give each server with the role `web` or `email` its own key:
 
 1. Open **Backups**. The card **Storage key of each server** shows each server, the path of
    its repository in the bucket, and the key that it uses.
@@ -394,17 +394,20 @@ Give no key the permission to change the settings of the bucket.
 #### What the panel keeps
 
 - **Nightly backups.** The retention policy on the **Backups** page gives the number of daily,
-  weekly and monthly backups of each website.
-- **Manual backups.** The panel keeps the 10 newest manual backups of each website. The
-  retention policy does not remove them. To change the number, set `CF_MANUAL_BACKUPS` in
-  `/var/lib/cloudfactory/panel/panel.env` and restart the panel services.
+  weekly and monthly backups of each website and of each mailbox.
+- **Manual backups.** The panel keeps the 10 newest manual backups of each website and of each
+  mailbox. The retention policy does not remove them. To change the number, set
+  `CF_MANUAL_BACKUPS` in `/var/lib/cloudfactory/panel/panel.env` and restart the panel
+  services.
 - **Deleted websites.** The backups of a deleted website stay in the repository for 30 days.
   In this time, you can restore them with restic. To change the time, set
   `CF_DELETED_WEBSITE_BACKUP_DAYS`.
+- **Deleted mailboxes.** The backups of a deleted mailbox stay in the repository for 30 days.
+  To change the time, set `CF_DELETED_MAILBOX_BACKUP_DAYS`.
 
-Each Sunday, each server removes the backups of the websites that were deleted more than
-30 days ago, and the data that no snapshot uses. A server that is offline does this in a
-later week.
+Each Sunday, each server removes the backups of the websites and the mailboxes that were
+deleted more than 30 days ago, and the data that no snapshot uses. A server that is offline
+does this in a later week.
 
 #### Restore
 
@@ -413,6 +416,24 @@ website again. It does not delete the files that are not in the backup. To delet
 **Remove files that are not in the backup**, or use `cf backups restore --remove-new-files`.
 A restore of the full website does not restore the databases. Restore each database
 separately.
+
+#### Restore a mailbox
+
+The panel makes a backup of all folders and messages of each mailbox each night. To restore
+messages that a user deleted:
+
+1. Open **Email**.
+2. In the row of the mailbox, select **Backups**.
+3. Select **Restore** in the row of the backup.
+4. Select **Restore messages**.
+
+With the CLI, run `cf mail mailboxes backups ADDRESS` to show the backups, and
+`cf mail mailboxes restore ADDRESS BACKUP` to restore one.
+
+The restore adds each message of the backup that the mailbox does not have, in its folder. It
+does not change or remove a message of the mailbox, so you can restore the same backup again.
+A message that is larger than the mail server accepts stays in the backup. The list of backups
+shows the result of the last restore of each backup.
 
 #### Backups from an earlier version
 
@@ -1091,6 +1112,70 @@ different key. Refer to [DNSSEC](#dnssec).
 
 ![The dialog that moves a zone to Cloudflare](screenshots/dns/7-move.png)
 
+#### Secondary DNS servers
+
+A secondary DNS server outside the panel can copy the zones from the DNS servers of the panel
+with zone transfers (AXFR and IXFR). For example, use the secondary DNS service of a different
+company to get name servers in more networks. The panel never copies a zone from a different
+server. To move a zone into the panel, import its zone file.
+
+To let a secondary copy all zones (administrators only):
+
+1. On the **DNS** page, in the card **Secondary DNS servers**, select **Add secondary**.
+2. Type a name and the IP addresses of the secondary. Only these addresses can copy the zones.
+3. If the secondary answers the public, type its host name in **Name server**. Each zone then
+   gets an NS record for it. Give the host name to the registrar of each domain too.
+4. To let the secondary find each new zone itself, select **Also copy the catalog zone**. Each
+   DNS server of the panel restarts one time to make the catalog zone.
+5. Keep **Sign the transfers with a TSIG key** selected. To use the key of the secondary DNS
+   service, type its key name and its secret. With no secret, the panel makes the key.
+6. Select **Add secondary**.
+7. Open the menu of the secondary, and select **Show the TSIG key**. Give the key to the
+   secondary DNS service.
+8. At the secondary DNS service, give the addresses in the card as the primary servers. Give
+   the catalog zone, or each zone, to copy.
+
+With the CLI:
+
+```sh
+cf dns secondaries add "Backup DNS" --address 198.51.100.53 --address 2001:db8::53 \
+  --name-server ns3.backup-dns.example --catalog
+cf dns secondaries secret "Backup DNS"
+cf dns secondaries list
+```
+
+To use the secret of the secondary DNS service, put it in `CF_TSIG_SECRET`, or give it on
+stdin, and add `--own-secret`.
+
+The card shows if each DNS server of the panel has the last list. A DNS server that was
+offline gets the list when its agent starts.
+
+The catalog zone has the name `catalog.cloudfactory.invalid`. When one secondary copies the
+zones of more than one panel, give each panel a different name. Set `CF_DNS_CATALOG_ZONE` in
+`/var/lib/cloudfactory/panel/panel.env` and restart the panel services. Each DNS server gets
+the new name in the next minute. Then give the new name to the secondary.
+
+![The secondary DNS servers of the panel](screenshots/dns/8-secondaries.png)
+
+Before you remove a secondary with a name server, remove its host name at the registrar of
+each domain.
+
+The owner of a zone can also let their own secondary DNS servers copy one zone:
+
+1. On the page of the zone, in the card **Zone transfers**, select **Set up**.
+2. Type the public IP addresses of the secondaries.
+3. If the secondaries answer the public, type their host names. The zone gets an NS record for
+   each of them.
+4. Select **Save**.
+5. Select **Show the secret**, and give the key `transfer.<zone>` to the secondaries.
+
+With the CLI: `cf dns transfers example.com set --address 192.0.2.200`, then
+`cf dns transfers example.com secret`. `cf dns transfers example.com stop` stops the transfers.
+
+![The zone transfers of one zone](screenshots/dns/9-zone-transfers.png)
+
+A zone at an external DNS provider has no zone transfers.
+
 #### DNSSEC
 
 Turn on DNSSEC on the page of the zone, or with `cf dns dnssec example.com on`. The panel
@@ -1103,6 +1188,38 @@ page of the zone shows that the plugin cannot turn on DNSSEC.
 Before you turn off DNSSEC, or remove a zone that has DNSSEC, remove the DS record at the
 registrar and wait one day. If the registrar still has the DS record, resolvers refuse all
 answers for the domain.
+
+The page of the zone shows the DS records that the registry of the domain has. The panel asks
+the public DNS once each day. To ask again now, click "Check" on the page of the zone, or run
+`cf dns check example.com`. "Wrong DS record" tells you that the registry has a DS record for
+a different key. Then the resolvers that check DNSSEC refuse all answers for the domain. Give
+the DS record of the zone to the registrar, and remove the other DS record.
+
+#### Change the DNSSEC key
+
+You can change the key of a zone on the DNS servers of the panel. The zone has correct
+signatures during the change.
+
+1. On the page of the zone, click "Change key". Or run `cf dns dnssec example.com rollover`.
+2. Wait approximately 3 hours. The DNS servers publish the new key.
+3. When the page shows step 2, give the new DS record to the registrar. You can replace the
+   old DS record or add the new DS record.
+4. Wait. The panel checks the registry each 15 minutes. When the registry has the new DS
+   record, both keys sign the zone for at least one day.
+5. Remove the old DS record at the registrar, if the registrar has it.
+
+Then the panel removes the old key. To see the step, run `cf dns get example.com`.
+
+In step 2, the DNS servers also publish CDS and CDNSKEY records for the new key. A registry
+that reads these records gets the new DS record by itself.
+
+To stop a change before the registry has the new DS record, click "Stop the change", or run
+`cf dns dnssec example.com cancel`. The new key goes. Do not stop a change after you removed
+the old DS record at the registrar.
+
+![A change of the DNSSEC key in step 2: the new DS record for the registrar](screenshots/dns/10-dnssec-key-change.png)
+
+A zone at an external DNS provider has the key of the provider. The panel cannot change it.
 
 #### A zone that a DNS server could not load
 

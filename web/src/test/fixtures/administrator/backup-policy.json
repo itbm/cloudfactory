@@ -14,6 +14,12 @@
         ],
         "servers": [
             {
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "server": "mail-1",
+                "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7cqzs807rnxfq0000000004",
+                "credentialNames": []
+            },
+            {
                 "serverId": "01m7cqzs807rnxfq0000000001",
                 "server": "web-1",
                 "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7cqzs807rnxfq0000000001",

@@ -40,6 +40,8 @@ use Illuminate\Validation\ValidationException;
  * - A zone with a DNS account goes to an external DNS provider, for example Cloudflare, and
  *   not to the DNS servers of the panel (Providers). The panel still keeps the records. The
  *   NS records of the zone are the name servers that the provider gives.
+ * - Secondary DNS servers outside the panel can copy the zones from the DNS servers of the
+ *   panel with zone transfers (Secondaries). Their name servers are NS records of the zones.
  */
 class Zones
 {
@@ -182,6 +184,8 @@ class Zones
             'provider_state' => null,
             'handover' => $handover,
             'handover_ends_at' => null,
+            // A provider does not send the zone to the secondaries of the owner.
+            ...($account !== null ? ['transfer_addresses' => null, 'transfer_notify' => false, 'transfer_tsig_algorithm' => null, 'transfer_tsig_secret' => null, 'transfer_name_servers' => null] : []),
         ]);
         $zone->unsetRelation('account');
         // Back to the panel: the NS records are the name servers of the panel again. To a
@@ -238,6 +242,11 @@ class Zones
      */
     public function checkName(string $name, Customer $customer, User $user): ?DnsZone
     {
+        // The DNS servers make the catalog zone for the secondary DNS servers.
+        $catalog = Secondaries::catalogZone();
+        if (DomainPolicy::within($name, $catalog) || DomainPolicy::within($catalog, $name)) {
+            throw ValidationException::withMessages(['name' => 'This name is reserved for the panel or a server.']);
+        }
         if (! $user->isAdministrator()) {
             foreach ([...$this->policy->reserved(), ...self::nameServers()] as $reserved) {
                 if (DomainPolicy::within($name, $reserved) || DomainPolicy::within($reserved, $name)) {
@@ -617,11 +626,12 @@ class Zones
 
             return $this->changed($zone, ($enabled ? 'Turn on' : 'Turn off')." DNSSEC for {$zone->name} at {$name}");
         }
+        Rollover::clear($zone);
         if ($enabled) {
             $key = Dnssec::generate();
-            $zone->update(['dnssec' => true, 'dnssec_key' => $key['key'], 'dnssec_public_key' => $key['publicKey'], 'dnssec_key_tag' => $key['keyTag']]);
+            $zone->update(['dnssec' => true, 'dnssec_key' => $key['key'], 'dnssec_public_key' => $key['publicKey'], 'dnssec_key_tag' => $key['keyTag'], 'dnssec_parent' => null]);
         } else {
-            $zone->update(['dnssec' => false, 'dnssec_key' => null, 'dnssec_public_key' => null, 'dnssec_key_tag' => null]);
+            $zone->update(['dnssec' => false, 'dnssec_key' => null, 'dnssec_public_key' => null, 'dnssec_key_tag' => null, 'dnssec_parent' => null]);
         }
 
         return $this->changed($zone, ($enabled ? 'Turn on' : 'Turn off')." DNSSEC for {$zone->name}");
@@ -638,11 +648,14 @@ class Zones
         // White label: the host names of the panel, or the host names that the reseller of
         // the customer gave to the same name servers.
         $panel = array_values(array_unique([...self::nameServers(), ...Branding::nameServersFor($zone->customer)]));
-        // A zone at an external provider: the name servers that the provider gives the zone.
-        $ours = $zone->dns_account_id !== null ? ($zone->provider_state['nameServers'] ?? []) : $panel;
+        // A zone at an external provider: the name servers that the provider gives the zone. A
+        // zone of the panel can also have the name servers of secondary DNS servers. They copy
+        // the zone from the panel, but at least one name server must be of the panel: a
+        // secondary DNS service also answers for the zones of other people.
+        $ours = $zone->dns_account_id !== null ? ($zone->provider_state['nameServers'] ?? []) : [...$panel, ...Secondaries::nameServers(), ...($zone->transfer_name_servers ?? [])];
         $state = match (true) {
             $seen === [] => DnsZone::NONE,
-            $ours !== [] && array_diff($seen, $ours) === [] => DnsZone::HERE,
+            $ours !== [] && array_diff($seen, $ours) === [] && ($zone->dns_account_id !== null || array_intersect($seen, $panel) !== []) => DnsZone::HERE,
             default => DnsZone::ELSEWHERE,
         };
         // The name servers of a provider serve many accounts, and the plugin gives the name
@@ -797,7 +810,7 @@ class Zones
      */
     public static function writeNameServers(DnsZone $zone): bool
     {
-        $hosts = $zone->dns_account_id !== null ? ($zone->provider_state['nameServers'] ?? []) : Branding::nameServersFor($zone->customer);
+        $hosts = $zone->dns_account_id !== null ? ($zone->provider_state['nameServers'] ?? []) : self::panelNameServersFor($zone);
         if ($hosts === []) {
             return false;
         }
@@ -814,6 +827,20 @@ class Zones
         return true;
     }
 
+    /**
+     * The name servers of a zone on the DNS servers of the panel: the name servers of the panel
+     * (or of the reseller), of the secondaries of the panel, and of the secondaries of the
+     * owner of the zone. The panel gives no NS record when it has no DNS server.
+     *
+     * @return list<string>
+     */
+    public static function panelNameServersFor(DnsZone $zone): array
+    {
+        $own = Branding::nameServersFor($zone->customer);
+
+        return $own === [] ? [] : array_values(array_unique([...$own, ...Secondaries::nameServers(), ...($zone->transfer_name_servers ?? [])]));
+    }
+
     /** The zone as the agent gets it: the full list of the records, and the DNSSEC key. */
     public static function forAgent(DnsZone $zone): array
     {
@@ -821,16 +848,19 @@ class Zones
             'name' => $zone->name,
             'serial' => $zone->serial,
             'records' => $zone->records()->orderBy('name')->orderBy('type')->orderBy('id')->get()->map(fn (DnsRecord $r) => $r->forAgent())->all(),
-            // Adversarial review, finding A6-13: the DNSSEC key is not in the job record. The
-            // panel adds it each time that it sends the job (keysFor).
-            'dnssecKey' => '',
-            'dnssecKeyTag' => $zone->dnssec ? (int) $zone->dnssec_key_tag : 0,
+            // Adversarial review, finding A6-13: the DNSSEC keys are not in the job record. The
+            // panel adds them each time that it sends the job (keysFor).
+            'dnssecKeys' => Rollover::keys($zone, false),
+            // The TSIG secret of the transfers is not in the job record either.
+            'transfers' => Secondaries::transfersFor($zone, false),
         ];
     }
 
     /**
-     * The zones of a SetDnsZones job, with the DNSSEC key of each signed zone. A zone that has
-     * a different key now, or no key, goes with no key: a later job has its new state.
+     * The zones of a SetDnsZones job, with the DNSSEC keys of each signed zone. Each zone gets
+     * its current keys and transfers with their secrets, also when they changed after the panel
+     * made the job: the states of the keys of a change (Rollover) only go forward, and a job
+     * with an older serial does not replace a newer zone on the DNS server.
      *
      * @return array<string, mixed>
      */
@@ -840,15 +870,11 @@ class Zones
             return [];
         }
         $zones = $job->payload['zones'];
-        $signed = DnsZone::whereIn('name', array_column($zones, 'name'))->where('dnssec', true)->get()->keyBy('name');
+        $current = DnsZone::whereIn('name', array_column($zones, 'name'))->get()->keyBy('name');
         foreach ($zones as &$zone) {
-            $tag = (int) ($zone['dnssecKeyTag'] ?? 0);
-            $now = $signed->get($zone['name'] ?? '');
-            if ($tag > 0 && $now && (int) $now->dnssec_key_tag === $tag) {
-                $zone['dnssecKey'] = (string) $now->dnssec_key;
-            } elseif ($tag > 0) {
-                $zone['dnssecKeyTag'] = 0;
-            }
+            $now = $current->get($zone['name'] ?? '');
+            $zone['dnssecKeys'] = $now ? Rollover::keys($now, true) : [];
+            $zone['transfers'] = $now ? Secondaries::transfersFor($now, true) : null;
         }
 
         return ['zones' => $zones];

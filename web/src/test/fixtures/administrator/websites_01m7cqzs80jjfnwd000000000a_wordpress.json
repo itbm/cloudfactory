@@ -1,0 +1,45 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000a/wordpress",
+    "status": 200,
+    "body": {
+        "wordpress": {
+            "status": "ready",
+            "version": "6.7.2",
+            "coreMinor": "6.7.4",
+            "coreLatest": "6.9",
+            "siteUrl": "https://lawson.example.org",
+            "adminUrl": "https://lawson.example.org/wp-admin/",
+            "adminUser": "lawson",
+            "databaseId": "01m7cqzs803h34e20000000009",
+            "plugins": [
+                {
+                    "name": "akismet",
+                    "title": "Akismet Anti-spam: Spam Protection",
+                    "status": "active",
+                    "version": "5.3.3",
+                    "update": "5.5"
+                }
+            ],
+            "themes": [
+                {
+                    "name": "twentytwentyfour",
+                    "title": "Twenty Twenty-Four",
+                    "status": "active",
+                    "version": "1.2",
+                    "update": "1.3"
+                }
+            ],
+            "checkedAt": "2026-10-04T10:00:00+00:00",
+            "autoUpdates": {
+                "core": "off",
+                "plugins": false,
+                "themes": false
+            },
+            "lastUpdate": null,
+            "restorePoint": null,
+            "error": null
+        },
+        "commands": [],
+        "busy": null
+    }
+}

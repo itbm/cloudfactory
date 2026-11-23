@@ -7,6 +7,8 @@ use App\Enums\JobState;
 use App\Models\AgentJob;
 use App\Models\Database;
 use App\Models\Import;
+use App\Models\Mailbox;
+use App\Models\MailboxSnapshot;
 use App\Models\Pack;
 use App\Models\Website;
 use App\Services\Certificates\Certificates;
@@ -121,6 +123,11 @@ class RunDemoJob implements ShouldQueue
                 'step' => 0,
                 'error' => "the install command failed: exit status 1: npm error code EUSAGE\nnpm error The `npm ci` command can only install with an existing package-lock.json.",
             ],
+            // An update of a plugin with "fail" in its name breaks the site. The agent puts back the restore point.
+            $job->action === AgentAction::UpdateWordPress && collect($p['plugins'] ?? [])->contains(fn ($n) => str_contains((string) $n, 'fail')) => [
+                'step' => 5,
+                'error' => 'WordPress does not load: wp eval: PHP Fatal error:  Uncaught Error: Call to undefined function wc_get_order(); the agent put back the restore point',
+            ],
             $job->action === AgentAction::OpenTerminal && ! config('demo.terminal') => [
                 'step' => 0,
                 'error' => 'The demonstration has no terminal relay, so the terminal cannot open.',
@@ -161,6 +168,9 @@ class RunDemoJob implements ShouldQueue
             // The demo agent sends the parts of an account export, as a real agent does.
             AgentAction::ExportWebsite => DemoExport::send($job),
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
+            AgentAction::BackupMailbox => self::mailboxBackup($p),
+            // The demonstration has all messages of each backup in the mailbox already.
+            AgentAction::RestoreMailbox => ['added' => 0, 'present' => (int) (MailboxSnapshot::where('restic_id', $p['snapshotId'] ?? '')->value('messages') ?? 0), 'tooLarge' => 0, 'failed' => 0, 'firstError' => ''],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
             // The demonstration agent loads each pack of the panel, as a real agent does.
             AgentAction::SetPacks => [
@@ -179,6 +189,7 @@ class RunDemoJob implements ShouldQueue
             // The fingerprint of the demonstration is not the fingerprint of the key.
             AgentAction::SetMailbox => ($p['publicKey'] ?? '') !== '' ? ['encryption' => ['fingerprints' => [strtoupper(sha1($p['publicKey']))], 'type' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []]] : [],
             AgentAction::SetMailDomain => ['records' => DemoMailDns::records((string) ($p['domain'] ?? ''), (string) $job->server->mail_hostname)],
+            AgentAction::InstallWordPress, AgentAction::CheckWordPress, AgentAction::UpdateWordPress, AgentAction::RestoreWordPress, AgentAction::RunWpCli => DemoWordPress::result($job),
             AgentAction::RunCronJob => ['cronJobId' => $p['cronJob']['id'] ?? '', 'exitCode' => 0, 'output' => "Running scheduled tasks.\nDone in 0.4 s.", 'ranAt' => now()->toIso8601String()],
             AgentAction::RunCommand => DemoCommands::result((string) ($p['command'] ?? '')),
             AgentAction::Deploy => [
@@ -260,6 +271,20 @@ class RunDemoJob implements ShouldQueue
     }
 
     /** The first Valkey database number that no website on the server of the job uses. */
+    /**
+     * A backup of a mailbox: about 80 KB for each message of the mailbox, as in DemoSeeder.
+     * The retention removes nothing.
+     *
+     * @return array<string, mixed>
+     */
+    private static function mailboxBackup(array $p): array
+    {
+        $used = (int) (Mailbox::whereKey($p['mailboxId'] ?? '')->value('used_bytes') ?? 0);
+        $size = max(64 * 1024, $used);
+
+        return ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => $size, 'messages' => intdiv($size, 80 * 1024), 'forgotten' => []];
+    }
+
     private static function freeValkeyNumber(AgentJob $job): int
     {
         $used = Database::where('engine', Database::VALKEY)

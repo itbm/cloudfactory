@@ -29,8 +29,9 @@ import (
 // DNS hosting. A server with the role "dns" answers the DNS queries for the zones of the
 // customers. One container, cf-dns, runs Knot DNS in gVisor as the Unix user cf-dns.
 //
-// The panel sends each zone, with all its records, to each DNS server (SetDnsZones). There
-// are no zone transfers, so the DNS server opens no connection and accepts only queries.
+// The panel sends each zone, with all its records, to each DNS server (SetDnsZones). The DNS
+// servers of the panel do not copy zones between them. A secondary DNS server outside the
+// panel can copy the zones with zone transfers (dns_transfers.go).
 //
 // The root helper does all the work, because it writes the configuration of a service:
 //   - It checks each record again, and writes each zone file itself. The worker gives
@@ -64,9 +65,18 @@ type (
 		Name    string
 		Serial  int64
 		Records []dnsRecord
-		// Key is the private DNSSEC key in the PEM format, or empty.
-		Key    string
-		KeyTag int
+		// Keys are the DNSSEC keys: none when DNSSEC is off, one key, or two keys during a
+		// change of the key.
+		Keys []dnssecKey
+		// Transfers are the transfers to the secondaries of the owner of the zone, or nil.
+		Transfers *dnsTransfers
+	}
+	// dnssecKey is a DNSSEC key of a zone: the private key in the PEM format, its key tag, and
+	// its state (keyActive, keyReady or keySubmit).
+	dnssecKey struct {
+		Key   string `json:"key,omitempty"`
+		Tag   int    `json:"tag"`
+		State string `json:"state"`
 	}
 	dnsWriteIn struct {
 		Zones []dnsZone
@@ -81,6 +91,8 @@ type (
 		Enabled bool
 		// Zones are the zones of this server, for the report to the panel.
 		Zones []panel.DNSZoneState
+		// Secondaries is the version of the list of the secondaries of this server.
+		Secondaries int64
 	}
 )
 
@@ -88,6 +100,9 @@ type (
 // fixed. A test with a Knot server on the host gives the paths of the host.
 type dnsLayout struct {
 	Conf, Zones, Storage, Run string
+	// NotifyPort is the port of the secondaries for NOTIFY. 0 is port 53. Only a test gives a
+	// different port.
+	NotifyPort int
 }
 
 // DnsTest lets a test run Knot on the host, with no container.
@@ -96,6 +111,10 @@ type DnsTest struct {
 	Knot func(ctx context.Context, argv ...string) (string, error)
 	// Listen is the address of the server, for example "127.0.0.1@8053".
 	Listen []string
+	// NotifyPort is the port of the secondaries for NOTIFY.
+	NotifyPort int
+	// Restart restarts the DNS server.
+	Restart func(ctx context.Context) error
 }
 
 func (d *Deps) dnsDir() string       { return filepath.Join(d.DataDir, "dns") }
@@ -107,7 +126,7 @@ func (d *Deps) dnsStateFile() string { return filepath.Join(d.DataDir, "dns.json
 
 func (d *Deps) dnsLayout() dnsLayout {
 	if d.DnsTest != nil {
-		return dnsLayout{Conf: filepath.Join(d.dnsConfigDir(), "knot.conf"), Zones: d.dnsZonesDir(), Storage: d.dnsDataDir(), Run: filepath.Join(d.dnsDir(), "run")}
+		return dnsLayout{Conf: filepath.Join(d.dnsConfigDir(), "knot.conf"), Zones: d.dnsZonesDir(), Storage: d.dnsDataDir(), Run: filepath.Join(d.dnsDir(), "run"), NotifyPort: d.DnsTest.NotifyPort}
 	}
 	return dnsLayout{Conf: "/etc/knot/knot.conf", Zones: "/etc/knot/zones", Storage: "/var/lib/knot", Run: "/run/knot"}
 }
@@ -127,7 +146,10 @@ func (d *Deps) knot(ctx context.Context, tool string, args ...string) (string, e
 func (d *Deps) SetDnsZones(req *agentv1.SetDnsZonesRequest) (jobs.Job, error) {
 	zones := make([]dnsZone, 0, len(req.GetZones()))
 	for _, z := range req.GetZones() {
-		zone := dnsZone{Name: z.GetName(), Serial: z.GetSerial(), Key: z.GetDnssecKey(), KeyTag: int(z.GetDnssecKeyTag())}
+		zone := dnsZone{Name: z.GetName(), Serial: z.GetSerial(), Transfers: transfersFrom(z.GetTransfers())}
+		for _, k := range z.GetDnssecKeys() {
+			zone.Keys = append(zone.Keys, dnssecKey{Key: k.GetKey(), Tag: int(k.GetKeyTag()), State: k.GetState()})
+		}
 		for _, r := range z.GetRecords() {
 			zone.Records = append(zone.Records, dnsRecord{Name: r.GetName(), Type: r.GetType(), Value: r.GetValue(), TTL: int(r.GetTtl()), Priority: int(r.GetPriority())})
 		}
@@ -190,6 +212,9 @@ func checkDnsZones(zones []dnsZone) error {
 		if _, err := renderZone(z); err != nil {
 			return fmt.Errorf("DNS zone %s: %w", z.Name, err)
 		}
+		if err := checkTransfers(z.Name, z.Transfers); err != nil {
+			return fmt.Errorf("DNS zone %s: %w", z.Name, err)
+		}
 	}
 	return nil
 }
@@ -210,13 +235,8 @@ func renderZone(z dnsZone) (string, error) {
 	if len(z.Records) > validate.MaxDnsRecordsPerZone {
 		return "", fmt.Errorf("the zone has more than %d records", validate.MaxDnsRecordsPerZone)
 	}
-	if z.Key != "" {
-		if err := validate.DNSSECKey(z.Key); err != nil {
-			return "", err
-		}
-		if z.KeyTag < 0 || z.KeyTag > math.MaxUint16 {
-			return "", errors.New("the key tag is not from 0 to 65535")
-		}
+	if err := checkDnsKeys(z.Keys); err != nil {
+		return "", err
 	}
 	var lines []string
 	primary := ""
@@ -323,6 +343,11 @@ func quoteTxt(text string) string {
 // dnsState is the list of the zones of this server. Only root reads and writes the file.
 type dnsState struct {
 	Zones map[string]dnsZoneState `json:"zones"`
+	// Secondaries copy all zones. Catalog is the name of the catalog zone. SecondariesVersion
+	// is the version of the list in the panel.
+	Secondaries        []dnsSecondary `json:"secondaries,omitempty"`
+	Catalog            string         `json:"catalog,omitempty"`
+	SecondariesVersion int64          `json:"secondariesVersion,omitempty"`
 }
 
 type dnsZoneState struct {
@@ -330,9 +355,11 @@ type dnsZoneState struct {
 	// Loaded is the serial of the zone that the DNS server loaded last. It is smaller than
 	// Serial when the server has the zone file but could not load it.
 	Loaded int64 `json:"loaded,omitempty"`
-	// Signed is true when the DNS server signs the zone (DNSSEC).
-	Signed bool `json:"signed,omitempty"`
-	KeyTag int  `json:"keyTag,omitempty"`
+	// Keys are the DNSSEC keys of the zone with their states. The DNS server signs the zone
+	// when it has a key.
+	Keys []dnssecKey `json:"keys,omitempty"`
+	// Transfers are the transfers to the secondaries of the owner of the zone.
+	Transfers *dnsTransfers `json:"transfers,omitempty"`
 }
 
 // readDnsState gives the zones of this server. ok is false when this server never got a
@@ -379,25 +406,69 @@ func knotConf(l dnsLayout, listen []string, st dnsState) string {
 	// The server does not give its name or its version.
 	b.WriteString("    identity: \"\"\n    version: \"\"\n    nsid: \"\"\n")
 	b.WriteString("log:\n  - target: stderr\n    any: info\n")
+	// The TSIG keys are in a file that only root and the DNS user can read.
+	fmt.Fprintf(&b, "include: %q\n", filepath.Join(filepath.Dir(l.Conf), "keys.conf"))
 	fmt.Fprintf(&b, "database:\n    storage: %q\n", l.Storage)
+	tr := transfersConf(st, l.NotifyPort)
+	b.WriteString(tr.text)
 	// The rate limit of the answers to one network, against the use of the server in an
 	// attack on a different address.
 	b.WriteString("mod-rrl:\n  - id: default\n    rate-limit: 50\n    slip: 2\n")
 	// One key signs the zone and its keys (CSK). The panel makes the key, and all DNS
-	// servers have the same key. NSEC3 with no more iterations and no salt (RFC 9276).
-	b.WriteString("policy:\n  - id: shared\n    manual: on\n    single-type-signing: on\n    algorithm: ecdsap256sha256\n    nsec3: on\n    nsec3-iterations: 0\n    nsec3-salt-length: 0\n")
+	// servers have the same key. NSEC3 with no more iterations and no salt (RFC 9276). The
+	// panel changes the key in steps, and gives the state of each key (refer to dnssecKey). The
+	// TTL of the DNSKEY records is fixed, because the panel waits for it in a change of the key.
+	policy := "    manual: on\n    single-type-signing: on\n    algorithm: ecdsap256sha256\n    nsec3: on\n    nsec3-iterations: 0\n    nsec3-salt-length: 0\n    dnskey-ttl: 3600\n"
+	b.WriteString("policy:\n  - id: shared\n" + policy + "    cds-cdnskey-publish: none\n")
+	b.WriteString("  - id: submit\n" + policy + "    cds-cdnskey-publish: rollover\n")
+	// The secondaries of the panel can copy each zone, and get NOTIFY after each change.
+	shared := ""
+	if len(tr.acl) > 0 {
+		shared += "    acl: " + list(tr.acl) + "\n"
+	}
+	if len(tr.notify) > 0 {
+		shared += "    notify: " + list(tr.notify) + "\n"
+	}
+	if st.catalogOn() {
+		shared += fmt.Sprintf("    catalog-role: member\n    catalog-zone: %s.\n", st.Catalog)
+	}
 	template := func(id, more string) {
 		fmt.Fprintf(&b, "  - id: %s\n    storage: %q\n    file: \"%%s.zone\"\n    zonefile-sync: -1\n    semantic-checks: on\n%s", id, l.Zones, more)
 	}
 	b.WriteString("template:\n")
 	// Knot accepts a module for all zones only in the template "default".
-	template("default", "    global-module: mod-rrl/default\n    zonefile-load: whole\n    journal-content: none\n")
-	template("signed", "    zonefile-load: difference-no-serial\n    journal-content: all\n    serial-policy: unixtime\n    dnssec-signing: on\n    dnssec-policy: shared\n")
+	template("default", "    global-module: mod-rrl/default\n    zonefile-load: whole\n    journal-content: none\n"+shared)
+	signed := "    zonefile-load: difference-no-serial\n    journal-content: all\n    serial-policy: unixtime\n    dnssec-signing: on\n"
+	template("signed", signed+"    dnssec-policy: shared\n"+shared)
+	template("submit", signed+"    dnssec-policy: submit\n"+shared)
+	if st.catalogOn() {
+		// Knot makes the catalog zone from the zones with "catalog-role: member". It has no
+		// zone file.
+		fmt.Fprintf(&b, "  - id: catalog\n    storage: %q\n    zonefile-sync: -1\n    zonefile-load: none\n    journal-content: all\n", l.Zones)
+	}
 	b.WriteString("zone:\n")
+	if st.catalogOn() {
+		fmt.Fprintf(&b, "  - domain: %s.\n    template: catalog\n    catalog-role: generate\n    acl: %s\n", st.Catalog, list(tr.catalogACL))
+		if len(tr.catalogNotify) > 0 {
+			fmt.Fprintf(&b, "    notify: %s\n", list(tr.catalogNotify))
+		}
+	}
 	for _, name := range slices.Sorted(mapKeys(st.Zones)) {
 		fmt.Fprintf(&b, "  - domain: %s.\n", name)
-		if st.Zones[name].Signed {
-			b.WriteString("    template: signed\n")
+		if z := st.Zones[name]; z.signed() {
+			// The CDS and CDNSKEY records of a new key are in the zone only in the step
+			// "submit" of a change of the key (template "submit").
+			if slices.ContainsFunc(z.Keys, func(k dnssecKey) bool { return k.State == keySubmit }) {
+				b.WriteString("    template: submit\n")
+			} else {
+				b.WriteString("    template: signed\n")
+			}
+		}
+		if acl, ok := tr.zoneACL[name]; ok {
+			fmt.Fprintf(&b, "    acl: %s\n", list(acl))
+		}
+		if notify, ok := tr.zoneNotify[name]; ok {
+			fmt.Fprintf(&b, "    notify: %s\n", list(notify))
 		}
 	}
 	return b.String()
@@ -421,8 +492,11 @@ func (d *Deps) dnsListen() []string {
 	return []string{"0.0.0.0@" + port, "::@" + port}
 }
 
-// writeKnotConf writes knot.conf. It reports true when the file changed.
+// writeKnotConf writes keys.conf and knot.conf. It reports true when knot.conf changed.
 func (d *Deps) writeKnotConf(st dnsState) (bool, error) {
+	if err := d.writeKnotKeys(st); err != nil {
+		return false, err
+	}
 	return host.WriteFile(filepath.Join(d.dnsConfigDir(), "knot.conf"), knotConf(d.dnsLayout(), d.dnsListen(), st), 0o644)
 }
 
@@ -452,7 +526,7 @@ func (d *Deps) dnsStatus(ctx context.Context) dnsStatusOut {
 	d.dnsMu.Lock()
 	defer d.dnsMu.Unlock()
 	st, ok, _ := d.readDnsState()
-	out := dnsStatusOut{Enabled: ok}
+	out := dnsStatusOut{Enabled: ok, Secondaries: st.SecondariesVersion}
 	for _, name := range slices.Sorted(mapKeys(st.Zones)) {
 		out.Zones = append(out.Zones, panel.DNSZoneState{Name: name, Serial: st.Zones[name].Loaded})
 	}
@@ -632,7 +706,12 @@ func (d *Deps) writeDnsZones(ctx context.Context, zones []dnsZone) error {
 		return errors.New("DNS: the DNS server of this server did not start")
 	}
 	var unsigned []string
+	// written are the zones of the job that this server takes: not a zone with an older serial.
+	written := map[string]bool{}
 	for _, z := range zones {
+		if z.Name == st.Catalog {
+			return fmt.Errorf("DNS zone %s: the catalog zone of the secondaries has this name", z.Name)
+		}
 		was, known := st.Zones[z.Name]
 		if known && was.Serial > z.Serial {
 			slog.Info("DNS: the server has a newer zone", "zone", z.Name, "serial", was.Serial, "job", z.Serial)
@@ -645,10 +724,11 @@ func (d *Deps) writeDnsZones(ctx context.Context, zones []dnsZone) error {
 		if _, err := host.WriteFile(filepath.Join(d.dnsZonesDir(), z.Name+".zone"), text, 0o644); err != nil {
 			return err
 		}
-		if was.Signed && z.Key == "" {
+		if was.signed() && len(z.Keys) == 0 {
 			unsigned = append(unsigned, z.Name)
 		}
-		st.Zones[z.Name] = dnsZoneState{Serial: z.Serial, Loaded: was.Loaded, Signed: z.Key != "", KeyTag: z.KeyTag}
+		st.Zones[z.Name] = dnsZoneState{Serial: z.Serial, Loaded: was.Loaded, Keys: keyStates(z.Keys), Transfers: z.Transfers}
+		written[z.Name] = true
 	}
 	// The configuration has each new zone before Knot gets its key.
 	if _, err := d.writeKnotConf(st); err != nil {
@@ -658,15 +738,15 @@ func (d *Deps) writeDnsZones(ctx context.Context, zones []dnsZone) error {
 		return err
 	}
 	for _, z := range zones {
-		if z.Key != "" && st.Zones[z.Name].KeyTag == z.KeyTag {
-			if err := d.importDnsKey(ctx, z); err != nil {
+		if len(z.Keys) > 0 && written[z.Name] {
+			if err := d.setDnsKeys(ctx, z); err != nil {
 				return fmt.Errorf("DNS zone %s: %w", z.Name, err)
 			}
 		}
 	}
 	// DNSSEC is off now for these zones: the keys and the signatures go.
 	for _, name := range unsigned {
-		if err := d.forgetDnsKeys(ctx, name, -1); err != nil {
+		if err := d.forgetDnsKeys(ctx, name, nil); err != nil {
 			return fmt.Errorf("DNS zone %s: %w", name, err)
 		}
 		if _, err := d.knot(ctx, "knotc", "reload"); err != nil {
@@ -679,90 +759,185 @@ func (d *Deps) writeDnsZones(ctx context.Context, zones []dnsZone) error {
 	return nil
 }
 
-// keyLineRE is one line of "keymgr <zone> list": the ID of the key and its key tag.
+// The states of a DNSSEC key. The panel changes the key of a zone in steps (double
+// signature): the new key is "ready", then "submit" until the registry has its DS record, then
+// both keys are "active" until the old DS record is out of the caches, and then the old key
+// goes.
+const (
+	keyActive = "active"
+	keyReady  = "ready"
+	keySubmit = "submit"
+)
+
+// checkDnsKeys checks the DNSSEC keys of a zone: one or two keys, each with a different tag,
+// and one key at least that signs the zone.
+func checkDnsKeys(keys []dnssecKey) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	if len(keys) > 2 {
+		return errors.New("a zone has two DNSSEC keys at most")
+	}
+	active := false
+	for i, k := range keys {
+		if err := validate.DNSSECKey(k.Key); err != nil {
+			return err
+		}
+		if k.Tag < 0 || k.Tag > math.MaxUint16 {
+			return errors.New("the key tag is not from 0 to 65535")
+		}
+		if i > 0 && keys[0].Tag == k.Tag {
+			return errors.New("two DNSSEC keys have the same key tag")
+		}
+		switch k.State {
+		case keyActive:
+			active = true
+		case keyReady, keySubmit:
+		default:
+			return fmt.Errorf("the DNSSEC key state %q is not active, ready or submit", k.State)
+		}
+	}
+	if !active {
+		return errors.New("no DNSSEC key signs the zone")
+	}
+	return nil
+}
+
+// keyStates are the keys with no private key, for the state file.
+func keyStates(keys []dnssecKey) []dnssecKey {
+	out := make([]dnssecKey, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, dnssecKey{Tag: k.Tag, State: k.State})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// signed reports whether the DNS server signs the zone (DNSSEC).
+func (z dnsZoneState) signed() bool { return len(z.Keys) > 0 }
+
+// keyLineRE is one line of "keymgr <zone> list": the ID of the key and its key tag. The
+// timestamps that are set follow, for example "publish=1795390608 ready=1795390608".
 var keyLineRE = regexp.MustCompile(`^([0-9a-f]{40}) +([0-9]{1,5}) `)
 
-// dnsKeys gives the keys of a zone in Knot: the ID of each key and its key tag.
-func (d *Deps) dnsKeys(ctx context.Context, zone string) (map[string]int, error) {
+// knotKey is a key of a zone in Knot.
+type knotKey struct {
+	ID string
+	// Active: the key signs the zone. Ready: the key signs only the DNSKEY records.
+	Active, Ready bool
+}
+
+// dnsKeys gives the keys of a zone in Knot by their key tags.
+func (d *Deps) dnsKeys(ctx context.Context, zone string) (map[int]knotKey, error) {
 	out, err := d.knot(ctx, "keymgr", zone+".", "list")
 	if err != nil {
 		return nil, err
 	}
-	keys := map[string]int{}
+	keys := map[int]knotKey{}
 	for _, line := range strings.Split(out, "\n") {
-		if m := keyLineRE.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+		line = strings.TrimSpace(line)
+		if m := keyLineRE.FindStringSubmatch(line); m != nil {
 			tag, _ := strconv.Atoi(m[2])
-			keys[m[1]] = tag
+			fields := strings.Fields(line)
+			has := func(name string) bool {
+				return slices.ContainsFunc(fields, func(f string) bool { return strings.HasPrefix(f, name+"=") && f != name+"=0" })
+			}
+			keys[tag] = knotKey{ID: m[1], Active: has("active"), Ready: has("ready")}
 		}
 	}
 	return keys, nil
 }
 
-// forgetDnsKeys removes the keys of a zone from Knot, but not the key with the tag keep.
-func (d *Deps) forgetDnsKeys(ctx context.Context, zone string, keep int) error {
+// forgetDnsKeys removes the keys of a zone from Knot, but not the keys with the tags in keep.
+func (d *Deps) forgetDnsKeys(ctx context.Context, zone string, keep []int) error {
 	keys, err := d.dnsKeys(ctx, zone)
 	if err != nil {
 		return err
 	}
-	for id, tag := range keys {
-		if tag == keep {
+	for tag, k := range keys {
+		if slices.Contains(keep, tag) {
 			continue
 		}
-		if _, err := d.knot(ctx, "keymgr", zone+".", "delete", id); err != nil {
+		if _, err := d.knot(ctx, "keymgr", zone+".", "delete", k.ID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// importDnsKey gives the DNSSEC key of a zone to Knot, when Knot does not have it. Knot then
-// has only this key for the zone: a key from an earlier time goes.
-func (d *Deps) importDnsKey(ctx context.Context, z dnsZone) error {
+// keyTimes are the timestamps of Knot for a state of a key. "+0" is now, and 0 removes the
+// timestamp.
+func keyTimes(state string) []string {
+	if state == keyActive {
+		return []string{"publish=+0", "active=+0"}
+	}
+	return []string{"publish=+0", "ready=+0", "active=0"}
+}
+
+// setDnsKeys gives the DNSSEC keys of a zone to Knot, with their states. Knot imports a key
+// only when it does not have a key with the same tag. A key from an earlier time goes. The
+// next load of the zone signs it with the keys.
+func (d *Deps) setDnsKeys(ctx context.Context, z dnsZone) error {
 	keys, err := d.dnsKeys(ctx, z.Name)
 	if err != nil {
 		return err
 	}
-	have := false
-	for _, tag := range keys {
-		have = have || tag == z.KeyTag
-	}
-	if !have {
-		// The key is in a file for a moment, in a directory that only the DNS user can open.
-		// Root does not follow a symbolic link in the data directory of the DNS container
-		// (adversarial review, finding G7-01).
-		uid, gid := os.Getuid(), os.Getgid()
-		if d.DnsTest == nil {
-			if uid, gid, err = d.dnsOwner(); err != nil {
+	tags := []int{}
+	for _, k := range z.Keys {
+		tags = append(tags, k.Tag)
+		have, ok := keys[k.Tag]
+		if !ok {
+			if err := d.importDnsKey(ctx, z.Name, k); err != nil {
+				return err
+			}
+			continue
+		}
+		if have.Active != (k.State == keyActive) || (k.State != keyActive && !have.Ready) {
+			if _, err := d.knot(ctx, "keymgr", append([]string{z.Name + ".", "set", have.ID}, keyTimes(k.State)...)...); err != nil {
 				return err
 			}
 		}
-		dir, err := safefs.Open(d.dnsDir())
-		if err != nil {
+	}
+	return d.forgetDnsKeys(ctx, z.Name, tags)
+}
+
+// importDnsKey gives one DNSSEC key of a zone to Knot, and checks that Knot has it.
+func (d *Deps) importDnsKey(ctx context.Context, zone string, k dnssecKey) error {
+	// The key is in a file for a moment, in a directory that only the DNS user can open.
+	// Root does not follow a symbolic link in the data directory of the DNS container
+	// (adversarial review, finding G7-01).
+	uid, gid := os.Getuid(), os.Getgid()
+	if d.DnsTest == nil {
+		var err error
+		if uid, gid, err = d.dnsOwner(); err != nil {
 			return err
-		}
-		defer dir.Close()
-		rel := filepath.Join("db", "import", z.Name+".pem")
-		defer dir.Remove(rel)
-		if _, err := dir.WriteFile(rel, []byte(z.Key), 0o600, uid, gid); err != nil {
-			return err
-		}
-		seen := filepath.Join(d.dnsLayout().Storage, "import", z.Name+".pem")
-		if _, err := d.knot(ctx, "keymgr", z.Name+".", "import-pem", seen, "ksk=yes", "zsk=yes", "algorithm=13"); err != nil {
-			return err
-		}
-		after, err := d.dnsKeys(ctx, z.Name)
-		if err != nil {
-			return err
-		}
-		found := false
-		for _, tag := range after {
-			found = found || tag == z.KeyTag
-		}
-		if !found {
-			return fmt.Errorf("the DNSSEC key does not have the key tag %d", z.KeyTag)
 		}
 	}
-	return d.forgetDnsKeys(ctx, z.Name, z.KeyTag)
+	dir, err := safefs.Open(d.dnsDir())
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	file := fmt.Sprintf("%s-%d.pem", zone, k.Tag)
+	rel := filepath.Join("db", "import", file)
+	defer dir.Remove(rel)
+	if _, err := dir.WriteFile(rel, []byte(k.Key), 0o600, uid, gid); err != nil {
+		return err
+	}
+	seen := filepath.Join(d.dnsLayout().Storage, "import", file)
+	if _, err := d.knot(ctx, "keymgr", append([]string{zone + ".", "import-pem", seen, "ksk=yes", "zsk=yes", "algorithm=13"}, keyTimes(k.State)...)...); err != nil {
+		return err
+	}
+	after, err := d.dnsKeys(ctx, zone)
+	if err != nil {
+		return err
+	}
+	if _, ok := after[k.Tag]; !ok {
+		return fmt.Errorf("the DNSSEC key does not have the key tag %d", k.Tag)
+	}
+	return nil
 }
 
 // loadDnsZones makes Knot read its configuration and the zone files again, and checks that
@@ -840,8 +1015,8 @@ func (d *Deps) removeDnsZones(ctx context.Context, names []string) error {
 	}
 	var errs []error
 	for _, name := range gone {
-		if st.Zones[name].Signed {
-			errs = append(errs, d.forgetDnsKeys(ctx, name, -1))
+		if st.Zones[name].signed() {
+			errs = append(errs, d.forgetDnsKeys(ctx, name, nil))
 		}
 		delete(st.Zones, name)
 	}

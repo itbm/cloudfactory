@@ -241,6 +241,10 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 			body["encrypt"] = true
 		}
 		return a.change(ctx, http.MethodPost, "/mail/mailboxes", body)
+	case "autoresponder":
+		return a.mailAutoresponder(ctx, args)
+	case "backups", "backup", "restore":
+		return a.mailBackups(ctx, verb, args)
 	case "private-key":
 		if err := need(args, 1, "a mailbox"); err != nil {
 			return err

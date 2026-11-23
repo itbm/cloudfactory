@@ -21,8 +21,9 @@ class DemoAgentClient extends AgentClient
     }
 
     /**
-     * The file manager and the logs, with the sample files of the demonstration mode. A check
-     * of a branch gives the commit of the last release, so that no deploy starts.
+     * The file manager and the logs, with the sample files of the demonstration mode, and the
+     * autoresponders of the mailboxes. A check of a branch gives the commit of the last
+     * release, so that no deploy starts.
      */
     public function call(Server $server, string $method, array $payload, int $timeout = 75): array
     {
@@ -40,7 +41,7 @@ class DemoAgentClient extends AgentClient
             ]), (array) ($payload['checks'] ?? []))];
         }
 
-        return DemoSite::call($method, $payload);
+        return str_ends_with($method, 'Autoresponder') ? DemoMail::call($method, $payload) : DemoSite::call($method, $payload);
     }
 
     /** The demo agent always answers. */

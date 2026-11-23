@@ -28,6 +28,11 @@ return [
 
     'panel_domain' => env('CF_PANEL_DOMAIN', 'panel.cloudfactory.io'),
 
+    // Secondary DNS: the name of the catalog zone (RFC 9432), the list of the zones that a
+    // secondary DNS server can copy. Give each panel its own name when one secondary copies
+    // the zones of more than one panel. No customer can make a zone with this name.
+    'dns_catalog_zone' => env('CF_DNS_CATALOG_ZONE', 'catalog.cloudfactory.invalid'),
+
     // FR-103: passkeys. A passkey works on the panel domain and on the panel domain of each
     // reseller, with HTTPS. In development, "localhost" also accepts these HTTP origins.
     'passkeys' => [
@@ -93,13 +98,16 @@ return [
         'reserve_bytes' => (int) env('CF_IMPORT_RESERVE_BYTES', 2 * 1024 ** 3),
     ],
 
-    // Audit finding R8: the number of manual backups that the panel keeps for each website.
-    // The retention policy above is only for the scheduled backups.
+    // Audit finding R8: the number of manual backups that the panel keeps for each website and
+    // each mailbox. The retention policy above is only for the scheduled backups.
     'manual_backups' => (int) env('CF_MANUAL_BACKUPS', 10),
 
     // Audit finding R8: the number of days that the backups of a deleted website stay in the
     // repository. In this time, an administrator can restore them with restic.
     'deleted_website_backup_days' => (int) env('CF_DELETED_WEBSITE_BACKUP_DAYS', 30),
+
+    // The number of days that the backups of a removed mailbox stay in the repository.
+    'deleted_mailbox_backup_days' => (int) env('CF_DELETED_MAILBOX_BACKUP_DAYS', 30),
 
     // Audit finding F09: administrators and resellers must turn on TOTP before they can work in
     // a sign-in session. Set CF_REQUIRE_TOTP=false only for development or a demonstration.

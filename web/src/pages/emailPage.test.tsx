@@ -4,8 +4,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { getState } from "../api/store";
 import type { Role } from "../api/types";
-import { apiJob, reset, signedIn, type PanelApi } from "../test/panelApi";
+import { apiJob, refresh, reset, signedIn, type PanelApi } from "../test/panelApi";
+import { autoresponderState, dayBoundary, localDay } from "./Autoresponder";
 import { EmailPage } from "./EmailPage";
+import { restoreSummary } from "./MailboxBackups";
 import { ServersPage } from "./ServersPage";
 
 afterEach(() => {
@@ -307,6 +309,144 @@ describe("the email page", () => {
     expect(row("info@acme.example.com").textContent).not.toContain("Encrypted");
   });
 
+  it("reads the autoresponder of a mailbox from the mail server, and changes it", async () => {
+    const api = await open("owner");
+    const olu = getState().mailboxes.find((m) => m.address === "olu@acme.example.com")!;
+    menu(row("olu@acme.example.com"), "Autoresponder");
+    let dialog = screen.getByRole("dialog", { name: "Autoresponder of olu@acme.example.com" });
+    await waitFor(() => expect((within(dialog).getByLabelText("Subject") as HTMLInputElement).value).toBe("Out of office"));
+    expect((within(dialog).getByRole("checkbox", { name: /Answer new messages automatically/ }) as HTMLInputElement).checked).toBe(true);
+    expect((within(dialog).getByLabelText("Message") as HTMLTextAreaElement).value).toContain("I am on leave until 4 January");
+    expect((within(dialog).getByLabelText("First day") as HTMLInputElement).value).toBe(localDay("2026-12-19T00:00:00Z"));
+    expect(dialog.textContent).not.toContain("filter rules");
+
+    // A day that the user does not change keeps its time.
+    api.on(`PUT /mail/mailboxes/${olu.id}/autoresponder`, (body) => [200, { autoresponder: { ...(body as object), filterScript: null } }]);
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Answer new messages automatically/ }));
+    fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "Back on Monday." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save autoresponder" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toEqual({ method: "PUT", path: `/mail/mailboxes/${olu.id}/autoresponder`, body: {
+      enabled: false, subject: "Out of office", text: "Back on Monday.", startsAt: "2026-12-19T00:00:00Z", endsAt: "2027-01-04T23:59:59Z",
+    } });
+
+    // The autoresponder stops the filter rules of a mailbox: the dialog tells it.
+    const finance = getState().mailboxes.find((m) => m.address === "finance@acme.example.com")!;
+    menu(row("finance@acme.example.com"), "Autoresponder");
+    dialog = await screen.findByRole("dialog", { name: "Autoresponder of finance@acme.example.com" });
+    await waitFor(() => expect(within(dialog).getByLabelText("Subject")).toBeTruthy());
+    expect(dialog.textContent).not.toContain("filter rules");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Answer new messages automatically/ }));
+    expect(within(dialog).getByRole("note").textContent).toContain("This mailbox has its own filter rules (“filters”)");
+
+    // The message has a limit in bytes.
+    fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "é".repeat(1001) } });
+    expect(dialog.textContent).toContain("2002 of 2000 characters");
+    expect(dialog.textContent).toContain("The message is too long.");
+    const sent = api.changes.length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save autoresponder" }));
+    expect(api.changes).toHaveLength(sent);
+
+    // The mail server refuses the text: the dialog shows the error at the field.
+    api.on(`PUT /mail/mailboxes/${finance.id}/autoresponder`, () => [422, { message: "Type the text of the answer.", errors: { text: ["Type the text of the answer."] } }]);
+    fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "" } });
+    fireEvent.change(within(dialog).getByLabelText("Last day"), { target: { value: "2027-01-08" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save autoresponder" }));
+    await waitFor(() => expect(within(dialog).getByText("Type the text of the answer.")).toBeTruthy());
+    expect(api.changes.at(-1)!.body).toEqual({ enabled: true, subject: null, text: "", startsAt: null, endsAt: dayBoundary("2027-01-08", true) });
+  });
+
+  it("lists the backups of a mailbox, makes a backup, and restores the messages of a backup", async () => {
+    const api = await open("owner");
+    const info = getState().mailboxes.find((m) => m.address === "info@acme.example.com")!;
+    menu(row("info@acme.example.com"), "Backups");
+    let dialog = screen.getByRole("dialog", { name: "Backups of info@acme.example.com" });
+    // The demo has seven nightly backups and one manual backup, the newest first.
+    await waitFor(() => expect(within(dialog).getAllByRole("row")).toHaveLength(9));
+    const rows = () => within(screen.getByRole("dialog")).getAllByRole("row").slice(1);
+    expect(rows()[0].textContent).toContain("Manual");
+    expect(rows()[1].textContent).toContain("Nightly");
+    // The result of the last restore of a backup, with the message that it did not add.
+    const restored = rows().find((r) => r.textContent!.includes("Restored on"))!;
+    expect(restored.textContent).toMatch(/14 messages added, [\d,]+ already in the mailbox\./);
+    expect(within(restored).getByText("Not restored: 1 message is larger than the mail server accepts.").className).toContain("text-warning");
+
+    // A backup now. The list loads again when the job ends.
+    api.on(`POST /mail/mailboxes/${info.id}/backups`, () => [202, { job: apiJob({ id: "job-mb1", action: "BackupMailbox", title: "Back up mailbox info@acme.example.com" }) }]);
+    api.change<List>(`/mail/mailboxes/${info.id}/backups`, (b) => {
+      b.data.unshift({ ...b.data[0], id: "backup-new", createdAt: "2026-11-14T10:00:05+00:00", lastRestore: null });
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Back up now" }));
+    await waitFor(() => expect(rows()).toHaveLength(9));
+    expect(api.changes.at(-1)).toEqual({ method: "POST", path: `/mail/mailboxes/${info.id}/backups`, body: undefined });
+
+    // A restore asks first, and tells what it does.
+    const oldest = rows().at(-1)!;
+    fireEvent.click(within(oldest).getByRole("button", { name: /^Restore the backup of/ }));
+    dialog = screen.getByRole("dialog", { name: /^Restore info@acme.example.com from .+\?$/ });
+    expect(dialog.textContent).toContain("The restore does not change or remove a message that is in the mailbox now.");
+    const backups = (api.changes.length);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("dialog", { name: "Backups of info@acme.example.com" })).toBeTruthy();
+    expect(api.changes).toHaveLength(backups);
+
+    // The panel refuses a backup on a server that does not have the mailbox now.
+    fireEvent.click(within(rows().at(-1)!).getByRole("button", { name: /^Restore the backup of/ }));
+    api.on(`POST /mail/mailboxes/${info.id}/backups/*/restore`, () => [422, { message: "This backup is in the repository of a server that does not have this mailbox now. The panel cannot restore it.", errors: { snapshot: ["This backup is in the repository of a server that does not have this mailbox now. The panel cannot restore it."] } }]);
+    fireEvent.click(screen.getByRole("button", { name: "Restore messages" }));
+    await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("The panel cannot restore it."));
+
+    api.on(`POST /mail/mailboxes/${info.id}/backups/*/restore`, () => [202, { job: apiJob({ id: "job-mb2", action: "RestoreMailbox", title: "Restore mailbox info@acme.example.com" }) }]);
+    fireEvent.click(screen.getByRole("button", { name: "Restore messages" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Backups of info@acme.example.com" })).toBeTruthy());
+    const oldestId = (api.changes.at(-1)!.path.match(/backups\/([^/]+)\/restore$/) ?? [])[1];
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", body: undefined });
+    expect(oldestId).toBeTruthy();
+    expect(oldestId).not.toBe("backup-new");
+  });
+
+  it("does not start a backup or a restore of a mailbox while one is in progress", async () => {
+    const api = await open("owner");
+    api.change<List>("/jobs?perPage=50", (b) => {
+      b.data.unshift(apiJob({ id: "job-mb3", action: "BackupMailbox", title: "Nightly backup of mailbox info@acme.example.com", state: "running", steps: ["Export and upload the messages", "Apply retention"], step: 0, finishedAt: null }));
+    });
+    await refresh();
+    menu(row("info@acme.example.com"), "Backups");
+    const dialog = screen.getByRole("dialog", { name: "Backups of info@acme.example.com" });
+    await waitFor(() => expect(within(dialog).getAllByRole("row").length).toBeGreaterThan(1));
+    expect(within(dialog).getByText("Export and upload the messages")).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: "Back up now" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(within(dialog).getAllByRole("button", { name: /^Restore the backup of/ }).every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    expect(dialog.textContent).toContain("A backup or a restore of this mailbox is in progress.");
+    // The job of a different mailbox does not stop this one.
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Close" }).at(-1)!);
+    menu(row("olu@acme.example.com"), "Backups");
+    expect((screen.getByRole("button", { name: "Back up now" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("tells what the last restore of a mailbox backup did", () => {
+    const at = "2026-11-21T09:41:00Z";
+    expect(restoreSummary({ at, added: 1, present: 1200, tooLarge: 0, failed: 0 })).toEqual({ text: expect.stringMatching(/^Restored on 21 November 2026 at .+\. 1 message added, 1,200 already in the mailbox\.$/), warning: null });
+    expect(restoreSummary({ at: null, added: 0, present: 5, tooLarge: 2, failed: 1 })).toEqual({
+      text: "Restored. 0 messages added, 5 already in the mailbox.",
+      warning: "Not restored: 2 messages are larger than the mail server accepts, and the mail server refused 1 message.",
+    });
+  });
+
+  it("tells what the mail server does with the autoresponder", () => {
+    const now = Date.parse("2026-12-24T12:00:00Z");
+    expect(autoresponderState({ enabled: false, startsAt: null, endsAt: null }, now)).toBeNull();
+    expect(autoresponderState({ enabled: true, startsAt: null, endsAt: null }, now)).toBe("The mail server answers new messages.");
+    expect(autoresponderState({ enabled: true, startsAt: "2026-12-30T00:00:00Z", endsAt: null }, now)).toBe("The mail server starts to answer on 30 December 2026.");
+    expect(autoresponderState({ enabled: true, startsAt: null, endsAt: "2026-12-20T12:00:00Z" }, now)).toBe("The last day was 20 December 2026. The mail server does not answer.");
+    expect(autoresponderState({ enabled: true, startsAt: "2026-12-20T12:00:00Z", endsAt: "2027-01-04T12:00:00Z" }, now)).toBe("The mail server answers new messages until the end of 4 January 2027.");
+    // The days are in the time zone of the browser.
+    expect(new Date(dayBoundary("2027-01-08", false)!).getDate()).toBe(8);
+    expect(new Date(dayBoundary("2027-01-08", true)!).getHours()).toBe(23);
+    expect(localDay(dayBoundary("2027-01-08", true))).toBe("2027-01-08");
+    expect(dayBoundary("", true)).toBeNull();
+  });
+
   it("tells about a mailbox that is 90% full", async () => {
     await open("owner");
     // FR-603: sales@ uses 95% of its storage. The other mailboxes of Acme use less than 90%.
@@ -375,5 +515,37 @@ describe("email on a server", () => {
     fireEvent.change(within(card).getByLabelText("Host name of the mail server"), { target: { value: "Mail.Example.net" } });
     fireEvent.click(within(card).getByRole("button", { name: "Turn on email" }));
     await waitFor(() => expect(api.changes.at(-1)).toMatchObject({ method: "PUT", path: `/servers/${id}/mail`, body: { hostname: "mail.example.net" } }));
+  });
+
+  it("shows and changes the spam filter and the outbound relay", async () => {
+    const { api, id } = await openServer("mail-1");
+    const card = screen.getByRole("heading", { name: "Email" }).closest(".card") as HTMLElement;
+    expect(card.textContent).toContain("On. Junk folder at score 5. Refused at score 15.");
+    expect(card.textContent).toContain("Through the relay smtp.relay.example.net:587, as mail-1.");
+    api.on(`PUT /servers/${id}/mail/settings`, () => [202, { job: apiJob({ id: "job-settings", action: "SetMailSettings", serverId: id }) }]);
+
+    // The same user keeps the password: the request has no password.
+    fireEvent.click(within(card).getByRole("button", { name: "Change" }));
+    let dialog = screen.getByRole("dialog");
+    expect((within(dialog).getByLabelText("Password") as HTMLInputElement).placeholder).not.toBe("");
+    fireEvent.change(within(dialog).getByLabelText("Junk folder at score"), { target: { value: "6.5" } });
+    fireEvent.change(within(dialog).getByLabelText("Port"), { target: { value: "465" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toEqual({ method: "PUT", path: `/servers/${id}/mail/settings`, body: { spamFilter: true, spamScore: 6.5, rejectScore: 15, relay: { host: "smtp.relay.example.net", port: 465, username: "mail-1" } } });
+
+    // A different user needs its password. With no refusal and no relay, the request has null.
+    fireEvent.click(within(card).getByRole("button", { name: "Change" }));
+    dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("User name"), { target: { value: "other" } });
+    fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: "new-secret" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(api.changes.at(-1)).toMatchObject({ body: { relay: { username: "other", password: "new-secret" } } }));
+    fireEvent.click(within(card).getByRole("button", { name: "Change" }));
+    dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Refuse a message with a high score" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: /^Send directly/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(api.changes.at(-1)).toMatchObject({ body: { spamFilter: true, rejectScore: null, relay: null } }));
   });
 });

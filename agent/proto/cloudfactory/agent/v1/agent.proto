@@ -19,6 +19,12 @@ service AgentService {
   rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
   rpc AddDomain(DomainRequest) returns (JobAccepted);
   rpc Backup(BackupRequest) returns (JobAccepted);
+  // Makes a backup of all folders and messages of one mailbox in the restic repository of
+  // this server.
+  rpc BackupMailbox(BackupMailboxRequest) returns (JobAccepted);
+  // Reads the versions of WordPress, of its plugins and of its themes, and the updates that
+  // are available. The result has the inventory.
+  rpc CheckWordPress(CheckWordPressRequest) returns (JobAccepted);
   rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
   rpc CreateDatabase(CreateDatabaseRequest) returns (JobAccepted);
   rpc CreateWebsite(WebsiteRequest) returns (JobAccepted);
@@ -49,6 +55,10 @@ service AgentService {
   rpc ImportMail(ImportMailRequest) returns (JobAccepted);
   rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
+  // Installs WordPress in the document root of a running PHP website (FR-206). The agent makes
+  // the MariaDB database and its user, downloads WordPress with WP-CLI, writes wp-config.php
+  // and runs the installer. The document root must be empty, or have only the default page.
+  rpc InstallWordPress(InstallWordPressRequest) returns (JobAccepted);
   // The archives of the file manager. The agent does each job as the Unix user of the
   // website, in the directory of the website, as the methods of the file manager below.
   rpc MakeArchive(MakeArchiveRequest) returns (JobAccepted);
@@ -65,6 +75,10 @@ service AgentService {
   rpc ReceiveWebsite(ReceiveWebsiteRequest) returns (JobAccepted);
   rpc RemoveDomain(DomainRequest) returns (JobAccepted);
   rpc Restore(RestoreRequest) returns (JobAccepted);
+  // Adds the messages of a mailbox backup that the mailbox does not have.
+  rpc RestoreMailbox(RestoreMailboxRequest) returns (JobAccepted);
+  // Puts back the restore point of the last update of a WordPress site.
+  rpc RestoreWordPress(RestoreWordPressRequest) returns (JobAccepted);
   rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
   // Runs one command now in the container of a website (the panel action "Run a command"). The
   // command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
@@ -72,6 +86,8 @@ service AgentService {
   // code is not 0. The result has the exit code and the end of the output.
   rpc RunCommand(RunCommandRequest) returns (JobAccepted);
   rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
+  // Runs one WP-CLI command in the container of a website, as the website user, with no shell.
+  rpc RunWpCli(RunWpCliRequest) returns (JobAccepted);
   // Scans the files of a website for malware with ClamAV. The job first updates the
   // signatures of the server. The result has the files that ClamAV found.
   rpc ScanWebsite(ScanWebsiteRequest) returns (JobAccepted);
@@ -86,12 +102,14 @@ service AgentService {
   rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc SetDatabaseUser(SetDatabaseUserRequest) returns (JobAccepted);
+  rpc SetDnsSecondaries(SetDnsSecondariesRequest) returns (JobAccepted);
   rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
   rpc SetLimits(SetLimitsRequest) returns (JobAccepted);
   rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
   rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
   rpc SetMailNode(SetMailNodeRequest) returns (JobAccepted);
   rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
+  rpc SetMailSettings(SetMailSettingsRequest) returns (JobAccepted);
   rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
   rpc SetMesh(SetMeshRequest) returns (JobAccepted);
   // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
@@ -109,6 +127,9 @@ service AgentService {
   // value with the website and changes only the edge route. The container does not restart.
   rpc SetWebsiteSecurity(SetWebsiteSecurityRequest) returns (JobAccepted);
   rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
+  // Saves a restore point, then updates WordPress, plugins and themes, then does a health
+  // check. When an update or the health check fails, the agent puts back the restore point.
+  rpc UpdateWordPress(UpdateWordPressRequest) returns (JobAccepted);
 
   // The methods that do not make a job: they give the result at once. The agent does the
   // methods of the file manager and of the logs of a website as the Unix user of the website,
@@ -118,6 +139,10 @@ service AgentService {
   // container of each website, as for the step "Get the code" of a deploy.
   rpc CheckBranches(CheckBranchesRequest) returns (BranchHeads);
   rpc DeleteFile(FileRequest) returns (FileDeleted);
+  // The autoresponder of a mailbox. The mail server keeps the autoresponder (JMAP
+  // VacationResponse), and the webmail changes the same autoresponder. The job_id of the
+  // request is not used.
+  rpc GetAutoresponder(MailAddressRequest) returns (Autoresponder);
   // The last requests of a website that the firewall of the edge proxy blocked or detected.
   // This method does not make a job.
   rpc GetFirewallEvents(GetFirewallEventsRequest) returns (FirewallEvents);
@@ -133,6 +158,7 @@ service AgentService {
   // for the requests that are not for a website: the panel, the webmail and the mail host.
   // This method does not make a job.
   rpc SearchLogs(SearchLogsRequest) returns (LogSearchResult);
+  rpc SetAutoresponder(SetAutoresponderRequest) returns (Autoresponder);
   rpc SetFileMode(SetFileModeRequest) returns (FileModeSet);
   rpc WriteFile(WriteFileRequest) returns (FileEntry);
 }
@@ -391,6 +417,58 @@ message SetMailAliasRequest {
   repeated string destinations = 4;
 }
 
+// The autoresponder of a mailbox. When it is on, the mail server answers a new message with
+// the text. It answers each sender one time in 30 days. It does not answer a mailing list or
+// an automatic message.
+message Autoresponder {
+  bool enabled = 1;
+  // Empty: the subject of the answer is "Auto:" and the subject of the message.
+  string subject = 2;
+  string text = 3;
+  // The period of the autoresponder, in RFC 3339 (UTC). Empty: no start, or no end.
+  string starts_at = 4;
+  string ends_at = 5;
+  // Only in an answer: the name of the active Sieve script of the mailbox, for example the
+  // filter rules that the user made in the webmail. The mail server runs one script for each
+  // mailbox, so the autoresponder stops this script when it is on. Empty: no other script is
+  // active.
+  string filter_script = 6;
+}
+
+message SetAutoresponderRequest {
+  string domain = 1;
+  string local_part = 2;
+  Autoresponder autoresponder = 3;
+}
+
+// SetMailSettings sets the spam filter and the outbound relay of the mail server.
+message SetMailSettingsRequest {
+  string job_id = 1;
+  // True: the mail server examines each new message and gives it a spam score.
+  bool spam_filter = 2;
+  // A message with this score or more goes to the junk folder of the mailbox. From 1 to 50.
+  double spam_score = 3;
+  // The mail server refuses a message with this score or more. 0: it refuses no message for
+  // its score. Not 0: more than spam_score, and 100 or less.
+  double reject_score = 4;
+  // Not set: the mail server sends each message to the mail server of the recipient (port 25).
+  MailRelay relay = 5;
+}
+
+// A mail server that sends the outgoing mail for this mail server, for example the SMTP
+// service of a provider. Mail for the mail domains of this server does not go through it.
+message MailRelay {
+  // The host name of the relay. It must have a public address.
+  string host = 1;
+  // 25, 465, 587 or 2525. 465 uses TLS from the start. The other ports use STARTTLS.
+  int32 port = 2;
+  // Empty: the relay accepts the mail with no sign-in.
+  string username = 3;
+  // The panel adds the password each time that it sends the job: the job record does not
+  // have it.
+  string password = 4;
+}
+
 // Stops a database server and removes its data. The panel sends it only for a database
 // server with no databases.
 message DeleteDatabaseServerRequest {
@@ -593,8 +671,9 @@ message BackupRequest {
   string customer = 10;
 }
 
-// The snapshots of a website that the agent keeps. The policy applies to the snapshots of the
-// same kind as the backup, so that the scheduled backups do not remove the manual backups.
+// The snapshots of a website or a mailbox that the agent keeps. The policy applies to the
+// snapshots of the same kind as the backup, so that the scheduled backups do not remove the
+// manual backups.
 message Retention {
   int32 daily = 1;
   int32 weekly = 2;
@@ -614,6 +693,8 @@ message PruneBackupsRequest {
   // the files (the kinds "scheduled" and "manual"). It keeps the snapshots of the databases
   // that this server makes for them (the kinds "scheduled-databases" and "manual-databases").
   repeated string forget_moved_website_ids = 5;
+  // The IDs of deleted mailboxes. The agent removes all their snapshots first.
+  repeated string forget_mailbox_ids = 6;
 }
 
 message RestoreRequest {
@@ -621,9 +702,9 @@ message RestoreRequest {
   string website_id = 2;
   string unix_user = 3;
   string snapshot_id = 4;
-  // "website", "database", "mailbox" or "file".
+  // "website", "database" or "file". A mailbox has its own backups (RestoreMailboxRequest).
   string scope = 5;
-  // The database ("mariadb:name" or "postgresql:name"), the mailbox, or the file path.
+  // The database ("mariadb:name" or "postgresql:name") or the file path.
   string item = 6;
   // The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
   string target = 7;
@@ -637,6 +718,39 @@ message RestoreRequest {
   // Scope "database": the ID of the customer of the website. It is necessary for a website
   // of a different server.
   string customer = 12;
+}
+
+// Makes a backup of one mailbox. The snapshot has the tags "mailbox=<mailbox_id>" and
+// "kind=<kind>". Its one file is a tar stream of the folders and the messages of the mailbox
+// (agent/internal/stalwart/backup.go).
+message BackupMailboxRequest {
+  string job_id = 1;
+  // The ID of the mailbox in the panel.
+  string mailbox_id = 2;
+  string domain = 3;
+  // The part of the address before the @ sign.
+  string local_part = 4;
+  // "manual" or "scheduled".
+  string kind = 5;
+  // The restic repository of this server.
+  string target = 6;
+  map<string, string> credentials = 7;
+  // When set, the agent removes the snapshots of the mailbox that the policy does not keep.
+  Retention retention = 8;
+}
+
+// Restores a backup of a mailbox into the mailbox. The agent adds each message that the
+// mailbox does not have, and the folders of these messages. It does not change or remove a
+// message or a folder.
+message RestoreMailboxRequest {
+  string job_id = 1;
+  string mailbox_id = 2;
+  string domain = 3;
+  string local_part = 4;
+  // The restic ID of a snapshot of this mailbox.
+  string snapshot_id = 5;
+  string target = 6;
+  map<string, string> credentials = 7;
 }
 
 // Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees
@@ -952,12 +1066,79 @@ message DnsZone {
   // that has a smaller serial.
   int64 serial = 2;
   repeated DnsRecord records = 3;
-  // The private DNSSEC key of the zone: an ECDSA P-256 key in the PKCS #8 PEM format. Empty
-  // when DNSSEC is off. The DNS server then removes the keys and the signatures of the zone.
-  string dnssec_key = 4;
+  reserved 4, 5;
+  // The zone transfers to the secondary DNS servers of the owner of the zone. Empty: only
+  // the secondaries of SetDnsSecondaries copy the zone.
+  DnsTransfers transfers = 6;
+  // The DNSSEC keys of the zone: one key, or two keys during a change of the key. Empty when
+  // DNSSEC is off. The DNS server then removes the keys and the signatures of the zone.
+  repeated DnssecKey dnssec_keys = 7;
+}
+
+// A DNSSEC key of a zone. The key signs the zone and its keys (a combined signing key).
+message DnssecKey {
+  // The private key: an ECDSA P-256 key in the PKCS #8 PEM format. The panel adds it each
+  // time that it sends the job.
+  string key = 1;
   // The key tag of the key. The agent imports the key only when the DNS server does not
   // have a key with this tag.
-  int32 dnssec_key_tag = 5;
+  int32 key_tag = 2;
+  // "active": the key signs the zone. "ready": the key is in the DNSKEY records and signs
+  // them, but it does not sign the other records. "submit": as "ready", and the zone has
+  // CDS and CDNSKEY records for the key (RFC 7344), so that the registry can get the new DS
+  // record.
+  string state = 3;
+}
+
+// A TSIG key (RFC 8945) that signs the zone transfers and the NOTIFY messages.
+message TsigKey {
+  // The name of the key: a DNS name in lower case, with no dot at the end. The other server
+  // uses the same name.
+  string name = 1;
+  // "hmac-sha256" or "hmac-sha512".
+  string algorithm = 2;
+  // The secret in base64, 16 to 64 bytes. The panel adds it each time that it sends the job.
+  string secret = 3;
+}
+
+// The zone transfers (AXFR and IXFR) of one zone to secondary DNS servers outside the panel.
+// Only these addresses can ask for a transfer of the zone.
+message DnsTransfers {
+  // Public IPv4 and IPv6 addresses, from 1 to 10.
+  repeated string addresses = 1;
+  // The key of the transfers, or no key for transfers with no TSIG. Its name is "transfer."
+  // and the name of the zone.
+  TsigKey tsig = 2;
+  // true: the DNS server sends NOTIFY to the addresses after each change of the zone.
+  bool notify = 3;
+}
+
+// A secondary DNS server outside the panel that copies all the zones of the DNS servers.
+message DnsSecondary {
+  // The ID of the secondary in the panel.
+  string id = 1;
+  // IPv4 and IPv6 addresses, from 1 to 10.
+  repeated string addresses = 2;
+  // The key of the transfers, or no key for transfers with no TSIG.
+  TsigKey tsig = 3;
+  // true: the DNS server sends NOTIFY to the addresses after each change of a zone.
+  bool notify = 4;
+  // true: the secondary also copies the catalog zone (RFC 9432), the list of the zones.
+  bool catalog = 5;
+}
+
+// Sets the secondary DNS servers that copy all the zones of this server, and the catalog
+// zone. The list replaces the list that the server has.
+message SetDnsSecondariesRequest {
+  string job_id = 1;
+  // At most 10.
+  repeated DnsSecondary secondaries = 2;
+  // The name of the catalog zone, for example "catalog.cloudfactory.invalid". The DNS server
+  // makes the catalog zone only when a secondary has "catalog".
+  string catalog_zone = 3;
+  // The version of the list in the panel. The agent gives it in its report, so the panel
+  // sends the list again to a server that does not have it.
+  int64 version = 4;
 }
 
 // Writes DNS zones on this server, and starts the DNS server (the container cf-dns) if it
@@ -1300,6 +1481,65 @@ message LogSearchResult {
   string next = 2;
   // Only when the request asked for it.
   LogSummary summary = 3;
+}
+
+// InstallWordPress. The database and its user are new. The names start with the Unix user of
+// the website (CF-01).
+message InstallWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // A MariaDB database server of the customer, on this server. The agent makes it when it
+  // does not have it.
+  DatabaseServer database_server = 3;
+  string database_name = 4;
+  string database_user = 5;
+  string database_password = 6;
+  // The title of the site.
+  string title = 7;
+  // The first administrator.
+  string admin_user = 8;
+  string admin_email = 9;
+  string admin_password = 10;
+  // A WordPress locale, for example "en_GB".
+  string locale = 11;
+  // The address of the site: "https://" and the name of the website. The edge proxy can serve
+  // the name later, when the owner verifies the domain.
+  string url = 12;
+}
+
+message CheckWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+}
+
+// UpdateWordPress. Each list has the names of the plugins or themes to update.
+message UpdateWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // "": no update of WordPress. "minor": the latest version with the same major version, for
+  // example 6.8.1 to 6.8.3. "latest": the latest version.
+  string core = 3;
+  repeated string plugins = 4;
+  repeated string themes = 5;
+  // The database of the site, for the restore point. With no database, the restore point has
+  // only the files.
+  DatabaseRef database = 6;
+  HealthCheck health_check = 7;
+}
+
+message RestoreWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The database of the site. The agent loads the dump of the restore point into it.
+  DatabaseRef database = 3;
+}
+
+// RunWpCli. The arguments come after "wp", for example ["plugin", "list"]. The agent adds
+// --path with the document root of the website.
+message RunWpCliRequest {
+  string job_id = 1;
+  string website_id = 2;
+  repeated string args = 3;
 }
 
 message GetFirewallEventsRequest {

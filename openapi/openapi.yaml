@@ -30,6 +30,8 @@ tags:
       Run a command in the container of a website, and the command log of the website. The
       command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
       website.
+  - name: WordPress
+    description: One-click WordPress, updates with a restore point, and WP-CLI (FR-206).
   - name: Uptime
     description: >-
       Uptime checks of websites. The panel requests an address of a domain of a website on a
@@ -907,9 +909,27 @@ paths:
                 planId: { type: string, description: The plan of the customer when you do not give it. Only an administrator or the reseller of the customer can give a different plan. }
                 serverId: { type: string }
                 customerId: { type: string, description: Necessary for administrators and resellers. }
+                wordpress:
+                  allOf: [{ $ref: '#/components/schemas/WordPressInstall' }]
+                  description: >-
+                    Install WordPress when the website runs (FR-206). Only for a public website
+                    with a PHP runtime, on a server whose agent runs WP-CLI. The panel makes a
+                    MariaDB database and its user. A token also needs the scope databases:write.
                 documentRoot: { type: string, maxLength: 200, description: 'The directory of the website that the web server serves, relative to the directory of the website, for example "public". The default is ".". Not for an application image.' }
       responses:
-        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '202':
+          description: The panel recorded the website. The job is in the queue. With `wordpress`, the answer has the password of the WordPress administrator, one time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  website: { $ref: '#/components/schemas/Website' }
+                  job: { $ref: '#/components/schemas/Job' }
+                  wordpress:
+                    type: object
+                    properties:
+                      admin: { $ref: '#/components/schemas/WordPressAdmin' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Invalid' }
 
@@ -2046,6 +2066,202 @@ paths:
                       - type: object
                         properties:
                           output: { type: [string, 'null'], description: 'The end of the standard output and the standard error. For a command that did not start, the reason.' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{websiteId}/wordpress:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [WordPress]
+      summary: Show WordPress on a website
+      responses:
+        '200':
+          description: The WordPress site, or null when the website has none, and the last 20 WP-CLI commands.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wordpress: { oneOf: [{ $ref: '#/components/schemas/WordPress' }, { type: 'null' }] }
+                  commands: { type: array, items: { $ref: '#/components/schemas/WpCliCommand' } }
+                  busy: { type: [string, 'null'], description: The ID of the WordPress job that is open now. }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [WordPress]
+      summary: Install WordPress on a website that runs
+      description: >-
+        The document root must be empty, or have only the default page of a new website. The
+        panel makes a MariaDB database and its user on a database server of the customer on the
+        server of the website, or makes a database server. The agent downloads WordPress with
+        WP-CLI, writes wp-config.php and runs the installer. The answer has the password of the
+        administrator, one time. A token also needs the scope databases:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WordPressInstall' }
+      responses:
+        '202':
+          description: The install job is in the queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wordpress: { $ref: '#/components/schemas/WordPress' }
+                  admin: { $ref: '#/components/schemas/WordPressAdmin' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, WordPress has an open job, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    patch:
+      tags: [WordPress]
+      summary: Change the automatic updates of WordPress
+      description: >-
+        In the maintenance window of its server, the panel looks for updates one time each day.
+        It updates WordPress, the plugins and the themes as these settings allow, with a restore
+        point and a health check. "minor" updates WordPress only to a new version with the same
+        major version, for example 6.8.1 to 6.8.3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [autoUpdates]
+              properties:
+                autoUpdates: { $ref: '#/components/schemas/WordPressAutoUpdates' }
+      responses:
+        '200':
+          description: The WordPress site.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wordpress: { $ref: '#/components/schemas/WordPress' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/check:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [WordPress]
+      summary: Read the versions and the available updates
+      description: >-
+        On a website with no WordPress site in the panel, the panel looks for WordPress in the
+        document root, for example for a site from an import. When the job fails, the website has
+        no WordPress site in the panel.
+      responses:
+        '202':
+          description: The job is in the queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wordpress: { $ref: '#/components/schemas/WordPress' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, WordPress has an open job, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/updates:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [WordPress]
+      summary: Update WordPress, plugins and themes
+      description: >-
+        The agent saves a restore point first: the files with no uploads and no caches, and a
+        dump of the database. Then it updates, and checks that WordPress loads and that the site
+        answers. When an update or the check fails, the agent puts back the restore point. With
+        `all`, the panel updates WordPress, each plugin and each theme with an update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                core: { type: [string, 'null'], enum: [minor, latest, null] }
+                plugins: { type: array, maxItems: 200, items: { type: string }, example: [akismet] }
+                themes: { type: array, maxItems: 200, items: { type: string } }
+                all: { type: boolean }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'WordPress is not ready, the website does not run, WordPress has an open job, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/restore:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [WordPress]
+      summary: Roll back the last update
+      description: >-
+        The agent puts back the restore point of the last update: the files, and the database.
+        The uploads and the caches stay as they are. The changes to the database after the update,
+        for example new posts, comments and orders, go.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'WordPress is not ready, the website does not run, WordPress has an open job, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/cli:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [WordPress]
+      summary: Run a WP-CLI command
+      description: >-
+        The agent runs WP-CLI in the container of the website, as the Unix user of the website,
+        in the document root. Each argument goes to WP-CLI as it is, with no shell. The command
+        has no terminal, so "shell" and "db cli" are not permitted. The agent stops a command
+        after 20 minutes. The audit log and the history have the command with no values of
+        password options, for example `--user_pass=***`. The output can have data of the site.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [args]
+              properties:
+                args: { type: array, maxItems: 40, items: { type: string, maxLength: 1000 }, example: [plugin, list, --status=active] }
+      responses:
+        '202':
+          description: The command, and its job. The command gets the result when the job is complete.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command: { $ref: '#/components/schemas/WpCliCommand' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/commands:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [WordPress]
+      summary: List the WP-CLI commands of a website
+      responses:
+        '200':
+          description: The last 100 commands, the newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/WpCliCommand' } }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/websites/{websiteId}/terminal-sessions:
@@ -3617,7 +3833,7 @@ paths:
         Before you turn DNSSEC off, remove the DS record at the registrar and wait for one day.
         A resolver that has the DS record refuses a zone that has no signatures. The panel
         makes a new key each time DNSSEC is turned on. `jobs` is empty when the value did not
-        change.
+        change. Turning DNSSEC off also stops a change of the key.
       requestBody:
         required: true
         content:
@@ -3633,6 +3849,49 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '429': { description: Too many DNS changes in one minute. }
 
+  /v1/dns-zones/{id}/dnssec/rollover:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Start a change of the DNSSEC key of a zone
+      description: >-
+        The panel makes a new key and changes the key in steps (`dnssec.rollover.step`), so
+        that resolvers can check the zone during the change:
+
+
+        1. `publish`: the DNS servers publish the new key. The step ends about 3 hours after
+           each DNS server has the key (`dnssec.rollover.until`).
+
+        2. `submit`: the zone has CDS and CDNSKEY records for the new key. Give the new DS
+           record (`dnssec.rollover.newDs`) to the registrar of the domain, and remove the old
+           one. The step ends when the public DNS gives the new DS record.
+
+        3. `retire`: both keys sign the zone until the old DS record is out of the caches, at
+           least one day (`dnssec.rollover.until`). Then the old key goes.
+
+
+        The panel checks the DS records every 15 minutes, and when you ask for a check
+        (`/check`). Only a zone on the DNS servers of the panel can change its key: an external
+        DNS provider makes its own key.
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'DNSSEC is off, the zone is at an external DNS provider, or the key changes already (`errors.rollover`).' }
+        '429': { description: Too many DNS changes in one minute. }
+    delete:
+      tags: [DNS]
+      summary: Stop a change of the DNSSEC key
+      description: >-
+        Only in the steps `publish` and `submit`, and only while the public DNS does not give
+        the new DS record. The new key goes, and the old key stays. If you gave the new DS
+        record to the registrar, do not stop the change.
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'The key does not change, or the registry has the new DS record (`errors.rollover`).' }
+        '429': { description: Too many DNS changes in one minute. }
+
   /v1/dns-zones/{id}/check:
     parameters:
       - { $ref: '#/components/parameters/Id' }
@@ -3642,7 +3901,9 @@ paths:
       description: >-
         The panel also asks every 15 minutes. When the public DNS gives the name servers of
         the panel (`delegation.state` is `here`), the customer controls the zone: the panel
-        then verifies the domains of the websites of the customer that are in the zone.
+        then verifies the domains of the websites of the customer that are in the zone. For a
+        zone with DNSSEC, the panel also asks for the DS records at the registry
+        (`dnssec.parent`), and a change of the key can go to its next step.
       responses:
         '200':
           description: The zone, with the new `delegation`.
@@ -3700,6 +3961,197 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
         '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/transfers:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [DNS]
+      summary: Send a DNS zone to your own secondary DNS servers
+      description: >-
+        Your secondary DNS servers copy the zone from the DNS servers of the panel with zone
+        transfers (AXFR and IXFR). The panel never copies a zone from a different server.
+
+
+        - `addresses` are the addresses of your secondary DNS servers. Only these addresses can
+          copy the zone. They must be public addresses.
+
+        - Configure your secondary DNS servers to copy the zone from the addresses in
+          `zone.transfers.primaries`.
+
+        - With `tsig` (the default), a TSIG key signs the transfers. The key has the name
+          `transfer.` and the name of the zone. The panel makes the secret, or keeps the secret
+          that you give in `secret`. Get the secret from `/transfers/secret`.
+
+        - With `notify` (the default), the DNS servers send NOTIFY to your secondaries after each
+          change, so that they copy the change at once.
+
+        - `nameServers` are the host names of your secondaries. The zone gets an NS record for
+          each one. Give them to the registrar too.
+
+
+        A zone at an external DNS provider has no zone transfers from the panel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [addresses]
+              properties:
+                addresses: { type: array, minItems: 1, maxItems: 10, items: { type: string }, description: IPv4 or IPv6 addresses. }
+                notify: { type: boolean, default: true }
+                nameServers: { type: array, maxItems: 4, items: { type: string } }
+                tsig: { type: boolean, default: true }
+                algorithm: { type: string, enum: [hmac-sha256, hmac-sha512], default: hmac-sha256 }
+                secret: { type: [string, 'null'], description: A TSIG secret in base64, with 16 to 64 bytes. Default: the current secret, or a new secret. }
+                newSecret: { type: boolean, default: false, description: Make a new secret. Then give the new secret to your secondaries. }
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+    delete:
+      tags: [DNS]
+      summary: Stop the zone transfers to your own secondary DNS servers
+      description: The zone loses the NS records of your secondaries. `jobs` is empty when the zone had no transfers.
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/transfers/secret:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [DNS]
+      summary: Get the TSIG key of the zone transfers
+      description: The audit log records each request. The limit is 10 requests in one minute.
+      responses:
+        '200':
+          description: The TSIG key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TsigKey' }
+        '404': { description: The zone does not exist, or its transfers have no TSIG key. }
+        '429': { description: Too many requests in one minute. }
+
+  /v1/dns-secondaries:
+    get:
+      tags: [DNS]
+      summary: List the secondary DNS servers of the panel
+      description: >-
+        Administrators only. A secondary DNS server of the panel copies all zones on the DNS
+        servers of the panel with zone transfers. `primaries` has the addresses of the DNS
+        servers of the panel: configure each secondary to copy the zones from them. `servers`
+        tells if each DNS server of the panel has the current list.
+      responses:
+        '200':
+          description: The secondaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/DnsSecondary' } }
+                  catalogZone: { type: string, description: 'The name of the catalog zone (RFC 9432). A secondary with `catalog` copies it, and finds each zone in it.' }
+                  primaries: { type: array, items: { type: object, properties: { nameServer: { type: string }, addresses: { type: array, items: { type: string } } } } }
+                  servers: { type: array, items: { type: object, properties: { server: { type: string }, state: { type: string, enum: [ok, pending, failed] } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [DNS]
+      summary: Add a secondary DNS server
+      description: >-
+        Administrators only. Each DNS server of the panel gets the new list in a job. The panel
+        has at most 10 secondaries.
+
+
+        - `addresses` can copy the zones, and get NOTIFY when `notify` is true. A private
+          address is permitted, for example of a secondary in the same private network.
+
+        - With `nameServer`, each zone on the DNS servers of the panel gets an NS record for the
+          secondary. The DNS servers then get all zones again.
+
+        - A new secondary has a TSIG key unless `tsig` is false. The panel makes the key name
+          and the secret, or keeps the values that you give. A key name cannot start with
+          `transfer.`.
+
+        - With `catalog`, the secondary also copies the catalog zone. When the catalog zone
+          starts or stops, each DNS server of the panel restarts. It does not answer for a
+          short time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DnsSecondaryInput' }
+      responses:
+        '202':
+          description: The secondary, and the jobs of the DNS servers.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsSecondaryJobs' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-secondaries/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [DNS]
+      summary: Change a secondary DNS server
+      description: >-
+        Administrators only. A field that the request does not have keeps its value. A new
+        algorithm, or `newSecret`, gives a new secret. The answer is 200 with no jobs when
+        nothing changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DnsSecondaryInput' }
+      responses:
+        '200':
+          description: Nothing changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsSecondaryJobs' }
+        '202':
+          description: The secondary, and the jobs of the DNS servers.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsSecondaryJobs' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [DNS]
+      summary: Remove a secondary DNS server
+      description: Administrators only. The DNS servers of the panel stop the transfers to the secondary.
+      responses:
+        '202':
+          description: The jobs of the DNS servers.
+          content:
+            application/json:
+              schema: { type: object, properties: { jobs: { type: array, items: { $ref: '#/components/schemas/Job' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/dns-secondaries/{id}/secret:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [DNS]
+      summary: Get the TSIG key of a secondary DNS server
+      description: Administrators only. The audit log records each request. The limit is 10 requests in one minute.
+      responses:
+        '200':
+          description: The TSIG key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TsigKey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: The secondary does not exist, or it has no TSIG key. }
+        '429': { description: Too many requests in one minute. }
 
   /v1/dns-accounts:
     get:
@@ -4132,6 +4584,71 @@ paths:
         '404': { description: The mailbox is not there, or the panel made no keys for it. }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/mail/mailboxes/{id}/autoresponder:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Email]
+      summary: Get the autoresponder of a mailbox
+      description: >-
+        The panel reads the autoresponder from the mail server at once, through the agent. The
+        panel keeps no copy: the user can also change the autoresponder in the webmail. The
+        mailbox must be active.
+      responses:
+        '200':
+          description: The autoresponder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [autoresponder]
+                properties:
+                  autoresponder: { $ref: '#/components/schemas/Autoresponder' }
+        '404': { description: The mailbox is not there, or the mail server does not have it. }
+        '409': { description: The server has no mail server. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the mail server, or the agent is from an earlier release. }
+    put:
+      tags: [Email]
+      summary: Set the autoresponder of a mailbox
+      description: >-
+        When the autoresponder is on, the mail server answers each new message with the text. It
+        answers each sender one time in 30 days. It does not answer a mailing list or an
+        automatic message. The mail server keeps the text when the autoresponder is off.
+
+
+        The mail server runs one Sieve script for each mailbox. When the autoresponder is on,
+        the filter rules of the mailbox (`filterScript`) stop, and they do not start again when
+        the autoresponder is off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, subject, text, startsAt, endsAt]
+              properties:
+                enabled: { type: boolean }
+                subject: { type: [string, 'null'], maxLength: 200, description: 'One line. Null: the subject is "Auto:" and the subject of the message.' }
+                text: { type: [string, 'null'], maxLength: 2000, description: 'Necessary when `enabled` is true. Up to 2000 bytes in UTF-8.' }
+                startsAt: { type: [string, 'null'], format: date-time, description: 'RFC 3339. Null: no start.', example: '2026-12-20T08:00:00Z' }
+                endsAt: { type: [string, 'null'], format: date-time, description: 'RFC 3339, after `startsAt`. Null: no end.', example: '2027-01-04T23:59:59Z' }
+      responses:
+        '200':
+          description: The autoresponder, as the mail server has it now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [autoresponder]
+                properties:
+                  autoresponder: { $ref: '#/components/schemas/Autoresponder' }
+        '403': { description: The token does not have the mail:write scope. }
+        '404': { description: The mailbox is not there, or the mail server does not have it. }
+        '409': { description: The customer is suspended, or the server has no mail server. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the mail server, or the agent is from an earlier release. }
+
   /v1/mail/aliases:
     get:
       tags: [Email]
@@ -4407,6 +4924,60 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/mail/mailboxes/{id}/backups:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Backups]
+      summary: List the backups of a mailbox
+      description: >-
+        Each backup is a restic snapshot of all folders and messages of the mailbox, in the
+        repository of the server of the mail domain. The nightly job makes a backup of each
+        active mailbox, with the retention policy. The newest backup is first. The answer has
+        up to 100 backups.
+      responses:
+        '200':
+          description: The backups.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailboxBackup' } }
+        '404': { description: The mailbox is not there. }
+    post:
+      tags: [Backups]
+      summary: Back up a mailbox now
+      description: >-
+        Makes a manual backup of the mailbox. The panel keeps the newest manual backups of each
+        mailbox (`manual` in the backup policy). A mailbox has one backup or restore at a time,
+        and the panel does not remove a mailbox while one is in progress.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { description: The mailbox is not there. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/mailboxes/{id}/backups/{snapshotId}/restore:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: snapshotId, in: path, required: true, schema: { type: string }, description: The ID of a backup of this mailbox. }
+    post:
+      tags: [Backups]
+      summary: Restore a backup of a mailbox
+      description: >-
+        Adds each message of the backup that the mailbox does not have, in its folders and with
+        its flags. The agent makes each folder of these messages that the mailbox does not have.
+        The restore does not change or remove a message or a folder of the mailbox, so a second
+        restore of the same backup adds nothing. A message that has the same Message-ID, time
+        and size as a message of the mailbox is in the mailbox already. The token needs the
+        scope `mail:write` too. When the mailbox becomes full, the restore stops.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '403': { description: The token does not have the scope mail:write. }
+        '404': { description: The mailbox or the backup is not there. }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/backup-policy:
     get:
@@ -5135,6 +5706,62 @@ paths:
                 properties:
                   server: { $ref: '#/components/schemas/Server' }
                   job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/servers/{id}/mail/settings:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Servers]
+      summary: Set the spam filter and the outbound relay of a mail server
+      description: >-
+        Only an administrator. The spam filter gives each new message a score. A message with
+        `spamScore` or more goes to the junk folder of the mailbox. With `rejectScore`, the
+        mail server refuses a message with that score or more. The mail server gets the rules
+        of the spam filter from its image.
+
+
+        With a relay, the mail server sends the outgoing mail through the relay, for example
+        when the provider of the server blocks port 25. Mail for the mail domains of the server
+        does not go through the relay. The relay must have a public address. Port 465 uses TLS
+        from the start, and the other ports use STARTTLS. Leave out `relay.password` to keep the
+        password. The panel never shows the password again.
+
+
+        The response is 422 when the server has no mail server, when it is a member of a mail
+        cluster, and when a change of the mail server is in progress. When the job fails, the
+        panel shows the settings from before the change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spamFilter, spamScore]
+              properties:
+                spamFilter: { type: boolean }
+                spamScore: { type: number, minimum: 1, maximum: 50, example: 5 }
+                rejectScore: { type: [number, 'null'], maximum: 100, description: More than spamScore. Null refuses no message for its score., example: 15 }
+                relay:
+                  type: [object, 'null']
+                  required: [host, port]
+                  properties:
+                    host: { type: string, example: smtp.relay.example.net }
+                    port: { type: integer, enum: [25, 465, 587, 2525] }
+                    username: { type: [string, 'null'], maxLength: 500, description: Null when the relay accepts the mail with no sign-in. }
+                    password: { type: [string, 'null'], maxLength: 500, writeOnly: true, description: Leave out to keep the password. Needed with a user name. }
+      responses:
+        '202':
+          description: The job sets the spam filter and the relay.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server: { $ref: '#/components/schemas/Server' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
@@ -7832,6 +8459,83 @@ components:
         lastResult: { type: [string, 'null'], enum: [ok, failed, null] }
         lastExitCode: { type: [integer, 'null'], description: -1 when the command did not start. }
         lastOutput: { type: [string, 'null'], description: The end of the output of the last run. }
+    WordPressInstall:
+      type: object
+      required: [title, adminUser, adminEmail]
+      properties:
+        title: { type: string, maxLength: 100, example: Acme shop }
+        adminUser: { type: string, minLength: 3, maxLength: 60, description: 'The first administrator. Not "admin" or "administrator".', example: jane }
+        adminEmail: { type: string, format: email }
+        locale: { type: [string, 'null'], default: en_GB, description: A WordPress locale., example: de_DE }
+    WordPressAdmin:
+      type: object
+      description: The sign-in of the first administrator. The panel shows the password one time and does not keep it.
+      properties:
+        user: { type: string }
+        password: { type: string }
+        loginUrl: { type: string, example: 'https://acme.example/wp-login.php' }
+    WordPressAutoUpdates:
+      type: object
+      properties:
+        core: { type: string, enum: ['off', minor, all], default: minor }
+        plugins: { type: boolean, default: false }
+        themes: { type: boolean, default: false }
+    WordPressItem:
+      type: object
+      properties:
+        name: { type: string, description: The directory of the plugin or the theme. }
+        title: { type: string }
+        status: { type: string, example: active }
+        version: { type: string }
+        update: { type: [string, 'null'], description: The version of the available update. }
+    WordPress:
+      type: object
+      properties:
+        status: { type: string, enum: [installing, checking, ready, failed] }
+        version: { type: [string, 'null'] }
+        coreMinor: { type: [string, 'null'], description: The latest version with the same major version, when it is newer. }
+        coreLatest: { type: [string, 'null'], description: The latest version, when it is a newer major version. }
+        siteUrl: { type: [string, 'null'] }
+        adminUrl: { type: [string, 'null'] }
+        adminUser: { type: [string, 'null'] }
+        databaseId: { type: [string, 'null'], description: The database of the site. The restore point has a dump of it. }
+        plugins: { type: array, items: { $ref: '#/components/schemas/WordPressItem' } }
+        themes: { type: array, items: { $ref: '#/components/schemas/WordPressItem' } }
+        checkedAt: { type: [string, 'null'], format: date-time }
+        autoUpdates: { $ref: '#/components/schemas/WordPressAutoUpdates' }
+        lastUpdate:
+          type: [object, 'null']
+          properties:
+            jobId: { type: string }
+            at: { type: string, format: date-time }
+            automatic: { type: boolean }
+            state: { type: string, enum: [succeeded, rolledBack, failed], description: '"rolledBack": the update failed and the agent put back the restore point.' }
+            core: { type: string }
+            plugins: { type: array, items: { type: string } }
+            themes: { type: array, items: { type: string } }
+            from: { type: [string, 'null'] }
+            to: { type: [string, 'null'] }
+            error: { type: [string, 'null'] }
+        restorePoint:
+          type: [object, 'null']
+          properties:
+            at: { type: string, format: date-time }
+            version: { type: [string, 'null'], description: The version of WordPress in the restore point. }
+            database: { type: boolean, description: True when the restore point has a dump of the database. }
+            restoredAt: { type: string, format: date-time }
+        error: { type: [string, 'null'] }
+    WpCliCommand:
+      type: object
+      properties:
+        id: { type: string }
+        command: { type: string, example: 'wp user update 1 --user_pass=***' }
+        status: { type: string, enum: [running, done, failed], description: '"failed": the command did not start.' }
+        exitCode: { type: [integer, 'null'] }
+        output: { type: [string, 'null'], description: The end of the output, at most 16 KB. }
+        ranAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        user: { type: [string, 'null'] }
+        jobId: { type: [string, 'null'] }
     WebsiteCommand:
       type: object
       properties:
@@ -8212,7 +8916,7 @@ components:
             did not take the last change. Send the zone again (`/sync`).
         serial: { type: integer, description: The serial of the zone. It is the time of the last change, in seconds. A signed zone has a serial that the DNS server makes. }
         recordCount: { type: integer }
-        nameServers: { type: array, items: { type: string }, description: 'The host names of the name servers for the registrar of the domain: of the panel, or of the external DNS provider of the zone. Empty until the provider gives them.' }
+        nameServers: { type: array, items: { type: string }, description: 'The host names of the name servers for the registrar of the domain: of the panel and of its secondary DNS servers, or of the external DNS provider of the zone. Empty until the provider gives them.' }
         provider:
           type: [object, 'null']
           description: The external DNS provider of the zone. Null for a zone on the DNS servers of the panel.
@@ -8272,6 +8976,49 @@ components:
                 digest: { type: string }
                 record: { type: string, description: 'The full record, for example `example.com. IN DS 22976 13 2 3A81…`.' }
             dnskey: { type: [string, 'null'], description: The DNSKEY record. Some registrars ask for it and not for the DS record. }
+            rollover:
+              type: [object, 'null']
+              description: >-
+                A change of the key (`/dnssec/rollover`). Null when the key does not change, and
+                for a zone at an external DNS provider. From the step `submit`, `ds` is the DS
+                record of the new key.
+              properties:
+                step: { type: string, enum: [publish, submit, retire] }
+                startedAt: { type: string, format: date-time, description: The start of the step. }
+                until: { type: [string, 'null'], format: date-time, description: 'The step can end at this time. Null in the step `publish` until each DNS server has the new key, and in the step `submit`.' }
+                newDs: { $ref: '#/components/schemas/DsRecord' }
+                oldDs: { $ref: '#/components/schemas/DsRecord' }
+            parent:
+              type: [object, 'null']
+              description: >-
+                The DS records of the zone at the registry, as the public DNS gave them last. The
+                panel asks one time each day, and every 15 minutes during a change of the key. Null
+                before the first check, and for a zone at an external DNS provider.
+              properties:
+                state:
+                  type: string
+                  enum: [ok, none, other, unknown]
+                  description: >-
+                    `ok`: a DS record is for a key of the zone. `none`: the registry has no DS
+                    record, so resolvers do not check the signatures. `other`: no DS record is for
+                    a key of the zone, so resolvers that check DNSSEC refuse the answers for the
+                    domain. `unknown`: the lookup failed.
+                keyTags: { type: array, items: { type: integer }, description: The keys of the zone that the registry has a DS record for. }
+                otherKeyTags: { type: array, items: { type: integer }, description: The key tags of the other DS records. }
+                checkedAt: { type: [string, 'null'], format: date-time }
+        transfers:
+          type: [object, 'null']
+          description: The zone transfers to the secondary DNS servers of the owner of the zone (`/transfers`). Null for a zone at an external DNS provider.
+          properties:
+            addresses: { type: array, items: { type: string }, description: Empty when the zone has no transfers. }
+            notify: { type: boolean }
+            nameServers: { type: array, items: { type: string } }
+            tsig:
+              type: [object, 'null']
+              properties:
+                name: { type: string }
+                algorithm: { type: string }
+            primaries: { type: array, items: { type: string }, description: The addresses of the DNS servers of the panel. The secondaries copy the zone from these addresses. }
         servers:
           type: array
           description: The state of the zone on each DNS server of the panel. Empty for a zone at an external DNS provider, after its handover time.
@@ -8283,6 +9030,55 @@ components:
         websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
         createdAt: { type: string, format: date-time }
         records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
+    DsRecord:
+      type: object
+      description: A DS record (RFC 4034) of a DNSSEC key.
+      properties:
+        keyTag: { type: integer }
+        algorithm: { type: integer }
+        digestType: { type: integer }
+        digest: { type: string }
+        record: { type: string, description: 'For example `example.com. IN DS 22976 13 2 3A81…`.' }
+    DnsSecondary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        addresses: { type: array, items: { type: string } }
+        nameServer: { type: [string, 'null'], description: The host name of the secondary. Each zone on the DNS servers of the panel has an NS record for it. }
+        tsig:
+          type: [object, 'null']
+          description: The TSIG key that signs the transfers, with no secret. Null when the transfers have no key.
+          properties:
+            name: { type: string }
+            algorithm: { type: string, enum: [hmac-sha256, hmac-sha512] }
+        notify: { type: boolean }
+        catalog: { type: boolean, description: True when the secondary also copies the catalog zone. }
+        createdAt: { type: string, format: date-time }
+    DnsSecondaryInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 60, description: Required for a new secondary. }
+        addresses: { type: array, minItems: 1, maxItems: 10, items: { type: string }, description: Required for a new secondary. }
+        nameServer: { type: [string, 'null'] }
+        tsig: { type: boolean, description: 'Default: true for a new secondary.' }
+        keyName: { type: [string, 'null'], description: 'Default: the current name, or a new name such as `cf-01jd…`.' }
+        algorithm: { type: string, enum: [hmac-sha256, hmac-sha512] }
+        secret: { type: [string, 'null'], description: A TSIG secret in base64, with 16 to 64 bytes. }
+        newSecret: { type: boolean }
+        notify: { type: boolean, description: 'Default: true for a new secondary.' }
+        catalog: { type: boolean, description: 'Default: false for a new secondary.' }
+    DnsSecondaryJobs:
+      type: object
+      properties:
+        secondary: { $ref: '#/components/schemas/DnsSecondary' }
+        jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+    TsigKey:
+      type: object
+      properties:
+        name: { type: string }
+        algorithm: { type: string, enum: [hmac-sha256, hmac-sha512] }
+        secret: { type: string, description: The secret in base64. }
     Import:
       type: object
       properties:
@@ -8487,8 +9283,27 @@ components:
             on one different server. A backup of a website with such databases has one snapshot
             of each part.
         serverId: { type: string, description: The server whose repository has the snapshot. }
-        mailboxes: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
+    MailboxBackup:
+      type: object
+      required: [id, kind, sizeBytes, messages, serverId, createdAt, lastRestore]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [scheduled, manual] }
+        sizeBytes: { type: integer, description: The size of the messages in the backup. }
+        messages: { type: integer, description: The number of messages in the backup. }
+        serverId: { type: string, description: The server whose repository has the backup. }
+        createdAt: { type: string, format: date-time }
+        lastRestore:
+          type: [object, 'null']
+          description: The result of the last restore of this backup. Null when nobody restored it.
+          required: [at, added, present, tooLarge, failed]
+          properties:
+            at: { type: string, format: date-time }
+            added: { type: integer, description: The messages that the restore added. }
+            present: { type: integer, description: The messages that were in the mailbox already. }
+            tooLarge: { type: integer, description: The messages that are larger than the upload limit of the mail server. The restore did not add them. }
+            failed: { type: integer, description: The other messages that the mail server did not accept. }
     AccountExport:
       type: object
       properties:
@@ -8530,7 +9345,7 @@ components:
         weekly: { type: integer, minimum: 0, maximum: 520 }
         monthly: { type: integer, minimum: 0, maximum: 240 }
         time: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$', description: The time of the nightly backups, in UTC. }
-        manual: { type: integer, readOnly: true, description: The number of manual backups that the panel keeps for each website. The operator sets it with CF_MANUAL_BACKUPS. }
+        manual: { type: integer, readOnly: true, description: The number of manual backups that the panel keeps for each website and each mailbox. The operator sets it with CF_MANUAL_BACKUPS. }
         target: { type: string, description: 'A restic repository in object storage, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".' }
         credentials:
           type: [object, 'null']
@@ -8607,6 +9422,22 @@ components:
     ServerRole:
       type: string
       enum: [web, database, email, dns, backup]
+    MailSettings:
+      type: object
+      description: The spam filter and the outbound relay of a mail server. A new mail server has the default values.
+      required: [spamFilter, spamScore, rejectScore, relay]
+      properties:
+        spamFilter: { type: boolean, description: True when the mail server gives each new message a spam score. Default true. }
+        spamScore: { type: number, description: A message with this score or more goes to the junk folder. Default 5. }
+        rejectScore: { type: [number, 'null'], description: The mail server refuses a message with this score or more. Null refuses no message for its score. Default null. }
+        relay:
+          type: [object, 'null']
+          description: Null when the mail server sends each message directly to the mail server of the recipient.
+          properties:
+            host: { type: string }
+            port: { type: integer, enum: [25, 465, 587, 2525] }
+            username: { type: [string, 'null'] }
+            hasPassword: { type: boolean }
     Server:
       type: object
       properties:
@@ -8659,6 +9490,7 @@ components:
             status: { type: string, enum: [starting, running, stopped, failed] }
             domains: { type: integer, description: The number of mail domains on the server. A server with mail domains cannot be removed. }
             clusterId: { type: [string, 'null'], description: Not null when the server is a member of this mail cluster. }
+            settings: { $ref: '#/components/schemas/MailSettings' }
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }
@@ -8940,6 +9772,21 @@ components:
           properties:
             passwordCurrent: { type: boolean, description: False when the private key has an older password of the mailbox. }
         createdAt: { type: string, format: date-time }
+    Autoresponder:
+      type: object
+      required: [enabled, subject, text, startsAt, endsAt, filterScript]
+      properties:
+        enabled: { type: boolean }
+        subject: { type: [string, 'null'], description: 'Null: the subject is "Auto:" and the subject of the message.' }
+        text: { type: string }
+        startsAt: { type: [string, 'null'], format: date-time, description: In UTC. Null when the autoresponder has no start. }
+        endsAt: { type: [string, 'null'], format: date-time, description: In UTC. Null when the autoresponder has no end. }
+        filterScript:
+          type: [string, 'null']
+          description: >-
+            The name of the active filter rules (a Sieve script) of the mailbox, for example the
+            rules that the user made in the webmail. They stop when the autoresponder is on.
+            Null when no other script is active.
     MailAlias:
       type: object
       required: [id, address, localPart, domainId, customerId, kind, destinations, status]

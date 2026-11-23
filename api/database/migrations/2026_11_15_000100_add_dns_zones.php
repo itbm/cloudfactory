@@ -15,7 +15,8 @@ use Illuminate\Support\Facades\Schema;
  *   addresses of the server ("addresses"). The panel uses the addresses for the A and AAAA
  *   records of the websites.
  * - "sync" of a zone has the result of the last job of each DNS server.
- * - "dnssec_key" is the private key of the zone. The model keeps it encrypted.
+ * - "dnssec_key" is the private key of the zone, and "dnssec_next_key" the new key during a
+ *   change of the key. The model keeps them encrypted.
  */
 return new class extends Migration
 {
@@ -50,6 +51,17 @@ return new class extends Migration
             $table->unsignedInteger('dnssec_key_tag')->nullable();
             // The public key of the DNSKEY record, in Base64.
             $table->string('dnssec_public_key')->nullable();
+            // A change of the DNSSEC key: the step ("publish", "submit" or "retire"), the new key,
+            // the start of the step, and the time when the step can end. Refer to
+            // App\Services\Dns\Rollover.
+            $table->string('dnssec_rollover', 10)->nullable();
+            $table->text('dnssec_next_key')->nullable();
+            $table->unsignedInteger('dnssec_next_key_tag')->nullable();
+            $table->string('dnssec_next_public_key')->nullable();
+            $table->timestamp('dnssec_rollover_at')->nullable();
+            $table->timestamp('dnssec_rollover_until')->nullable();
+            // The DS records of the zone at the registry, as the public DNS gave them last.
+            $table->json('dnssec_parent')->nullable();
             $table->json('sync')->nullable();
             $table->timestamps();
         });

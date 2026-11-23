@@ -39,12 +39,22 @@ func mailPanel(t *testing.T) (*httptest.Server, *[]string) {
 		case r.URL.Path == "/api/v1/mail/mailboxes" || r.URL.Path == "/api/v1/mail/mailboxes/MB1" && r.Method == http.MethodPatch:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"mailbox":{"id":"MB2"},"password":"correct horse","job":null}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/autoresponder" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"autoresponder":{"enabled":false,"subject":null,"text":"Back soon.","startsAt":null,"endsAt":"2027-01-04T23:59:59Z","filterScript":"filters"}}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/autoresponder":
+			w.Write([]byte(`{"autoresponder":` + string(body) + `}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/backups" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"data":[{"id":"BK2","kind":"manual","sizeBytes":1572864,"messages":120,"serverId":"S1","createdAt":"2026-11-22T14:00:00+00:00","lastRestore":null},` +
+				`{"id":"BK1","kind":"scheduled","sizeBytes":1048576,"messages":100,"serverId":"S1","createdAt":"2026-11-22T02:05:00+00:00","lastRestore":{"at":"2026-11-22T15:00:00+00:00","added":3,"present":96,"tooLarge":1,"failed":0}}]}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/backups/NONE/restore":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not found."}`))
 		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/private-key":
 			w.Write([]byte(`{"address":"info@acme.example.com","privateKey":"-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nxYYE\n-----END PGP PRIVATE KEY BLOCK-----\n","passwordCurrent":false}`))
 		case r.URL.Path == "/api/v1/mail/aliases" && r.Method == http.MethodGet:
 			w.Write([]byte(`{"data":[{"id":"MA1","address":"sales@acme.example.com","kind":"alias","destinations":["info@acme.example.com","jo@acme.example.com"],"status":"active"}]}`))
 		case r.URL.Path == "/api/v1/servers" && r.Method == http.MethodGet:
-			w.Write([]byte(`{"data":[{"id":"S1","name":"mail-1"},{"id":"S2","name":"mail-2"},{"id":"S3","name":"mail-3"}]}`))
+			w.Write([]byte(`{"data":[{"id":"S1","name":"mail-1","mail":{"settings":{"spamFilter":true,"spamScore":5,"rejectScore":15,"relay":{"host":"smtp.relay.example.net","port":587,"username":"mail-1","hasPassword":true}}}},{"id":"S2","name":"mail-2"},{"id":"S3","name":"mail-3"}]}`))
 		case r.URL.Path == "/api/v1/mail-clusters" && r.Method == http.MethodGet:
 			w.Write([]byte(`{"data":[{"id":"MC1","name":"eu","hostname":"mail.example.net","status":"failed","phase":"join","error":"mail-2: the agent stopped","domains":0,` +
 				`"members":[{"number":1,"serverName":"mail-1","hostname":"m1.example.net","endpoint":"192.0.2.1","address":"10.77.16.1","region":0,"step":"joined","serverState":"online"}],` +
@@ -160,6 +170,19 @@ func TestMailboxesAndAliases(t *testing.T) {
 			t.Fatalf("%v: %v", args, err)
 		}
 	}
+	// The spam filter and the relay: only the given values change. An empty password keeps
+	// the password of the same user. A new user needs a password.
+	a.in = strings.NewReader("new-secret\n")
+	for _, args := range [][]string{
+		{"servers", "mail-settings", "mail-1", "--spam-score", "6.5", "--no-reject"},
+		{"servers", "mail-settings", "mail-1", "--relay", "smtp.relay.example.net:465", "--relay-user", "mail-1"},
+		{"servers", "mail-settings", "mail-1", "--relay", "relay.example.org:2525", "--relay-user", "other"},
+		{"servers", "mail-settings", "mail-1", "--spam-filter=false", "--no-relay"},
+	} {
+		if err := a.dispatch(ctx, args); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
 	out.Reset()
 	if err := a.dispatch(ctx, []string{"mail", "aliases", "list"}); err != nil {
 		t.Fatal(err)
@@ -178,6 +201,11 @@ func TestMailboxesAndAliases(t *testing.T) {
 		{"mail", "aliases", "create", "team@acme.example.com"},
 		{"mail", "mailboxes", "delete", "nobody@acme.example.com"},
 		{"servers", "mail", "mail-1"},
+		{"servers", "mail-settings", "mail-1"},
+		{"servers", "mail-settings", "mail-2", "--no-relay"},
+		{"servers", "mail-settings", "mail-1", "--relay", "smtp.relay.example.net"},
+		{"servers", "mail-settings", "mail-1", "--relay-user", "x"},
+		{"servers", "mail-settings", "mail-1", "--spam-filter", "maybe"},
 		{"mail", "lists", "list"},
 	} {
 		if err := a.dispatch(ctx, args); err == nil {
@@ -197,6 +225,10 @@ func TestMailboxesAndAliases(t *testing.T) {
 		`POST /api/v1/mail/aliases {"destinations":["jo@example.org"],"domainId":"MD1","kind":"forwarder","localPart":"away"}`,
 		"DELETE /api/v1/mail/aliases/MA1",
 		`PUT /api/v1/servers/S1/mail {"hostname":"mail.example.net"}`,
+		`PUT /api/v1/servers/S1/mail/settings {"rejectScore":null,"relay":{"host":"smtp.relay.example.net","port":587,"username":"mail-1"},"spamFilter":true,"spamScore":6.5}`,
+		`PUT /api/v1/servers/S1/mail/settings {"rejectScore":15,"relay":{"host":"smtp.relay.example.net","port":465,"username":"mail-1"},"spamFilter":true,"spamScore":5}`,
+		`PUT /api/v1/servers/S1/mail/settings {"rejectScore":15,"relay":{"host":"relay.example.org","password":"new-secret","port":2525,"username":"other"},"spamFilter":true,"spamScore":5}`,
+		`PUT /api/v1/servers/S1/mail/settings {"rejectScore":15,"relay":null,"spamFilter":false,"spamScore":5}`,
 	}
 	if strings.Join(*calls, "\n") != strings.Join(want, "\n") {
 		t.Errorf("calls:\n%s", strings.Join(*calls, "\n"))

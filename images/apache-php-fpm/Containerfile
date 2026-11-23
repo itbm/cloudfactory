@@ -33,6 +33,13 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git openssh-client unzip \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=docker.io/library/composer:2 /usr/bin/composer /usr/local/bin/composer
+# WordPress sites (FR-206): the agent runs WP-CLI in the container of the website to install
+# and update WordPress. The build checks the SHA-512 hash of the release.
+ARG WP_CLI_VERSION=2.12.0
+ARG WP_CLI_SHA512=be928f6b8ca1e8dfb9d2f4b75a13aa4aee0896f8a9a0a1c45cd5d2c98605e6172e6d014dda2e27f88c98befc16c040cbb2bd1bfa121510ea5cdf5f6a30fe8832
+RUN curl -fsSL -o /usr/local/bin/wp "https://github.com/wp-cli/wp-cli/releases/download/v${WP_CLI_VERSION}/wp-cli-${WP_CLI_VERSION}.phar" \
+ && echo "${WP_CLI_SHA512}  /usr/local/bin/wp" | sha512sum -c - \
+ && chmod 0755 /usr/local/bin/wp
 
 # CVE scan, finding 3: take the Debian security fixes that are newer than the base image, so that
 # the daily rebuild gets them on the day that Debian ships them. This step is apart from the slow
@@ -47,10 +54,11 @@ COPY php-fpm.conf /usr/local/etc/php-fpm.d/zz-cloudfactory.conf
 COPY start.sh /usr/local/bin/cloudfactory-start
 COPY index.php /app/public/index.php
 
-# The container root file system is read-only. Apache and PHP-FPM keep their state in /tmp.
+# The container root file system is read-only. Apache, PHP-FPM and WP-CLI keep their state in /tmp.
 ENV APACHE_RUN_DIR=/tmp/apache APACHE_PID_FILE=/tmp/apache/apache2.pid APACHE_LOCK_DIR=/tmp/apache \
     APACHE_LOG_DIR=/tmp/apache APACHE_RUN_USER=www-data APACHE_RUN_GROUP=www-data \
-    CF_DOCUMENT_ROOT=/app/public
+    CF_DOCUMENT_ROOT=/app/public \
+    WP_CLI_CACHE_DIR=/tmp/wp-cli/cache WP_CLI_PACKAGES_DIR=/tmp/wp-cli/packages WP_CLI_DISABLE_AUTO_CHECK_UPDATE=1
 
 EXPOSE 8080
 CMD ["/usr/local/bin/cloudfactory-start"]

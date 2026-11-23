@@ -27,10 +27,12 @@ describe("the storage key of each server", () => {
   it("shows the servers that use the shared key", async () => {
     await signedIn("administrator");
     render(<MemoryRouter initialEntries={["/backups"]}><App /></MemoryRouter>);
-    // In the sample data, web-1 has its own key and the other servers use the shared key.
+    // In the sample data, web-1 has its own key and the other servers use the shared key. The
+    // mail server has a repository for the backups of the mailboxes.
     expect(row("web-1").textContent).toContain("Own key");
     expect(row("web-2").textContent).toContain("Shared key");
-    expect(card().textContent).toMatch(/2 servers use the shared key\. A person who has root access to one of these servers can delete or change the backups of all servers/);
+    expect(row("mail-1").textContent).toContain("Shared key");
+    expect(card().textContent).toMatch(/3 servers use the shared key\. A person who has root access to one of these servers can delete or change the backups of all servers/);
     expect(row("web-1").textContent).toMatch(/cloudfactory-backups\/servers\/[0-9a-z]{26}/);
     expect(within(row("web-1")).getByRole("button", { name: /^Remove key\s*of web-1$/ })).toBeTruthy();
     expect(within(row("web-2")).queryByRole("button", { name: /Remove key/ })).toBeNull();
@@ -41,7 +43,7 @@ describe("the storage key of each server", () => {
     render(<MemoryRouter initialEntries={["/backups"]}><App /></MemoryRouter>);
     api.on("PUT /backup-policy/servers/*/credentials", (_body, path) => {
       api.change<BackupPolicy>("/backup-policy", (policy) => {
-        for (const s of policy.servers!) if (path.includes(s.serverId) || s.server === "web-3") s.credentialNames = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"];
+        for (const s of policy.servers!) if (path.includes(s.serverId) || s.server === "web-3" || s.server === "mail-1") s.credentialNames = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"];
       });
       return {};
     });

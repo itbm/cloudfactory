@@ -7,6 +7,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -14,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
 
 	"github.com/itbm/cloudfactory/agent/internal/actions"
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
@@ -23,6 +27,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/stalwart"
 	"github.com/itbm/cloudfactory/agent/internal/status"
 )
 
@@ -164,4 +169,18 @@ func (nopEdge) SetPanelBrands(context.Context, string, []string) error     { ret
 func (nopEdge) SetCertificates(context.Context, []caddy.Certificate) error { return nil }
 func (nopEdge) Certificates(context.Context) ([]caddy.LoadedCertificate, error) {
 	return nil, nil
+}
+
+func TestTheMailErrorsHaveTheirCodes(t *testing.T) {
+	for err, want := range map[error]connect.Code{
+		&actions.InvalidError{Err: errors.New("the text is too long")}: connect.CodeInvalidArgument,
+		fmt.Errorf("%w: info@acme.example.com", stalwart.ErrNoMailbox): connect.CodeNotFound,
+		actions.ErrNoMail: connect.CodeFailedPrecondition,
+		fmt.Errorf("mail server: %w", context.DeadlineExceeded):         connect.CodeDeadlineExceeded,
+		errors.New("mail server: dial tcp 169.254.77.1:19025: refused"): connect.CodeUnavailable,
+	} {
+		if got := connect.CodeOf(mailError(err)); got != want {
+			t.Errorf("%v: %v, want %v", err, got, want)
+		}
+	}
 }

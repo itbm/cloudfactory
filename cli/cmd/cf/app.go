@@ -85,6 +85,22 @@ Usage:
   cf cron set WEBSITE CRON_ID [--schedule SCHEDULE] [--command COMMAND] [--on | --off]
   cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
   cf cron delete WEBSITE CRON_ID
+  cf wordpress show WEBSITE                            The versions, the updates, the plugins, the themes and the restore point.
+  cf wordpress install WEBSITE --title TITLE --admin-user USER --admin-email EMAIL [--locale en_GB]
+                                                       Install WordPress with a new MariaDB database. The document root must be
+                                                       empty. The command shows the password of the administrator once.
+  cf wordpress check WEBSITE                           Read the versions and the updates. On a website with no WordPress record,
+                                                       find WordPress that you uploaded with SFTP.
+  cf wordpress update WEBSITE [--all] [--core minor|latest] [--plugin SLUG]... [--theme SLUG]...
+                                                       The agent saves a restore point first. If an update or the health check
+                                                       fails, it puts back the restore point.
+  cf wordpress restore WEBSITE                         Put back the restore point of the last update: the files with no uploads,
+                                                       and the database. The changes to the database since the update go.
+  cf wordpress settings WEBSITE [--core off|minor|all] [--plugins on|off] [--themes on|off]
+                                                       The automatic updates, in the maintenance window of the server.
+  cf wordpress cli WEBSITE -- ARGUMENTS...             Run one WP-CLI command, for example: cf wordpress cli acme.example -- plugin list.
+                                                       No shell: each argument goes to WP-CLI as it is. Fails when the exit code is not 0.
+  cf wordpress commands WEBSITE                        The WP-CLI commands that users ran, with no passwords.
   cf uptime-checks list [WEBSITE] [--state up|down|pending|paused]
                                                        The checks that are down come first.
   cf uptime-checks get WEBSITE CHECK_ID                The state, the uptime and the incidents of a check.
@@ -187,6 +203,13 @@ Usage:
   cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password] [--encrypt | --public-key FILE | --no-encryption]
   cf mail mailboxes private-key ADDRESS [--output FILE]
                                            The private key that the panel made. It needs the password of the mailbox.
+  cf mail mailboxes autoresponder ADDRESS [--on | --off] [--subject TEXT] [--text-file FILE] [--from DAY] [--until DAY]
+                                           Show or change the autoresponder. DAY is YYYY-MM-DD in the time zone
+                                           of this computer, or an RFC 3339 time. "-" removes a subject or a day.
+  cf mail mailboxes backups ADDRESS        List the backups of the mailbox, and the result of the last restore of each.
+  cf mail mailboxes backup ADDRESS         Back up all folders and messages of the mailbox now.
+  cf mail mailboxes restore ADDRESS BACKUP Add the messages of the backup that the mailbox does not have, in their
+                                           folders. The restore does not change or remove a message of the mailbox.
   cf mail mailboxes delete ADDRESS         Remove a mailbox and its messages.
   cf mail aliases list [--domain DOMAIN] [--customer ID]
   cf mail aliases create ADDRESS --to ADDRESS... [--forward]
@@ -212,7 +235,10 @@ Usage:
   cf dns set ZONE RECORD_ID [--name NAME] [--value VALUE] [--ttl SECONDS] [--priority N]
   cf dns remove ZONE RECORD_ID
   cf dns dnssec ZONE on|off                            Before "off", remove the DS record at the registrar.
-  cf dns check ZONE                                    Ask the public DNS for the name servers of the zone again.
+  cf dns dnssec ZONE rollover                          Change the DNSSEC key in three steps. "cf dns get" shows the step, and
+                                                       when to give the new DS record to the registrar.
+  cf dns dnssec ZONE cancel                            Stop a change of the key before the registry has the new DS record.
+  cf dns check ZONE                                    Ask the public DNS for the name servers and the DS records again.
   cf dns sync ZONE                                     Send the zone to each DNS server again.
   cf dns import ZONE FILE [--dry-run]                  Add the records of a zone file (the format of BIND), for example
                                                        the export of your current DNS provider. --dry-run makes no change.
@@ -226,6 +252,25 @@ Usage:
   cf dns accounts set ACCOUNT [--name NAME] [--set FIELD=VALUE]... [--credentials]
                                                        --credentials sends the secrets from their environment variables again.
   cf dns accounts remove ACCOUNT                       Only an account that no zone uses.
+  cf dns transfers ZONE                                The zone transfers to your own secondary DNS servers.
+  cf dns transfers ZONE set [--address IP]... [--name-server HOST]... [--no-name-servers] [--notify=false]
+                         [--tsig=false] [--algorithm hmac-sha256|hmac-sha512] [--own-secret] [--new-secret]
+                                                       Let your secondary DNS servers copy the zone. A flag that you do not
+                                                       give keeps its value. --own-secret reads the secret from
+                                                       CF_TSIG_SECRET or stdin. With none, the panel makes the secret.
+  cf dns transfers ZONE stop                           Your secondaries cannot copy the zone after this.
+  cf dns transfers ZONE secret                         The TSIG key with its secret. The audit log records it.
+  cf dns secondaries list                              The secondary DNS servers of the panel (administrators only). They copy
+                                                       all zones. It also shows the addresses to copy from.
+  cf dns secondaries add NAME --address IP... [--name-server HOST] [--notify=false] [--catalog]
+                         [--tsig=false] [--algorithm ALGORITHM] [--key-name NAME] [--own-secret]
+                                                       With --name-server, each zone gets an NS record for the secondary.
+                                                       With --catalog, it also copies the catalog zone and finds new zones.
+  cf dns secondaries set SECONDARY [--name NAME] [--address IP]... [--name-server HOST | --no-name-server]
+                         [--notify=BOOL] [--catalog=BOOL] [--tsig=BOOL] [--algorithm ALGORITHM] [--key-name NAME]
+                         [--own-secret | --new-secret]
+  cf dns secondaries remove SECONDARY                  Before this, remove its name server at the registrar of each domain.
+  cf dns secondaries secret SECONDARY                  The TSIG key with its secret, also in the format of BIND.
   cf certificates list [--customer ID]                 The certificates of the customers, and the domains that use them.
   cf certificates get CERTIFICATE [--pem]              CERTIFICATE is the ID or the first name. --pem shows only the chain.
   cf certificates upload --cert FILE --key FILE [--customer ID]
@@ -279,6 +324,10 @@ Usage:
   cf servers update SERVER [--policy security|all|tools]   "tools" updates the held container tools.
   cf servers mail SERVER --hostname NAME   Turn on email for a server, or change the host name of its mail server.
                                            The name needs an A or AAAA record with the address of the server.
+  cf servers mail-settings SERVER [--spam-filter=true|false] [--spam-score N] [--reject-score N | --no-reject]
+                        [--relay HOST:PORT [--relay-user USER [--new-relay-password]] | --no-relay]
+                       The spam filter and the outbound relay of the mail server. Only the given values change.
+                       A new user, or --new-relay-password, reads the password from CF_RELAY_PASSWORD or stdin.
   cf servers reboot SERVER
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
@@ -593,6 +642,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.logs(ctx, sub, rest)
 	case "cron":
 		return a.cron(ctx, sub, rest)
+	case "wordpress", "wp":
+		return a.wordpress(ctx, sub, rest)
 	case "uptime-checks", "uptime-check":
 		return a.uptime(ctx, sub, rest)
 	case "commands", "command":
@@ -1626,7 +1677,7 @@ func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
-	case "get", "set", "mail", "update", "reboot", "update-agent", "check", "remove", "rm", "access-log":
+	case "get", "set", "mail", "mail-settings", "update", "reboot", "update-agent", "check", "remove", "rm", "access-log":
 		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {
