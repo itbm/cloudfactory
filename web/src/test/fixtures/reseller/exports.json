@@ -14,8 +14,8 @@
                     "complete": 2,
                     "total": 2
                 },
-                "receivedBytes": 977,
-                "sizeBytes": 17408,
+                "receivedBytes": 904,
+                "sizeBytes": 16896,
                 "warnings": [
                     {
                         "item": "websites/events.harbourbooks.example.net",

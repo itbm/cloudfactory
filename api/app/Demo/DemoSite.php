@@ -132,7 +132,7 @@ class DemoSite
      * The files of a website as a tar archive with gzip, as "cf-agent site-archive" writes it
      * for an account export.
      */
-    public static function exportArchive(Website $website): string
+    public static function archive(Website $website): string
     {
         $out = fopen('php://memory', 'w+b');
         $tar = new TarWriter($out);

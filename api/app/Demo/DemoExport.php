@@ -26,7 +26,7 @@ class DemoExport
         $website = Website::find($p['websiteId'] ?? '');
         $parts = [];
         if (($p['filesPart'] ?? '') !== '' && $website) {
-            $parts[$p['filesPart']] = self::part($job, $p['filesPart'], DemoSite::exportArchive($website));
+            $parts[$p['filesPart']] = self::part($job, $p['filesPart'], DemoSite::archive($website));
         }
         foreach ($p['databases'] ?? [] as $db) {
             $name = (string) ($db['name'] ?? '');
@@ -53,7 +53,7 @@ class DemoExport
             foreach ($export->description['websites'] as $w) {
                 $website = Website::where('customer_id', $customer->id)->where('name', $w['name'])->firstOrFail();
                 if ($path = $w['content']['files']['path'] ?? null) {
-                    self::write($export, $website, $path, DemoSite::exportArchive($website));
+                    self::write($export, $website, $path, DemoSite::archive($website));
                 }
                 foreach ($w['databases'] as $db) {
                     if ($path = $db['content']['path'] ?? null) {

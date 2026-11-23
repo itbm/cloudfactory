@@ -14,8 +14,8 @@
                     "complete": 13,
                     "total": 13
                 },
-                "receivedBytes": 7807,
-                "sizeBytes": 66560,
+                "receivedBytes": 7134,
+                "sizeBytes": 66048,
                 "warnings": [
                     {
                         "item": "websites/api.acme.example.com/databases/apiacme_97c4_queue",
