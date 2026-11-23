@@ -383,8 +383,10 @@ jobs:
 - **cli**: tests and build.
 - **install**: ShellCheck and the script tests with `sh` and `dash`.
 
-The workflow [`images.yml`](../.github/workflows/images.yml) builds each image and scans it with
-Trivy when a pull request changes `images/`.
+The workflow [`images.yml`](../.github/workflows/images.yml) builds an image and scans it with
+Trivy when a pull request changes the files of that image. For example, a change in `api/`
+builds only the image `panel-api`. A change to the workflow builds all images. A new push to
+the pull request stops the builds of the earlier push.
 
 Dependabot ([`dependabot.yml`](../.github/dependabot.yml)) proposes updates each week for the
 GitHub actions, the Composer, npm and Go packages, and the base images in `images/`.
