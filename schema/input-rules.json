@@ -438,6 +438,18 @@
     "packManifestBytes": {
       "doc": "The largest size of a pack manifest, in bytes.",
       "value": 32768
+    },
+    "certificatesPerServer": {
+      "doc": "The largest number of certificates from the panel on one server.",
+      "value": 2000
+    },
+    "certificateHosts": {
+      "doc": "The largest number of hosts that use one certificate on one server.",
+      "value": 5000
+    },
+    "certificateBytes": {
+      "doc": "The largest size of a certificate chain or of a private key in PEM format, in bytes.",
+      "value": 65536
     }
   }
 }
