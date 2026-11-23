@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Demo\DemoAgentClient;
 use App\Demo\Fixtures;
+use App\Demo\StableValues;
 use App\Services\AgentClient;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Attributes\Description;
@@ -65,12 +66,14 @@ class DemoFixtures extends Command
         $before = ['cache.default' => config('cache.default'), 'app.key' => config('app.key')];
         config(['cache.default' => 'array', 'app.key' => config('app.key') ?: 'base64:'.base64_encode(random_bytes(32))]);
         app()->instance(AgentClient::class, new DemoAgentClient);
+        StableValues::start();
         try {
             Artisan::call('migrate', ['--database' => 'fixtures', '--force' => true]);
             (new DemoSeeder)->run();
 
             return array_map(fn (string $role) => Fixtures::capture($role), array_combine(array_keys(Fixtures::USERS), array_keys(Fixtures::USERS)));
         } finally {
+            StableValues::stop();
             config(['cloudfactory.agent.latest_version' => $latest] + $before);
             app()->forgetInstance(AgentClient::class);
             Carbon::setTestNow();
