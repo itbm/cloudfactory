@@ -1,0 +1,213 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000006/logs?lines=200",
+    "status": 200,
+    "body": {
+        "lines": [
+            {
+                "at": "2026-11-14T09:44:14Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649454,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.269,\"size\":47913,\"remote_ip\":\"203.0.113.15\"}"
+            },
+            {
+                "at": "2026-11-14T09:44:52Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649492,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.329,\"size\":35375,\"remote_ip\":\"203.0.113.180\"}"
+            },
+            {
+                "at": "2026-11-14T09:45:22Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649522,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.169,\"size\":17475,\"remote_ip\":\"203.0.113.210\"}"
+            },
+            {
+                "at": "2026-11-14T09:45:49Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649549,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.137,\"size\":30957,\"remote_ip\":\"203.0.113.174\"}"
+            },
+            {
+                "at": "2026-11-14T09:46:08Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649568,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.231,\"size\":31588,\"remote_ip\":\"203.0.113.182\"}"
+            },
+            {
+                "at": "2026-11-14T09:46:26Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649586,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.383,\"size\":28393,\"remote_ip\":\"203.0.113.36\"}"
+            },
+            {
+                "at": "2026-11-14T09:46:36Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649596,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.372,\"size\":24449,\"remote_ip\":\"203.0.113.158\"}"
+            },
+            {
+                "at": "2026-11-14T09:46:58Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649618,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.348,\"size\":22624,\"remote_ip\":\"203.0.113.122\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:20Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649640,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.293,\"size\":7821,\"remote_ip\":\"203.0.113.91\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:00Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649680,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.071,\"size\":47165,\"remote_ip\":\"203.0.113.215\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:30Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649710,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.085,\"size\":5399,\"remote_ip\":\"203.0.113.247\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:37Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649717,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.058,\"size\":36268,\"remote_ip\":\"203.0.113.127\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:17Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649757,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.336,\"size\":18526,\"remote_ip\":\"203.0.113.81\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:39Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649779,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.311,\"size\":47188,\"remote_ip\":\"203.0.113.67\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:11Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649811,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.275,\"size\":9004,\"remote_ip\":\"203.0.113.68\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:42Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649842,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.209,\"size\":24062,\"remote_ip\":\"203.0.113.80\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:04Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649864,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.158,\"size\":34882,\"remote_ip\":\"203.0.113.93\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:17Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649877,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.184,\"size\":21391,\"remote_ip\":\"203.0.113.160\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:57Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649917,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.142,\"size\":930,\"remote_ip\":\"203.0.113.168\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:34Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649954,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.39,\"size\":16014,\"remote_ip\":\"203.0.113.97\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:11Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649991,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.121,\"size\":42334,\"remote_ip\":\"203.0.113.67\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:23Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650003,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.125,\"size\":43756,\"remote_ip\":\"203.0.113.189\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:34Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650014,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.072,\"size\":27531,\"remote_ip\":\"203.0.113.19\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:48Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650028,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.224,\"size\":25926,\"remote_ip\":\"203.0.113.192\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:48Z",
+                "stream": "error",
+                "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
+            },
+            {
+                "at": "2026-11-14T09:53:58Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650038,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.104,\"size\":7721,\"remote_ip\":\"203.0.113.53\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:25Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650065,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.27,\"size\":10016,\"remote_ip\":\"203.0.113.142\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:51Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650091,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.248,\"size\":41181,\"remote_ip\":\"203.0.113.130\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:53Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650093,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.248,\"size\":46201,\"remote_ip\":\"203.0.113.148\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:20Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650120,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.291,\"size\":1444,\"remote_ip\":\"203.0.113.25\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:47Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650147,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.306,\"size\":4296,\"remote_ip\":\"203.0.113.157\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:09Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650169,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.043,\"size\":42154,\"remote_ip\":\"203.0.113.92\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:18Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650178,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.08,\"size\":32100,\"remote_ip\":\"203.0.113.169\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:57Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650217,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.068,\"size\":34859,\"remote_ip\":\"203.0.113.108\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:09Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650229,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.376,\"size\":13067,\"remote_ip\":\"203.0.113.150\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:39Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650259,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.076,\"size\":12948,\"remote_ip\":\"203.0.113.141\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:13Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650293,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.304,\"size\":18110,\"remote_ip\":\"203.0.113.237\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:41Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650321,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.372,\"size\":12705,\"remote_ip\":\"203.0.113.35\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:02Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650342,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.385,\"size\":35832,\"remote_ip\":\"203.0.113.224\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:05Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650345,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.306,\"size\":13259,\"remote_ip\":\"203.0.113.154\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:42Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650382,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.141,\"size\":10861,\"remote_ip\":\"203.0.113.104\"}"
+            }
+        ]
+    }
+}

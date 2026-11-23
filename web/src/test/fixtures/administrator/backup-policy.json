@@ -1,0 +1,39 @@
+{
+    "request": "GET /backup-policy",
+    "status": 200,
+    "body": {
+        "daily": 7,
+        "weekly": 4,
+        "monthly": 6,
+        "time": "03:00",
+        "target": "s3:s3.eu-central.example/cloudfactory-backups",
+        "manual": 10,
+        "credentialNames": [
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY"
+        ],
+        "servers": [
+            {
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "server": "web-1",
+                "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7cqzs807rnxfq0000000001",
+                "credentialNames": [
+                    "AWS_ACCESS_KEY_ID",
+                    "AWS_SECRET_ACCESS_KEY"
+                ]
+            },
+            {
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "server": "web-2",
+                "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7cqzs807rnxfq0000000002",
+                "credentialNames": []
+            },
+            {
+                "serverId": "01m7cqzs807rnxfq0000000003",
+                "server": "web-3",
+                "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7cqzs807rnxfq0000000003",
+                "credentialNames": []
+            }
+        ]
+    }
+}

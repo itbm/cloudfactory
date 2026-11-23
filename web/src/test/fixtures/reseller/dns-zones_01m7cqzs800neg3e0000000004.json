@@ -1,0 +1,123 @@
+{
+    "request": "GET /dns-zones/01m7cqzs800neg3e0000000004",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs800neg3e0000000004",
+        "name": "cornerbakery.example.org",
+        "customerId": "01m7cqzs80h56kh10000000002",
+        "status": "active",
+        "serial": 1794564000,
+        "recordCount": 7,
+        "nameServers": [
+            "ns1.northwind.example.com",
+            "ns2.northwind.example.com",
+            "ns3.backup-dns.example"
+        ],
+        "provider": null,
+        "delegation": {
+            "state": "here",
+            "nameServers": [
+                "ns1.northwind.example.com",
+                "ns2.northwind.example.com"
+            ],
+            "checkedAt": "2026-11-14T09:51:00+00:00"
+        },
+        "dnssec": {
+            "enabled": false,
+            "state": "off",
+            "ds": null,
+            "dnskey": null,
+            "rollover": null,
+            "parent": null
+        },
+        "transfers": {
+            "addresses": [],
+            "notify": false,
+            "nameServers": [],
+            "tsig": null,
+            "primaries": [
+                "203.0.113.10",
+                "2001:db8:10::1",
+                "203.0.113.20",
+                "2001:db8:20::1"
+            ]
+        },
+        "servers": [
+            {
+                "nameServer": "ns1.northwind.example.com",
+                "state": "ok"
+            },
+            {
+                "nameServer": "ns2.northwind.example.com",
+                "state": "ok"
+            }
+        ],
+        "websites": 1,
+        "createdAt": "2026-08-06T10:00:00+00:00",
+        "records": [
+            {
+                "id": "01m7cqzs8007vyeq0000000012",
+                "name": "@",
+                "type": "A",
+                "value": "203.0.113.20",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000013",
+                "name": "@",
+                "type": "AAAA",
+                "value": "2001:db8:20::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001j",
+                "name": "@",
+                "type": "MX",
+                "value": "mail.cornerbakery.example.org",
+                "ttl": 3600,
+                "priority": 10,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000z",
+                "name": "@",
+                "type": "NS",
+                "value": "ns1.northwind.example.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000010",
+                "name": "@",
+                "type": "NS",
+                "value": "ns2.northwind.example.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq0000000011",
+                "name": "@",
+                "type": "NS",
+                "value": "ns3.backup-dns.example",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001k",
+                "name": "mail",
+                "type": "A",
+                "value": "198.51.100.80",
+                "ttl": 3600,
+                "priority": null,
+                "managed": null
+            }
+        ]
+    }
+}

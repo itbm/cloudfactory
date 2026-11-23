@@ -1,19 +1,27 @@
 // A panel API for the tests. It answers the read requests of the web panel with the answers
-// of the real API for the sample data (fixtures/*.json). The command "php artisan
-// demo:fixtures" in api/ writes the files, and an API test fails when they do not agree with
-// the API. Thus the tests of the web panel cannot drift from the product.
+// of the real API for the sample data (fixtures/ROLE/*.json, one file for each request). The
+// command "php artisan demo:fixtures" in api/ writes the files, and an API test fails when they
+// do not agree with the API. Thus the tests of the web panel cannot drift from the product.
 
 import { vi } from "vitest";
 import { getState, refresh, resetState, signIn, signOut } from "../api/store";
 import type { Role, Website } from "../api/types";
-import administrator from "./fixtures/administrator.json";
-import owner from "./fixtures/owner.json";
-import reseller from "./fixtures/reseller.json";
 
 type Answer = { status: number; body: unknown };
 type Handler = (body: unknown, path: string) => Answer | [number, unknown] | unknown;
 
-const FIXTURES: Record<Role, Record<string, Answer>> = { administrator, reseller, owner } as never;
+const FILES = import.meta.glob<{ request: string } & Answer>("./fixtures/*/*.json", { eager: true, import: "default" });
+const FIXTURES = { administrator: {}, reseller: {}, owner: {} } as Record<Role, Record<string, Answer>>;
+for (const [file, { request, status, body }] of Object.entries(FILES)) {
+  FIXTURES[file.split("/")[2] as Role][request] = { status, body };
+}
+
+/** The answer of the API to a read request in the sample data, for example fixture("owner", "GET /imports"). */
+export function fixture<T = unknown>(role: Role, request: string): { status: number; body: T } {
+  const answer = FIXTURES[role][request];
+  if (!answer) throw new Error(`The ${role} fixtures have no answer for "${request}".`);
+  return answer as { status: number; body: T };
+}
 
 /** The email of the sample user of each role (api/app/Demo/Fixtures.php). */
 export const EMAIL: Record<Role, string> = { administrator: "admin@example.com", reseller: "reseller@example.com", owner: "owner@example.com" };

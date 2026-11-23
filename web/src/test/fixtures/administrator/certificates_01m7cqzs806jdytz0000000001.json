@@ -1,0 +1,70 @@
+{
+    "request": "GET /certificates/01m7cqzs806jdytz0000000001",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs806jdytz0000000001",
+        "customerId": "01m7cqzs80h56kh10000000004",
+        "source": "acme",
+        "names": [
+            "acme.example.com",
+            "*.acme.example.com"
+        ],
+        "state": "valid",
+        "issuer": "Cloudfactory demonstration (Demo CA R1)",
+        "fingerprint": "bb595d2b1ad1dff958ed129a01207ca57d7374602f8f485afdc5351bdd7a6965",
+        "notBefore": "2026-10-20T10:00:00+00:00",
+        "expiresAt": "2027-01-18T10:00:00+00:00",
+        "trusted": true,
+        "renewAt": "2026-12-19T10:00:00+00:00",
+        "order": null,
+        "error": null,
+        "nextTryAt": null,
+        "usedBy": [
+            {
+                "domain": "acme.example.com",
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "websiteName": "acme.example.com",
+                "serverName": "web-1"
+            },
+            {
+                "domain": "api.acme.example.com",
+                "websiteId": "01m7cqzs80jjfnwd0000000003",
+                "websiteName": "api.acme.example.com",
+                "serverName": "web-1"
+            },
+            {
+                "domain": "dashboard.acme.example.com",
+                "websiteId": "01m7cqzs80jjfnwd000000000d",
+                "websiteName": "dashboard.acme.example.com",
+                "serverName": "web-2"
+            },
+            {
+                "domain": "old.acme.example.com",
+                "websiteId": "01m7cqzs80jjfnwd0000000005",
+                "websiteName": "old.acme.example.com",
+                "serverName": "web-1"
+            },
+            {
+                "domain": "shop.acme.example.com",
+                "websiteId": "01m7cqzs80jjfnwd0000000002",
+                "websiteName": "shop.acme.example.com",
+                "serverName": "web-1"
+            },
+            {
+                "domain": "storefront.acme.example.com",
+                "websiteId": "01m7cqzs80jjfnwd0000000004",
+                "websiteName": "storefront.acme.example.com",
+                "serverName": "web-2"
+            },
+            {
+                "domain": "www.acme.example.com",
+                "websiteId": "01m7cqzs80jjfnwd0000000001",
+                "websiteName": "acme.example.com",
+                "serverName": "web-1"
+            }
+        ],
+        "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBrzCCAWGgAwIBAgIJAPr6dtz+JPxFMAUGAytlcDA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjAeFw0y\nNjExMTQxMDAwMDBaFw0yNzAyMTIxMDAwMDBaMBsxGTAXBgNVBAMMEGFjbWUuZXhh\nbXBsZS5jb20wWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARV6icnFlFnplTvMnMp\nfoZrv8cUB3kfQ1nJSSuYxTOYe+QTQDNFcsWfQRXjONmk7Qq/Qo5BLutonxw5RIrY\n4CQmo3QwcjAvBgNVHREEKDAmghBhY21lLmV4YW1wbGUuY29tghIqLmFjbWUuZXhh\nbXBsZS5jb20wCQYDVR0TBAIwADATBgNVHSUEDDAKBggrBgEFBQcDATAfBgNVHSME\nGDAWgBReGjY5iIBoILhHOYBbEGUOf0flhTAFBgMrZXADQQBgiDOE4uR85BoT8Yge\nqQB///c4m/lpdUfaDuLTpWfIU02luDd9NLeYWucMWhk20FWJwfaN2ucB0ubDxLjR\ngNAB\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBajCCARygAwIBAgIJAJeg6JQiyHxoMAUGAytlcDA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjAeFw0y\nNjExMTQxMDAwMDBaFw0zNjExMTExMDAwMDBaMDoxEzARBgNVBAMMCkRlbW8gQ0Eg\nUjExIzAhBgNVBAoMGkNsb3VkZmFjdG9yeSBkZW1vbnN0cmF0aW9uMCowBQYDK2Vw\nAyEAnqf8Kh7nIEk5SwmiIac34Vej/tvAhu9iC/JK7QmWHKijPzA9MAsGA1UdDwQE\nAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBReGjY5iIBoILhHOYBbEGUO\nf0flhTAFBgMrZXADQQCKeQXsMjVLUp69ylKO79XyCjdwpuDpicJr4v6UECRUH5o+\n3JFShXVJP4k+hcymMTReUFLawYjsYZfDQcAKpN4A\n-----END CERTIFICATE-----\n",
+        "createdAt": "2026-10-20T10:00:00+00:00",
+        "updatedAt": "2026-11-14T10:00:00+00:00"
+    }
+}

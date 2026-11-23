@@ -1,0 +1,119 @@
+{
+    "request": "GET /dns-zones/01m7cqzs800neg3e0000000006",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs800neg3e0000000006",
+        "name": "acmeshop.example.com",
+        "customerId": "01m7cqzs80h56kh10000000004",
+        "status": "active",
+        "serial": 1794574800,
+        "recordCount": 6,
+        "nameServers": [
+            "ada.ns.cloudflare.com",
+            "bob.ns.cloudflare.com"
+        ],
+        "provider": {
+            "accountId": "01m7cqzs806nsqez0000000002",
+            "accountName": "Acme Cloudflare",
+            "name": "Cloudflare",
+            "state": "ok",
+            "error": null,
+            "active": true,
+            "syncedAt": "2026-11-14T08:00:00+00:00",
+            "changes": {
+                "added": 0,
+                "changed": 1,
+                "removed": 0
+            },
+            "imported": {
+                "added": 4,
+                "existing": 0,
+                "skipped": [
+                    {
+                        "line": 7,
+                        "text": "www 300 HTTPS 1 . alpn=\"h2\"",
+                        "code": "invalid",
+                        "reason": "Select one of these types: A, AAAA, CNAME, MX, TXT, SRV, CAA, NS."
+                    }
+                ]
+            },
+            "handover": null
+        },
+        "delegation": {
+            "state": "here",
+            "nameServers": [
+                "ada.ns.cloudflare.com",
+                "bob.ns.cloudflare.com"
+            ],
+            "checkedAt": "2026-11-14T09:51:00+00:00"
+        },
+        "dnssec": {
+            "enabled": false,
+            "state": "off",
+            "ds": null,
+            "dnskey": null,
+            "rollover": null,
+            "parent": null
+        },
+        "transfers": null,
+        "servers": [],
+        "websites": 0,
+        "createdAt": "2026-10-24T10:00:00+00:00",
+        "records": [
+            {
+                "id": "01m7cqzs8007vyeq000000001s",
+                "name": "@",
+                "type": "A",
+                "value": "198.51.100.40",
+                "ttl": 300,
+                "priority": null,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001v",
+                "name": "@",
+                "type": "MX",
+                "value": "mx1.mail.example",
+                "ttl": 3600,
+                "priority": 10,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001n",
+                "name": "@",
+                "type": "NS",
+                "value": "ada.ns.cloudflare.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001p",
+                "name": "@",
+                "type": "NS",
+                "value": "bob.ns.cloudflare.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001w",
+                "name": "@",
+                "type": "TXT",
+                "value": "v=spf1 include:_spf.mail.example -all",
+                "ttl": 3600,
+                "priority": null,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001t",
+                "name": "www",
+                "type": "CNAME",
+                "value": "acmeshop.example.com",
+                "ttl": 300,
+                "priority": null,
+                "managed": null
+            }
+        ]
+    }
+}

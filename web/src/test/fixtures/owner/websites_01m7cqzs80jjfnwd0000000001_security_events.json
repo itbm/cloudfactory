@@ -1,0 +1,203 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000001/security/events",
+    "status": 200,
+    "body": {
+        "events": [
+            {
+                "at": "2026-11-14T09:36:00Z",
+                "clientIp": "203.0.113.77",
+                "host": null,
+                "uri": "/search?q=%3Cscript%3Ealert(1)%3C/script%3E",
+                "action": "detected",
+                "score": 10,
+                "rules": [
+                    {
+                        "id": 941100,
+                        "message": "XSS Attack Detected via libinjection",
+                        "data": "Matched Data: XSS data found within ARGS:q: <script>alert(1)</script>"
+                    },
+                    {
+                        "id": 941110,
+                        "message": "XSS Filter - Category 1: Script Tag Vector",
+                        "data": "Matched Data: <script> found within ARGS:q: <script>alert(1)</script>"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T09:09:00Z",
+                "clientIp": "198.51.100.40",
+                "host": null,
+                "uri": "/products?id=1%27%20OR%201=1--",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 942100,
+                        "message": "SQL Injection Attack Detected via libinjection",
+                        "data": "Matched Data: s&1c found within ARGS:id: 1' OR 1=1--"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T08:39:00Z",
+                "clientIp": "198.51.100.40",
+                "host": null,
+                "uri": "/products?id=1%27%20OR%201=1--",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 942100,
+                        "message": "SQL Injection Attack Detected via libinjection",
+                        "data": "Matched Data: s&1c found within ARGS:id: 1' OR 1=1--"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T08:05:00Z",
+                "clientIp": "203.0.113.77",
+                "host": null,
+                "uri": "/search?q=%3Cscript%3Ealert(1)%3C/script%3E",
+                "action": "detected",
+                "score": 10,
+                "rules": [
+                    {
+                        "id": 941100,
+                        "message": "XSS Attack Detected via libinjection",
+                        "data": "Matched Data: XSS data found within ARGS:q: <script>alert(1)</script>"
+                    },
+                    {
+                        "id": 941110,
+                        "message": "XSS Filter - Category 1: Script Tag Vector",
+                        "data": "Matched Data: <script> found within ARGS:q: <script>alert(1)</script>"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T07:48:00Z",
+                "clientIp": "203.0.113.201",
+                "host": null,
+                "uri": "/.env",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 930130,
+                        "message": "Restricted File Access Attempt",
+                        "data": "Matched Data: /.env found within REQUEST_FILENAME: /.env"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T06:45:00Z",
+                "clientIp": "198.51.100.40",
+                "host": null,
+                "uri": "/products?id=1%27%20OR%201=1--",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 942100,
+                        "message": "SQL Injection Attack Detected via libinjection",
+                        "data": "Matched Data: s&1c found within ARGS:id: 1' OR 1=1--"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T05:58:00Z",
+                "clientIp": "203.0.113.5",
+                "host": null,
+                "uri": "/wp-admin/post.php",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 942100,
+                        "message": "SQL Injection Attack Detected via libinjection",
+                        "data": "Matched Data: 1&1 found within ARGS:content: Our opening hours: 9 to 5. Select the shop and order 1 or more items."
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T05:17:00Z",
+                "clientIp": "203.0.113.201",
+                "host": null,
+                "uri": "/.env",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 930130,
+                        "message": "Restricted File Access Attempt",
+                        "data": "Matched Data: /.env found within REQUEST_FILENAME: /.env"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T04:16:00Z",
+                "clientIp": "198.51.100.40",
+                "host": null,
+                "uri": "/products?id=1%27%20OR%201=1--",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 942100,
+                        "message": "SQL Injection Attack Detected via libinjection",
+                        "data": "Matched Data: s&1c found within ARGS:id: 1' OR 1=1--"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T04:06:00Z",
+                "clientIp": "203.0.113.201",
+                "host": null,
+                "uri": "/.env",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 930130,
+                        "message": "Restricted File Access Attempt",
+                        "data": "Matched Data: /.env found within REQUEST_FILENAME: /.env"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T03:36:00Z",
+                "clientIp": "198.51.100.40",
+                "host": null,
+                "uri": "/products?id=1%27%20OR%201=1--",
+                "action": "detected",
+                "score": 5,
+                "rules": [
+                    {
+                        "id": 942100,
+                        "message": "SQL Injection Attack Detected via libinjection",
+                        "data": "Matched Data: s&1c found within ARGS:id: 1' OR 1=1--"
+                    }
+                ]
+            },
+            {
+                "at": "2026-11-14T02:28:00Z",
+                "clientIp": "198.51.100.9",
+                "host": null,
+                "uri": "/index.php?file=../../../../etc/passwd",
+                "action": "detected",
+                "score": 10,
+                "rules": [
+                    {
+                        "id": 930100,
+                        "message": "Path Traversal Attack (/../ or /..;/)",
+                        "data": "Matched Data: /../ found within ARGS:file: ../../../../etc/passwd"
+                    },
+                    {
+                        "id": 930120,
+                        "message": "OS File Access Attempt",
+                        "data": "Matched Data: etc/passwd found within ARGS:file: ../../../../etc/passwd"
+                    }
+                ]
+            }
+        ]
+    }
+}

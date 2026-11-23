@@ -1,0 +1,234 @@
+{
+    "request": "GET /dns-zones",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs800neg3e0000000004",
+                "name": "cornerbakery.example.org",
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "status": "active",
+                "serial": 1794564000,
+                "recordCount": 7,
+                "nameServers": [
+                    "ns1.northwind.example.com",
+                    "ns2.northwind.example.com",
+                    "ns3.backup-dns.example"
+                ],
+                "provider": null,
+                "delegation": {
+                    "state": "here",
+                    "nameServers": [
+                        "ns1.northwind.example.com",
+                        "ns2.northwind.example.com"
+                    ],
+                    "checkedAt": "2026-11-14T09:51:00+00:00"
+                },
+                "dnssec": {
+                    "enabled": false,
+                    "state": "off",
+                    "ds": null,
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
+                },
+                "transfers": {
+                    "addresses": [],
+                    "notify": false,
+                    "nameServers": [],
+                    "tsig": null,
+                    "primaries": [
+                        "203.0.113.10",
+                        "2001:db8:10::1",
+                        "203.0.113.20",
+                        "2001:db8:20::1"
+                    ]
+                },
+                "servers": [
+                    {
+                        "nameServer": "ns1.northwind.example.com",
+                        "state": "ok"
+                    },
+                    {
+                        "nameServer": "ns2.northwind.example.com",
+                        "state": "ok"
+                    }
+                ],
+                "websites": 1,
+                "createdAt": "2026-08-06T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs800neg3e0000000005",
+                "name": "harbourbooks.example.net",
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "status": "failed",
+                "serial": 1794564000,
+                "recordCount": 7,
+                "nameServers": [
+                    "ns1.northwind.example.com",
+                    "ns2.northwind.example.com",
+                    "ns3.backup-dns.example"
+                ],
+                "provider": null,
+                "delegation": {
+                    "state": "here",
+                    "nameServers": [
+                        "ns1.northwind.example.com",
+                        "ns2.northwind.example.com"
+                    ],
+                    "checkedAt": "2026-11-14T09:51:00+00:00"
+                },
+                "dnssec": {
+                    "enabled": false,
+                    "state": "off",
+                    "ds": null,
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
+                },
+                "transfers": {
+                    "addresses": [],
+                    "notify": false,
+                    "nameServers": [],
+                    "tsig": null,
+                    "primaries": [
+                        "203.0.113.10",
+                        "2001:db8:10::1",
+                        "203.0.113.20",
+                        "2001:db8:20::1"
+                    ]
+                },
+                "servers": [
+                    {
+                        "nameServer": "ns1.northwind.example.com",
+                        "state": "ok"
+                    },
+                    {
+                        "nameServer": "ns2.northwind.example.com",
+                        "state": "failed"
+                    }
+                ],
+                "websites": 2,
+                "createdAt": "2026-10-07T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs800neg3e0000000003",
+                "name": "northwind.example.com",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "status": "active",
+                "serial": 1794574800,
+                "recordCount": 7,
+                "nameServers": [
+                    "ns1.northwind.example.com",
+                    "ns2.northwind.example.com",
+                    "ns3.backup-dns.example"
+                ],
+                "provider": null,
+                "delegation": {
+                    "state": "here",
+                    "nameServers": [
+                        "ns1.northwind.example.com",
+                        "ns2.northwind.example.com"
+                    ],
+                    "checkedAt": "2026-11-14T09:51:00+00:00"
+                },
+                "dnssec": {
+                    "enabled": false,
+                    "state": "off",
+                    "ds": null,
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
+                },
+                "transfers": {
+                    "addresses": [],
+                    "notify": false,
+                    "nameServers": [],
+                    "tsig": null,
+                    "primaries": [
+                        "203.0.113.10",
+                        "2001:db8:10::1",
+                        "203.0.113.20",
+                        "2001:db8:20::1"
+                    ]
+                },
+                "servers": [
+                    {
+                        "nameServer": "ns1.northwind.example.com",
+                        "state": "ok"
+                    },
+                    {
+                        "nameServer": "ns2.northwind.example.com",
+                        "state": "ok"
+                    }
+                ],
+                "websites": 2,
+                "createdAt": "2026-02-07T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs800neg3e0000000007",
+                "name": "northwind.example.org",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "status": "active",
+                "serial": 1794643200,
+                "recordCount": 4,
+                "nameServers": [
+                    "ada.ns.cloudflare.com",
+                    "bob.ns.cloudflare.com"
+                ],
+                "provider": {
+                    "accountId": "01m7cqzs806nsqez0000000001",
+                    "accountName": "Panel Cloudflare",
+                    "name": "Cloudflare",
+                    "state": "ok",
+                    "error": null,
+                    "active": false,
+                    "syncedAt": "2026-11-14T08:00:00+00:00",
+                    "changes": {
+                        "added": 0,
+                        "changed": 1,
+                        "removed": 0
+                    },
+                    "imported": null,
+                    "handover": {
+                        "endsAt": null
+                    }
+                },
+                "delegation": {
+                    "state": "elsewhere",
+                    "nameServers": [
+                        "ns1.northwind.example.com",
+                        "ns2.northwind.example.com"
+                    ],
+                    "checkedAt": "2026-11-14T09:51:00+00:00"
+                },
+                "dnssec": {
+                    "enabled": false,
+                    "state": "off",
+                    "ds": null,
+                    "dnskey": null,
+                    "rollover": null,
+                    "parent": null
+                },
+                "transfers": null,
+                "servers": [
+                    {
+                        "nameServer": "ns1.northwind.example.com",
+                        "state": "ok"
+                    },
+                    {
+                        "nameServer": "ns2.northwind.example.com",
+                        "state": "ok"
+                    }
+                ],
+                "websites": 0,
+                "createdAt": "2026-11-12T10:00:00+00:00"
+            }
+        ],
+        "nameServers": [
+            "ns1.northwind.example.com",
+            "ns2.northwind.example.com",
+            "ns3.backup-dns.example"
+        ]
+    }
+}
