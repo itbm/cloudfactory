@@ -28,6 +28,12 @@ return [
 
     'panel_domain' => env('CF_PANEL_DOMAIN', 'panel.cloudfactory.io'),
 
+    // FR-103: passkeys. A passkey works on the panel domain and on the panel domain of each
+    // reseller, with HTTPS. In development, "localhost" also accepts these HTTP origins.
+    'passkeys' => [
+        'local_origins' => array_values(array_filter(explode(',', (string) env('CF_PASSKEY_LOCAL_ORIGINS', 'http://localhost:5173,http://localhost:8000')))),
+    ],
+
     // The database tool (Adminer). Each customer has one Adminer container on the panel
     // server, and the browser opens it on this domain, with one path for each customer. With
     // no value, the domain is "adminer." and the panel domain. The DNS of the domain must

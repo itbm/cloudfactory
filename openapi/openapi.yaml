@@ -145,13 +145,28 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [passwordReset]
+                required: [passwordReset, passkeys, providers]
                 properties:
                   passwordReset:
                     type: boolean
                     description: >-
                       The panel can send an email with a link to set a new password: an SMTP server
                       is on for the reseller of this panel domain, or for the panel.
+                  passkeys:
+                    type: boolean
+                    description: >-
+                      Passkeys work on this domain (FR-103). A passkey works only on the panel
+                      domain or on the panel domain of a reseller brand.
+                  providers:
+                    type: array
+                    description: >-
+                      The identity providers for single sign-on. The list is empty on a domain that is
+                      not the panel domain. To sign in, the browser goes to /v1/auth/sso/{id}.
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
 
   /v1/auth/password-reset:
     post:
@@ -214,6 +229,179 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ValidationError' }
         '429': { description: More than 10 requests in one minute from this address. }
+
+  /v1/auth/passkey/options:
+    post:
+      tags: [Auth]
+      summary: Start to sign in with a passkey
+      description: >-
+        The first step to sign in with a passkey (FR-103). Give `publicKey` to the browser
+        (PublicKeyCredential.parseRequestOptionsFromJSON). The browser shows the passkeys of the
+        domain, so the request has no email. The challenge works one time only, for 5 minutes.
+      security: []
+      responses:
+        '200':
+          description: The options for the browser.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasskeyCeremony' }
+        '409': { description: Passkeys do not work on this domain. Open the panel at its own domain. }
+        '429': { description: Too many requests from this address. }
+
+  /v1/auth/passkey:
+    post:
+      tags: [Auth]
+      summary: Sign in with a passkey
+      description: >-
+        The second step to sign in with a passkey. Give the answer of the browser
+        (PublicKeyCredential.toJSON()). The passkey must verify the user, for example with a
+        fingerprint, so the panel does not ask for a TOTP code. The passkey must be for the domain
+        of the challenge. The token expires after 12 hours, as for a sign-in with a password.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, credential]
+              properties:
+                ceremony: { type: string, maxLength: 100, description: The `ceremony` of /v1/auth/passkey/options. }
+                credential: { type: object, additionalProperties: true, description: The JSON of the browser (PublicKeyCredential.toJSON()). }
+                deviceId: { type: string, maxLength: 100, description: The same as for /v1/auth/login. }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '403': { description: The account is suspended, or the user cannot sign in. }
+        '422': { description: 'The challenge is too old or was used (error on `ceremony`), or the panel does not know the passkey or cannot verify it (error on `credential`).', content: { application/json: { schema: { $ref: '#/components/schemas/ValidationError' } } } }
+        '429': { description: Too many requests from this address. }
+
+  /v1/auth/sso/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Auth]
+      summary: Start single sign-on
+      description: >-
+        For a browser navigation, not for a script. The answer sends the browser to the identity
+        provider, and sets a cookie that binds the sign-in to this browser. With `connect`, the
+        sign-in connects the account of the provider to a user (/v1/me/identities/{id}). Single
+        sign-on works only on the panel domain. When the provider is off or not available, the
+        answer sends the browser to `/login#sso-error=<reason>`.
+      security: []
+      parameters:
+        - { name: connect, in: query, required: false, schema: { type: string }, description: 'The ticket of /v1/me/identities/{id}.' }
+      responses:
+        '302': { description: The address of the identity provider. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Single sign-on does not work on this domain. }
+
+  /v1/auth/sso/oidc/callback:
+    get:
+      tags: [Auth]
+      summary: The redirect address for the OpenID Connect providers
+      description: >-
+        The address is the same for all the providers: the state identifies the provider. The
+        provider sends the browser to this address with a code. The panel changes the code into
+        an ID token, and verifies the signature, the issuer, the audience, the time and the nonce of
+        the token. The answer sends the browser to `/sso#ticket=<ticket>`, to
+        `/settings#sso-connected=<id>` after a connection, or to `/login#sso-error=<reason>`. The
+        reasons are `expired`, `cancelled`, `failed`, `no-account`, `taken`, `disabled` and
+        `unavailable`.
+      security: []
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: error, in: query, required: false, schema: { type: string } }
+      responses:
+        '302': { description: The address of the web panel. }
+
+  /v1/auth/sso/saml/acs:
+    post:
+      tags: [Auth]
+      summary: The assertion consumer service for the SAML providers
+      description: >-
+        The address is the same for all the providers: the RelayState identifies the provider. The
+        provider posts the SAML answer (HTTP-POST binding). The issuer of the answer must be the
+        provider, and the answer or its assertion must have a valid signature of the certificate of
+        the provider. The answers are the same as for /v1/auth/sso/oidc/callback.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [SAMLResponse, RelayState]
+              properties:
+                SAMLResponse: { type: string }
+                RelayState: { type: string }
+      responses:
+        '302': { description: The address of the web panel. }
+
+  /v1/auth/sso/saml/metadata:
+    get:
+      tags: [Auth]
+      summary: The SAML metadata of the panel
+      description: The metadata of the panel as a SAML service provider, for all the SAML providers. The address is also the entity ID of the panel.
+      security: []
+      responses:
+        '200':
+          description: The metadata.
+          content:
+            application/samlmetadata+xml:
+              schema: { type: string }
+
+  /v1/auth/sso/complete:
+    post:
+      tags: [Auth]
+      summary: End single sign-on
+      description: >-
+        Changes the ticket of /v1/auth/sso/oidc/callback or /v1/auth/sso/saml/acs into a session
+        token. A ticket works for 5 minutes. When TOTP is on for the user, a request with no `totp`
+        gives status 422 with `totpRequired: true`, as for /v1/auth/login. After 5 wrong codes, the
+        ticket stops. The token expires after 12 hours.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket]
+              properties:
+                ticket: { type: string, maxLength: 100 }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+                deviceId: { type: string, maxLength: 100, description: The same as for /v1/auth/login. }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '403': { description: The account is suspended. }
+        '422':
+          description: The ticket is too old (error on `ticket`), or the code is missing or not correct (error on `totp`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ValidationError' }
+                  - type: object
+                    properties:
+                      totpRequired: { type: boolean }
+        '429': { description: Too many failed attempts for this account. }
 
   /v1/auth/logout:
     post:
@@ -316,6 +504,282 @@ paths:
       responses:
         '204': { description: TOTP is off. }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/me/passkeys:
+    get:
+      tags: [Auth]
+      summary: List your passkeys
+      description: The passkeys of the user of the token (FR-103). An API token can read the list, but only a sign-in session can change it.
+      responses:
+        '200':
+          description: The passkeys, the oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Passkey' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      tags: [Auth]
+      summary: Add a passkey
+      description: >-
+        The second step to add a passkey. Needs a sign-in session token. Give the answer of the
+        browser (PublicKeyCredential.toJSON()) for the options of /v1/me/passkeys/options. The
+        passkey must verify the user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, name, credential]
+              properties:
+                ceremony: { type: string, maxLength: 100, description: The `ceremony` of /v1/me/passkeys/options. }
+                name: { type: string, maxLength: 100, description: 'A name for the passkey, for example "iPhone".' }
+                credential: { type: object, additionalProperties: true, description: The JSON of the browser (PublicKeyCredential.toJSON()). }
+      responses:
+        '201':
+          description: The passkey.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Passkey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/me/passkeys/options:
+    post:
+      tags: [Auth]
+      summary: Start to add a passkey
+      description: >-
+        The first step to add a passkey. Needs a sign-in session token. Give your password, and
+        your TOTP code when TOTP is on. After 5 incorrect attempts, the panel refuses for 15
+        minutes. Give `publicKey` to the browser (PublicKeyCredential.parseCreationOptionsFromJSON).
+        The passkey is for the domain of the request. A user can have 20 passkeys.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$', description: Necessary when TOTP is on for the user. }
+      responses:
+        '200':
+          description: The options for the browser.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasskeyCeremony' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Passkeys do not work on this domain. Open the panel at its own domain. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many incorrect attempts. Wait 15 minutes. }
+
+  /v1/me/passkeys/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Auth]
+      summary: Rename a passkey
+      description: Needs a sign-in session token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: The passkey.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Passkey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Auth]
+      summary: Remove a passkey
+      description: >-
+        Needs a sign-in session token. Give your password, and your TOTP code when TOTP is on. The
+        passkey stays on the device: remove it there also.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many incorrect attempts. Wait 15 minutes. }
+
+  /v1/me/identities:
+    get:
+      tags: [Auth]
+      summary: List the single sign-on providers and your connected accounts
+      responses:
+        '200':
+          description: Each provider that is on, and the account of the user at it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/UserIdentity' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/me/identities/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Auth]
+      summary: Start to connect an account of a provider
+      description: >-
+        Needs a sign-in session token. Give your password, and your TOTP code when TOTP is on. Open
+        `url` in the browser: the user signs in at the provider, and the panel connects the account.
+        The address works one time only, for 5 minutes. An account of a provider connects to one
+        user only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: The address for the browser.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Single sign-on does not work on this domain. }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Auth]
+      summary: Disconnect an account of a provider
+      description: Needs a sign-in session token. Give your password, and your TOTP code when TOTP is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Disconnected. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/identity-providers:
+    get:
+      tags: [Auth]
+      summary: List the single sign-on providers
+      description: Only for an administrator, with the users scope.
+      responses:
+        '200':
+          description: The providers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, serviceProvider]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/IdentityProvider' } }
+                  serviceProvider:
+                    type: object
+                    description: The values to give to a provider. They are the same for all the providers.
+                    required: [redirectUri, entityId, acsUrl]
+                    properties:
+                      redirectUri: { type: string, description: OpenID Connect. Register this address at the provider. }
+                      entityId: { type: string, description: SAML. The entity ID of the panel, and the address of its metadata. }
+                      acsUrl: { type: string, description: SAML. The assertion consumer service of the panel. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Auth]
+      summary: Add a single sign-on provider
+      description: >-
+        Needs the sign-in session of an administrator. Give your password, and your TOTP code when
+        TOTP is on. For OpenID Connect, the panel reads the discovery document of the issuer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityProviderInput' }
+      responses:
+        '201':
+          description: The provider.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/identity-providers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Auth]
+      summary: Change a single sign-on provider
+      description: >-
+        Needs the sign-in session of an administrator, with your password and your TOTP code. The
+        protocol does not change. With no `clientSecret`, the secret stays.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityProviderInput' }
+      responses:
+        '200':
+          description: The provider.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Auth]
+      summary: Remove a single sign-on provider
+      description: Needs the sign-in session of an administrator, with your password and your TOTP code. The panel also removes the connected accounts of the users.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/tokens:
@@ -5915,6 +6379,65 @@ components:
         - type: object
           properties:
             temporaryPassword: { type: string, description: The panel shows this value one time only. }
+    Passkey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        domain: { type: string, description: The panel domain of the passkey. The browser uses a passkey only on its own domain. }
+        synced: { type: boolean, description: The passkey is in a password manager or a cloud account, so it is on more than one device. }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+    UserIdentity:
+      type: object
+      properties:
+        providerId: { type: string }
+        name: { type: string }
+        protocol: { type: string, enum: [oidc, saml] }
+        connected: { type: boolean }
+        email: { type: [string, 'null'], description: The email that the provider gave at the last sign-in. }
+        connectedAt: { type: [string, 'null'], format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+    IdentityProvider:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, description: 'The text of the button "Sign in with <name>".' }
+        protocol: { type: string, enum: [oidc, saml] }
+        enabled: { type: boolean }
+        issuer: { type: [string, 'null'], description: OpenID Connect only. }
+        clientId: { type: [string, 'null'], description: OpenID Connect only. }
+        hasClientSecret: { type: boolean, description: The panel does not show the secret. }
+        entityId: { type: [string, 'null'], description: SAML only. The entity ID of the provider. }
+        ssoUrl: { type: [string, 'null'], description: SAML only. The address of the provider for the sign-in (HTTP-Redirect binding). }
+        certificate: { type: [string, 'null'], description: SAML only. The certificate of the provider, in PEM format. }
+        certificateExpiresAt: { type: [string, 'null'], format: date-time }
+        linkByEmail: { type: boolean, description: 'The first sign-in connects the user with the same verified email, when the domain of the email is in emailDomains.' }
+        emailDomains: { type: array, items: { type: string } }
+        users: { type: integer, description: The number of connected accounts. }
+        createdAt: { type: string, format: date-time }
+    IdentityProviderInput:
+      type: object
+      required: [name, password]
+      properties:
+        name: { type: string, maxLength: 100 }
+        protocol: { type: string, enum: [oidc, saml], description: Only to add a provider. }
+        enabled: { type: boolean }
+        issuer: { type: string, format: uri, description: 'OpenID Connect: necessary. HTTPS.' }
+        clientId: { type: string, description: 'OpenID Connect: necessary.' }
+        clientSecret: { type: string, description: 'OpenID Connect: necessary to add a provider.' }
+        entityId: { type: string, description: 'SAML: necessary.' }
+        ssoUrl: { type: string, format: uri, description: 'SAML: necessary. HTTPS.' }
+        certificate: { type: string, description: 'SAML: necessary. PEM format, or the base64 text of the metadata.' }
+        linkByEmail: { type: boolean }
+        emailDomains: { type: array, items: { type: string }, description: Necessary when linkByEmail is true. }
+        password: { type: string }
+        totp: { type: string, pattern: '^[0-9]{6}$' }
+    PasskeyCeremony:
+      type: object
+      properties:
+        ceremony: { type: string, description: Give this ID with the answer of the browser. }
+        publicKey: { type: object, additionalProperties: true, description: The options for the browser, in the JSON form of WebAuthn (base64url for the binary values). }
     Token:
       type: object
       properties:

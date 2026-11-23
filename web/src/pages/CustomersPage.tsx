@@ -301,7 +301,7 @@ function ResetDialog({ user, onClose, onDone }: { user: ManagedUser; onClose: ()
     <Modal title={`Reset the password of ${user.email}?`} onClose={onClose} footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="reset-user" className="btn btn-danger-solid" disabled={reset.busy}>Reset password</button></>}>
       <form id="reset-user" noValidate onSubmit={async (e) => { e.preventDefault(); const r = await reset.run(user.id, removeTotp, administrator ? confirm : undefined); if (r.ok) onDone(r.value); }}>
         <FormError error={reset.error} shown={["password", "totp"]} />
-        <p>{user.name} gets a new temporary password. The panel signs the user out and deletes the API tokens of the user. It also removes a sign-in lock.</p>
+        <p>{user.name} gets a new temporary password. The panel signs the user out, and deletes the API tokens and the passkeys of the user. It also removes a sign-in lock.</p>
         {user.totpEnabled && (
           <>
             <label className="check" style={{ marginTop: 10 }}><input type="checkbox" checked={removeTotp} onChange={(e) => setRemoveTotp(e.target.checked)} />Also remove TOTP</label>
