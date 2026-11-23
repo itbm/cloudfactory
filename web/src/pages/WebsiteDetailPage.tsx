@@ -307,6 +307,7 @@ export function WebsiteDetailPage() {
               <h1>{website.name}</h1>
               <span className={`status-pill status-${status.tone}`}><Status tone={status.tone}>{status.label}</Status></span>
               {website.kind !== "public" && <span className="tag">{WEBSITE_KIND[website.kind]}</span>}
+              {website.previewOf && <span className="tag">Preview</span>}
               {website.managedByTerraform && <TerraformBadge />}
             </div>
             <p className="detail-meta">

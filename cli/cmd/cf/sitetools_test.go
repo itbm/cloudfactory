@@ -23,7 +23,8 @@ type siteCall struct {
 func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 	t.Helper()
 	var calls []siteCall
-	deploy := `{"source":{"repository":"git@github.com:acme/shop.git","branch":"main","webDirectory":"public","trigger":"manual","buildCommands":["composer install"],"deployKey":"ssh-ed25519 AAAA cloudfactory","webhookUrl":"https://panel.example/api/v1/hooks/deploy/tok","secrets":["NPM_TOKEN"]},"releases":[{"id":"R2","createdAt":"2026-11-14T10:00:00Z","state":"ready","live":true,"commit":"4f9a1c2d5e6f7a8b","message":"Fix the cart"}]}`
+	deploy := `{"source":{"repository":"git@github.com:acme/shop.git","branch":"main","webDirectory":"public","trigger":"webhook","checkMinutes":5,"buildCommands":["composer install"],"migrationCommand":"php artisan migrate --force","deployKey":"ssh-ed25519 AAAA cloudfactory","webhookUrl":"https://panel.example/api/v1/hooks/deploy/tok","webhookSecret":"hook-secret","deployQueued":false,"secrets":["NPM_TOKEN"]},"releases":[{"id":"R2","createdAt":"2026-11-14T10:00:00Z","state":"ready","live":true,"trigger":"webhook","migration":true,"healthError":"the health check failed after the switch: 9 of 30 checks failed.","commit":"4f9a1c2d5e6f7a8b","message":"Fix the cart"}]}`
+	previews := `{"settings":{"enabled":true,"domain":"preview.acme.example","limit":1,"copyEnvironment":false},"suggestedDomain":"preview.acme.example","maxLimit":10,"previews":[{"number":42,"state":"live","name":"pr-42.preview.acme.example","branch":"feature/csv","title":"Add CSV","error":null},{"number":47,"state":"failed","name":null,"branch":"bump","title":"Bump","error":"The limit of the previews of this website is 1."}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call := siteCall{Method: r.Method, Path: strings.TrimPrefix(r.URL.Path, "/api/v1"), Query: r.URL.RawQuery}
 		if b, _ := io.ReadAll(r.Body); len(b) > 0 {
@@ -60,7 +61,7 @@ func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 			"POST /websites/W1/deploy/releases", "POST /websites/W1/deploy/releases/R1/activate":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{` + job + `}`))
-		case "GET /websites/W1/deploy", "PUT /websites/W1/deploy", "PUT /websites/W1/deploy/secrets/NPM_TOKEN", "DELETE /websites/W1/deploy/secrets/NPM_TOKEN":
+		case "GET /websites/W1/deploy", "PUT /websites/W1/deploy", "PUT /websites/W1/deploy/secrets/NPM_TOKEN", "DELETE /websites/W1/deploy/secrets/NPM_TOKEN", "POST /websites/W1/deploy/webhook":
 			w.Write([]byte(deploy))
 		case "DELETE /websites/W1/deploy":
 			w.WriteHeader(http.StatusNoContent)
@@ -71,6 +72,14 @@ func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 			w.Write([]byte(`{"security":{},` + job + `}`))
 		case "GET /websites/W1/security/events":
 			w.Write([]byte(`{"events":[{"at":"2026-11-22T21:26:59Z","clientIp":"203.0.113.9","host":"acme.example","uri":"/?q=<script>","action":"blocked","score":20,"rules":[{"id":941100,"message":"XSS Attack Detected via libinjection","data":"Matched Data: XSS"}]}]}`))
+		case "GET /websites/W1/previews", "PUT /websites/W1/previews":
+			w.Write([]byte(previews))
+		case "POST /websites/W1/previews":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"status":"started","message":"The panel makes the preview pr-51.preview.acme.example.","preview":{"number":51,"name":"pr-51.preview.acme.example","state":"creating"}}`))
+		case "DELETE /websites/W1/previews/42":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{` + job + `}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte(`{"message":"Not found."}`))
@@ -203,7 +212,7 @@ func TestDeploys(t *testing.T) {
 	if err := a.dispatch(ctx, []string{"deploys", "show", "acme.example"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"git@github.com:acme/shop.git", "ssh-ed25519 AAAA cloudfactory", "hooks/deploy/tok", "NPM_TOKEN", "4f9a1c2 ", "Fix the cart"} {
+	for _, want := range []string{"git@github.com:acme/shop.git", "ssh-ed25519 AAAA cloudfactory", "hooks/deploy/tok", "hook-secret", "php artisan migrate --force", "NPM_TOKEN", "4f9a1c2 ", "Fix the cart", "ready, check failed"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("show has no %q: %s", want, out)
 		}
@@ -218,6 +227,31 @@ func TestDeploys(t *testing.T) {
 	}
 	if _, has := c.Body["webDirectory"]; has {
 		t.Errorf("connect sent a web directory: %+v", c)
+	}
+	if _, has := c.Body["migrationCommand"]; has {
+		t.Errorf("connect sent a migration command: %+v", c)
+	}
+	// FR-1004 and FR-1009: a check of the branch on a schedule, and a migration command.
+	if err := a.dispatch(ctx, []string{"deploys", "connect", "acme.example", "--trigger", "schedule", "--check-minutes", "15", "--migration", "php artisan migrate --force"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Body["trigger"] != "schedule" || c.Body["checkMinutes"] != float64(15) || c.Body["migrationCommand"] != "php artisan migrate --force" {
+		t.Errorf("schedule = %+v", c)
+	}
+	if err := a.dispatch(ctx, []string{"deploys", "connect", "acme.example", "--no-migration"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Body["migrationCommand"] != nil {
+		t.Errorf("no migration = %+v", c)
+	} else if _, has := c.Body["migrationCommand"]; !has {
+		t.Errorf("no migration sent no migrationCommand: %+v", c)
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"deploys", "webhook", "acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Method != "POST" || c.Path != "/websites/W1/deploy/webhook" || !strings.Contains(out.String(), "hook-secret") {
+		t.Errorf("webhook = %+v: %s", c, out)
 	}
 	// The value of a secret is not an argument.
 	a.in = strings.NewReader("s3cret\n")
@@ -319,5 +353,57 @@ func TestSecurity(t *testing.T) {
 	}
 	if c := lastSite(calls); c.Query != "limit=5" || !strings.Contains(out.String(), "blocked  203.0.113.9 score 20") || !strings.Contains(out.String(), "rule 941100: XSS") {
 		t.Errorf("events: %+v\n%s", c, out)
+	}
+}
+
+func TestPreviews(t *testing.T) {
+	srv, calls := sitePanel(t)
+	a, out := testApp(srv)
+	ctx := context.Background()
+	if err := a.dispatch(ctx, []string{"previews", "list", "acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"pr-NUMBER.preview.acme.example", "1 at the same time", "pr-42.preview.acme.example", "feature/csv", "#47: The limit of the previews"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("list has no %q: %s", want, out)
+		}
+	}
+	// A change keeps the settings that the command does not give.
+	if err := a.dispatch(ctx, []string{"previews", "set", "acme.example", "--limit", "3", "--copy-environment"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Method != "PUT" || c.Body["enabled"] != true || c.Body["limit"] != float64(3) || c.Body["copyEnvironment"] != true {
+		t.Errorf("set = %+v", c)
+	} else if _, has := c.Body["domain"]; has {
+		t.Errorf("set sent a domain: %+v", c)
+	}
+	if err := a.dispatch(ctx, []string{"previews", "set", "acme.example", "--off"}); err != nil || lastSite(calls).Body["enabled"] != false {
+		t.Errorf("set --off = %+v, %v", lastSite(calls), err)
+	}
+	if err := a.dispatch(ctx, []string{"previews", "set", "acme.example", "--on", "--off"}); err == nil {
+		t.Error("set accepted --on and --off")
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"previews", "create", "acme.example", "--number", "51", "--branch", "feature/menu", "--title", "New menu"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Method != "POST" || c.Body["number"] != float64(51) || c.Body["branch"] != "feature/menu" || c.Body["title"] != "New menu" {
+		t.Errorf("create = %+v", c)
+	}
+	if !strings.Contains(out.String(), "https://pr-51.preview.acme.example") {
+		t.Errorf("create out = %s", out)
+	}
+	if err := a.dispatch(ctx, []string{"previews", "create", "acme.example", "--number", "51"}); err == nil {
+		t.Error("create accepted no branch")
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"previews", "remove", "acme.example", "#42"}); err != nil || lastSite(calls).Path != "/websites/W1/previews/42" {
+		t.Errorf("remove = %+v, %v", lastSite(calls), err)
+	}
+	if !strings.Contains(out.String(), "Site job: complete.") {
+		t.Errorf("remove out = %s", out)
+	}
+	if err := a.dispatch(ctx, []string{"previews", "remove", "acme.example", "main"}); err == nil {
+		t.Error("remove accepted a number that is not a number")
 	}
 }

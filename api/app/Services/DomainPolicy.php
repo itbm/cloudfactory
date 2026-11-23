@@ -91,9 +91,16 @@ class DomainPolicy
     /** True when the user does not need to prove control of the domain. */
     public function preVerified(User $user, string $customerId, string $name): bool
     {
-        if ($user->isAdministrator()) {
-            return true;
-        }
+        return $user->isAdministrator() || $this->controls($customerId, $name);
+    }
+
+    /**
+     * True when the customer proved control of the name: the name is in a DNS zone of the
+     * customer that the public DNS delegates to the panel, or it is a verified domain of the
+     * customer or a sub-domain of one. The previews of pull requests use this rule with no user.
+     */
+    public function controls(string $customerId, string $name): bool
+    {
         // The customer has a DNS zone with the name in it, and the registrar of the domain
         // sends the queries for the zone to the panel. Only the owner of the domain can do that.
         if (Zones::controls($customerId, $name)) {

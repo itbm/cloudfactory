@@ -202,6 +202,9 @@ const (
 	// AgentServiceGetFirewallEventsProcedure is the fully-qualified name of the AgentService's
 	// GetFirewallEvents RPC.
 	AgentServiceGetFirewallEventsProcedure = "/cloudfactory.agent.v1.AgentService/GetFirewallEvents"
+	// AgentServiceCheckBranchesProcedure is the fully-qualified name of the AgentService's
+	// CheckBranches RPC.
+	AgentServiceCheckBranchesProcedure = "/cloudfactory.agent.v1.AgentService/CheckBranches"
 )
 
 // AgentServiceClient is a client for the cloudfactory.agent.v1.AgentService service.
@@ -289,6 +292,10 @@ type AgentServiceClient interface {
 	// The last requests of a website that the firewall of the edge proxy blocked or detected.
 	// This method does not make a job.
 	GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error)
+	// Gives the last commit of the branch of each Git source, for the deploys on a schedule
+	// (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
+	// container of each website, as for the step "Get the code" of a deploy.
+	CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error)
 }
 
 // NewAgentServiceClient constructs a client for the cloudfactory.agent.v1.AgentService service. By
@@ -662,6 +669,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("GetFirewallEvents")),
 			connect.WithClientOptions(opts...),
 		),
+		checkBranches: connect.NewClient[v1.CheckBranchesRequest, v1.BranchHeads](
+			httpClient,
+			baseURL+AgentServiceCheckBranchesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("CheckBranches")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -727,6 +740,7 @@ type agentServiceClient struct {
 	deleteFile            *connect.Client[v1.FileRequest, v1.FileDeleted]
 	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
 	getFirewallEvents     *connect.Client[v1.GetFirewallEventsRequest, v1.FirewallEvents]
+	checkBranches         *connect.Client[v1.CheckBranchesRequest, v1.BranchHeads]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -1029,6 +1043,11 @@ func (c *agentServiceClient) GetFirewallEvents(ctx context.Context, req *connect
 	return c.getFirewallEvents.CallUnary(ctx, req)
 }
 
+// CheckBranches calls cloudfactory.agent.v1.AgentService.CheckBranches.
+func (c *agentServiceClient) CheckBranches(ctx context.Context, req *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error) {
+	return c.checkBranches.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the cloudfactory.agent.v1.AgentService service.
 type AgentServiceHandler interface {
 	CreateWebsite(context.Context, *connect.Request[v1.WebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1114,6 +1133,10 @@ type AgentServiceHandler interface {
 	// The last requests of a website that the firewall of the edge proxy blocked or detected.
 	// This method does not make a job.
 	GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error)
+	// Gives the last commit of the branch of each Git source, for the deploys on a schedule
+	// (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
+	// container of each website, as for the step "Get the code" of a deploy.
+	CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1483,6 +1506,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("GetFirewallEvents")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceCheckBranchesHandler := connect.NewUnaryHandler(
+		AgentServiceCheckBranchesProcedure,
+		svc.CheckBranches,
+		connect.WithSchema(agentServiceMethods.ByName("CheckBranches")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cloudfactory.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceCreateWebsiteProcedure:
@@ -1605,6 +1634,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceGetLogsHandler.ServeHTTP(w, r)
 		case AgentServiceGetFirewallEventsProcedure:
 			agentServiceGetFirewallEventsHandler.ServeHTTP(w, r)
+		case AgentServiceCheckBranchesProcedure:
+			agentServiceCheckBranchesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1852,4 +1883,8 @@ func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Reques
 
 func (UnimplementedAgentServiceHandler) GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetFirewallEvents is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.CheckBranches is not implemented"))
 }

@@ -195,6 +195,18 @@ class Website extends Model
         return $this->hasOne(GitSource::class);
     }
 
+    /** The previews of the pull requests of the Git source of this website. */
+    public function previews(): HasMany
+    {
+        return $this->hasMany(Preview::class)->orderBy('number');
+    }
+
+    /** For a preview website: its pull request and the website of the Git source. */
+    public function previewOf(): HasOne
+    {
+        return $this->hasOne(Preview::class, 'preview_website_id');
+    }
+
     public function snapshots(): HasMany
     {
         return $this->hasMany(Snapshot::class)->latest();
