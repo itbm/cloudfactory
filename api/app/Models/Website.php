@@ -193,6 +193,12 @@ class Website extends Model
         return $this->hasMany(WebsiteCommand::class);
     }
 
+    /** The sessions of the web terminal of the website (FR-802). */
+    public function terminalSessions(): HasMany
+    {
+        return $this->hasMany(TerminalSession::class);
+    }
+
     public function cronJobs(): HasMany
     {
         return $this->hasMany(CronJob::class)->oldest()->orderBy('id');

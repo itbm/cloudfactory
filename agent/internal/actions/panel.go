@@ -20,7 +20,7 @@ import (
 const PanelUser = "cf-panel"
 
 // panelServices are the services of the panel that need the database, in the order of their start.
-var panelServices = []string{"cf-panel-api.service", "cf-panel-queue.service", "cf-panel-scheduler.service", "cf-panel-web.service"}
+var panelServices = []string{"cf-panel-api.service", "cf-panel-queue.service", "cf-panel-scheduler.service", "cf-panel-terminal.service", "cf-panel-web.service"}
 
 // InstallPanel pulls the images of the panel, writes its units and starts them (FR-1808).
 // It is safe to run it again: it keeps the database and its password, and it starts a service
