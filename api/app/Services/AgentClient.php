@@ -44,7 +44,7 @@ class AgentClient
             ->withHeaders(['Connect-Protocol-Version' => '1'])
             ->post('/'.self::SERVICE.'/'.$job->action->value, [
                 'jobId' => $job->id,
-                ...self::withEnvironment($job, $payload),
+                ...self::withWebsiteValues($job, $payload),
                 // The secrets of a mail cluster are not in the job.
                 ...MailClusters::secretsFor($job),
                 ...Mail::keyFileFor($job),
@@ -71,21 +71,33 @@ class AgentClient
     }
 
     /**
-     * The environment variables of the website of a job. They are not in the job: they can
-     * have secrets, for example the password of a database. The panel adds the current values
-     * each time that it sends a job with the website, as for the secrets of a deploy.
+     * The environment variables and the protection of the website of a job. They are not in
+     * the job: the variables can have secrets, for example the password of a database, and the
+     * protection has the password hashes of the protected paths. The panel adds the current
+     * values each time that it sends a job with the website, as for the secrets of a deploy.
+     * Thus a job that waited in the queue does not undo a later change.
      *
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    private static function withEnvironment(AgentJob $job, array $payload): array
+    private static function withWebsiteValues(AgentJob $job, array $payload): array
     {
+        if ($job->action === AgentAction::SetWebsiteSecurity && $job->website_id) {
+            $website = Website::whereKey($job->website_id)->first();
+
+            return $payload + ['security' => $website ? WebsiteSecurity::forAgent($website) : null];
+        }
         if (! is_array($payload['website'] ?? null) || ! $job->website_id || ($payload['website']['id'] ?? null) !== $job->website_id) {
             return $payload;
         }
-        $variables = Website::whereKey($job->website_id)->first()?->variables() ?? [];
+        $website = Website::whereKey($job->website_id)->first();
+        $variables = $website?->variables() ?? [];
         if ($variables) {
             $payload['website']['environment'] = (object) $variables;
+        }
+        $security = $website ? WebsiteSecurity::forAgent($website) : null;
+        if ($security !== null) {
+            $payload['website']['security'] = $security;
         }
 
         return $payload;

@@ -3,7 +3,12 @@
   "logging": {
     "logs": {
       "access": { "encoder": { "format": "json" }, "include": ["http.log.access"] },
-      "default": { "exclude": ["http.log.access"] }
+      "firewall": {
+        "writer": { "output": "file", "filename": "/data/logs/firewall.log", "roll_size_mb": 20, "roll_keep": 1 },
+        "encoder": { "format": "json" },
+        "include": ["http.handlers.waf"]
+      },
+      "default": { "exclude": ["http.log.access", "http.handlers.waf"] }
     }
   },
   "apps": {

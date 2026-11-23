@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/images"
@@ -521,6 +522,12 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 				return false, errors.New("the root helper has no image of the edge proxy")
 			}
 			return d.prepareEdge(ctx, d.EdgeImage, d.DataDir)
+		}),
+		opEdgeFirewallEvents: gate.Op(func(ctx context.Context, in firewallEventsIn) ([]caddy.FirewallEvent, error) {
+			if in.Limit <= 0 || in.Limit > maxFirewallEvents {
+				return nil, errors.New("the number of firewall events is not valid")
+			}
+			return d.firewallEvents(ctx, in.Website, in.Limit)
 		}),
 
 		// SFTP: the keys of a website user, the user list and the container.
