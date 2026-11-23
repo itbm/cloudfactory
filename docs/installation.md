@@ -1067,6 +1067,38 @@ Before you turn off DNSSEC, or remove a zone that has DNSSEC, remove the DS reco
 registrar and wait one day. If the registrar still has the DS record, resolvers refuse all
 answers for the domain.
 
+The page of the zone shows the DS records that the registry of the domain has. The panel asks
+the public DNS once each day. To ask again now, click "Check" on the page of the zone, or run
+`cf dns check example.com`. "Wrong DS record" tells you that the registry has a DS record for
+a different key. Then the resolvers that check DNSSEC refuse all answers for the domain. Give
+the DS record of the zone to the registrar, and remove the other DS record.
+
+#### Change the DNSSEC key
+
+You can change the key of a zone on the DNS servers of the panel. The zone has correct
+signatures during the change.
+
+1. On the page of the zone, click "Change key". Or run `cf dns dnssec example.com rollover`.
+2. Wait approximately 3 hours. The DNS servers publish the new key.
+3. When the page shows step 2, give the new DS record to the registrar. You can replace the
+   old DS record or add the new DS record.
+4. Wait. The panel checks the registry each 15 minutes. When the registry has the new DS
+   record, both keys sign the zone for at least one day.
+5. Remove the old DS record at the registrar, if the registrar has it.
+
+Then the panel removes the old key. To see the step, run `cf dns get example.com`.
+
+In step 2, the DNS servers also publish CDS and CDNSKEY records for the new key. A registry
+that reads these records gets the new DS record by itself.
+
+To stop a change before the registry has the new DS record, click "Stop the change", or run
+`cf dns dnssec example.com cancel`. The new key goes. Do not stop a change after you removed
+the old DS record at the registrar.
+
+![A change of the DNSSEC key in step 2: the new DS record for the registrar](screenshots/dns/10-dnssec-key-change.png)
+
+A zone at an external DNS provider has the key of the provider. The panel cannot change it.
+
 #### A zone that a DNS server could not load
 
 The page of the zone shows the state of the zone on each name server. When a server could

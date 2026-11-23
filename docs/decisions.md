@@ -147,6 +147,16 @@ The DNS server is Knot DNS in one container on each server with the role `dns`.
 - The panel makes the DNSSEC key of a zone and gives it to each DNS server. With a key that
   each server made itself, the servers would give different signatures and the registrar
   would need one DS record for each server.
+- The panel changes the DNSSEC key of a zone only when a user asks, not on a schedule. Each
+  change needs the new DS record at the registrar, and many registries do not read CDS
+  records. A change on a schedule would wait for a user in the step `submit`, so a schedule
+  gives no advantage.
+- A change of the key uses double signatures in its last step (RFC 6781), and the panel does
+  not remove the old key until the registry has the new DS record. The old DS record and the
+  new DS record are both correct during the change, so the time when the user changes the
+  record at the registrar is not important.
+- The panel reads the DS records from the public DNS, not from the API of a registrar. This
+  check operates for all registrars, and it shows what the resolvers see.
 
 ## Who checks the registry for new image tags
 

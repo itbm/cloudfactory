@@ -148,7 +148,10 @@ Usage:
   cf dns set ZONE RECORD_ID [--name NAME] [--value VALUE] [--ttl SECONDS] [--priority N]
   cf dns remove ZONE RECORD_ID
   cf dns dnssec ZONE on|off                            Before "off", remove the DS record at the registrar.
-  cf dns check ZONE                                    Ask the public DNS for the name servers of the zone again.
+  cf dns dnssec ZONE rollover                          Change the DNSSEC key in three steps. "cf dns get" shows the step, and
+                                                       when to give the new DS record to the registrar.
+  cf dns dnssec ZONE cancel                            Stop a change of the key before the registry has the new DS record.
+  cf dns check ZONE                                    Ask the public DNS for the name servers and the DS records again.
   cf dns sync ZONE                                     Send the zone to each DNS server again.
   cf dns import ZONE FILE [--dry-run]                  Add the records of a zone file (the format of BIND), for example
                                                        the export of your current DNS provider. --dry-run makes no change.

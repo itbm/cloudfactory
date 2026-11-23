@@ -102,7 +102,7 @@ describe("the page of a DNS zone", () => {
     const main = screen.getByRole("main");
     await waitFor(() => expect(main.textContent).toContain("mx1.mail.example"));
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("acme.example.com");
-    expect(within(main).getByLabelText("DS record").textContent).toMatch(/^acme\.example\.com\. IN DS \d+ 13 2 [0-9A-F]{64}$/);
+    expect(within(main).getByLabelText("New DS record").textContent).toMatch(/^acme\.example\.com\. IN DS \d+ 13 2 [0-9A-F]{64}$/);
     expect(main.textContent).toContain("Uses these name servers");
     expect(main.textContent).toContain("Has the last change");
     expect(main.textContent).toContain("Priority 10");
@@ -174,6 +174,57 @@ describe("the page of a DNS zone", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Turn off DNSSEC" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Turn on" })).toBeTruthy());
     expect(api.changes.at(-1)).toMatchObject({ method: "PUT", body: { enabled: false } });
+  });
+
+  it("shows the change of the DNSSEC key, stops it and starts it again", async () => {
+    const api = await open("owner", () => `/dns/${zone("acme.example.com").id}`);
+    const id = zone("acme.example.com").id;
+    const { newDs, oldDs } = zone("acme.example.com").dnssec.rollover!;
+    const card = screen.getByRole("heading", { name: "DNSSEC" }).closest("section")!;
+    // The demonstration waits for the new DS record at the registry.
+    const steps = within(card).getByRole("list", { name: "Steps of the change of the key" });
+    expect(within(steps).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Publish the new key on the DNS serversDone", "Give the new DS record to the registrarIn progress", "Sign with both keys, then remove the old keyNot started",
+    ]);
+    expect(card.textContent).toContain("Give the new DS record below to the registrar of the domain.");
+    expect(within(card).getByLabelText("New DS record").textContent).toBe(newDs.record);
+    expect(card.textContent).toContain(`Has the DS recordFor key ${oldDs.keyTag}.`);
+    expect(within(card).queryByRole("button", { name: "Change key" })).toBeNull();
+
+    // The answer of the change, and the zone that the page reads after the jobs.
+    const answer = (dnssec: object) => {
+      api.change<{ dnssec: object }>(`/dns-zones/${id}`, (z) => { z.dnssec = { ...z.dnssec, ...dnssec }; });
+      return [202, { zone: { ...(JSON.parse(JSON.stringify(zone("acme.example.com"))) as object), delegation: { state: "here", nameServers: [], checkedAt: null }, dnssec: { ...(JSON.parse(JSON.stringify(zone("acme.example.com").dnssec)) as object), ...dnssec } }, jobs: [] }];
+    };
+    api.on(`DELETE /dns-zones/${id}/dnssec/rollover`, () => answer({ ds: oldDs, rollover: null }));
+    fireEvent.click(within(card).getByRole("button", { name: "Stop the change" }));
+    let dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("Do not stop the change if you removed the old DS record at the registrar.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Stop the change" }));
+    await waitFor(() => expect(within(card).getByLabelText("DS record").textContent).toBe(oldDs.record));
+    expect(api.changes.at(-1)).toMatchObject({ method: "DELETE", path: `/dns-zones/${id}/dnssec/rollover` });
+    expect(card.textContent).toContain("Give this DS record to the registrar of the domain.");
+
+    api.on(`POST /dns-zones/${id}/dnssec/rollover`, () => answer({ ds: oldDs, rollover: { step: "publish", startedAt: "2026-11-14T10:00:00+00:00", until: null, newDs, oldDs } }));
+    fireEvent.click(within(card).getByRole("button", { name: "Change key" }));
+    dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("You can stop the change until the registry has the new DS record.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change the key" }));
+    await waitFor(() => expect(card.textContent).toContain("Do not change the DS record at the registrar yet."));
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: `/dns-zones/${id}/dnssec/rollover` });
+    expect(card.textContent).toContain("The next step starts 3 hours after each DNS server has the new key.");
+    expect(within(card).getByLabelText("DS record").textContent).toBe(oldDs.record);
+  });
+
+  it("tells the owner when the registry has a DS record for a different key", async () => {
+    const api = await signedIn("owner");
+    const id = zone("acme.example.com").id;
+    api.change<{ dnssec: object }>(`/dns-zones/${id}`, (z) => { z.dnssec = { ...z.dnssec, rollover: null, parent: { state: "other", keyTags: [], otherKeyTags: [4242], checkedAt: "2026-11-14T10:00:00+00:00" } }; });
+    render(<MemoryRouter initialEntries={[`/dns/${id}`]}><App /></MemoryRouter>);
+    const card = screen.getByRole("heading", { name: "DNSSEC" }).closest("section")!;
+    await waitFor(() => expect(card.textContent).toContain("Wrong DS record"));
+    expect(card.textContent).toContain("Wrong DS record");
+    expect(card.textContent).toContain("The DS record is for key 4242, which the zone does not have.");
   });
 
   it("shows the cause and sends a failed zone again", async () => {

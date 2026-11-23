@@ -745,15 +745,28 @@ message DnsZone {
   // that has a smaller serial.
   int64 serial = 2;
   repeated DnsRecord records = 3;
-  // The private DNSSEC key of the zone: an ECDSA P-256 key in the PKCS #8 PEM format. Empty
-  // when DNSSEC is off. The DNS server then removes the keys and the signatures of the zone.
-  string dnssec_key = 4;
-  // The key tag of the key. The agent imports the key only when the DNS server does not
-  // have a key with this tag.
-  int32 dnssec_key_tag = 5;
+  reserved 4, 5;
   // The zone transfers to the secondary DNS servers of the owner of the zone. Empty: only
   // the secondaries of SetDnsSecondaries copy the zone.
   DnsTransfers transfers = 6;
+  // The DNSSEC keys of the zone: one key, or two keys during a change of the key. Empty when
+  // DNSSEC is off. The DNS server then removes the keys and the signatures of the zone.
+  repeated DnssecKey dnssec_keys = 7;
+}
+
+// A DNSSEC key of a zone. The key signs the zone and its keys (a combined signing key).
+message DnssecKey {
+  // The private key: an ECDSA P-256 key in the PKCS #8 PEM format. The panel adds it each
+  // time that it sends the job.
+  string key = 1;
+  // The key tag of the key. The agent imports the key only when the DNS server does not
+  // have a key with this tag.
+  int32 key_tag = 2;
+  // "active": the key signs the zone. "ready": the key is in the DNSKEY records and signs
+  // them, but it does not sign the other records. "submit": as "ready", and the zone has
+  // CDS and CDNSKEY records for the key (RFC 7344), so that the registry can get the new DS
+  // record.
+  string state = 3;
 }
 
 // A TSIG key (RFC 8945) that signs the zone transfers and the NOTIFY messages.

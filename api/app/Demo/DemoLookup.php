@@ -3,7 +3,9 @@
 namespace App\Demo;
 
 use App\Models\DnsZone;
+use App\Services\Dns\Dnssec;
 use App\Services\Dns\Lookup;
+use App\Services\Dns\Rollover;
 use App\Services\Dns\Zones;
 
 /**
@@ -14,6 +16,7 @@ use App\Services\Dns\Zones;
  * - A new zone with a name that starts with "elsewhere." has the name servers of a registrar.
  * - A zone at an external DNS provider has the name servers that the provider gave.
  * - Each other zone has the name servers of the panel.
+ * - The registry has the DS record of each zone with DNSSEC.
  */
 class DemoLookup extends Lookup
 {
@@ -31,5 +34,21 @@ class DemoLookup extends Lookup
         }
 
         return str_starts_with($zone, 'elsewhere.') ? self::REGISTRAR : Zones::nameServers();
+    }
+
+    /**
+     * The registry has the DS record of the key of each zone with DNSSEC. In a change of the
+     * key, the registry gets the new DS record only in the step "retire": the demonstration
+     * waits in the step "submit", because nobody gives the new record to a registrar.
+     */
+    public function ds(string $zone): ?array
+    {
+        $known = DnsZone::where('name', $zone)->first();
+        if (! $known || ! $known->dnssec || $known->dns_account_id !== null || str_starts_with($zone, 'elsewhere.')) {
+            return [];
+        }
+        $public = $known->dnssec_rollover === Rollover::RETIRE ? $known->dnssec_next_public_key : $known->dnssec_public_key;
+
+        return $public ? [Dnssec::ds($zone, $public) + ['ttl' => 86400]] : [];
     }
 }

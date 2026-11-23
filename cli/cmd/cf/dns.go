@@ -61,6 +61,67 @@ func dnssecText(zone map[string]any) string {
 	return "off"
 }
 
+// rolloverSteps tells what happens in each step of a change of the DNSSEC key.
+var rolloverSteps = map[string]string{
+	"publish": "step 1 of 3: the DNS servers publish the new key. Do not change the DS record at the registrar yet",
+	"submit":  "step 2 of 3: give the new DS record to the registrar of the domain",
+	"retire":  "step 3 of 3: both keys sign the zone. Then the old key goes",
+}
+
+// keyTags joins the key tags of a list of the API.
+func keyTags(v any) string {
+	list, _ := v.([]any)
+	tags := make([]string, len(list))
+	for i, t := range list {
+		tags[i] = cell(t)
+	}
+	return strings.Join(tags, ", ")
+}
+
+// registryText tells which DS records the registry of the domain has.
+func registryText(p map[string]any) string {
+	others := keyTags(p["otherKeyTags"])
+	switch p["state"] {
+	case "ok":
+		if others != "" {
+			return "has the DS record of key " + keyTags(p["keyTags"]) + ", and a DS record of key " + others + ", which the zone does not have. Remove it at the registrar"
+		}
+		return "has the DS record of key " + keyTags(p["keyTags"])
+	case "none":
+		return "has no DS record. Resolvers do not check the signatures"
+	case "other":
+		return "has a DS record of key " + others + ", which the zone does not have. Resolvers that check DNSSEC refuse the answers"
+	}
+	return "not known. The panel could not ask the public DNS"
+}
+
+// printDnssec shows the DS record, a change of the key and the DS records at the registry.
+func (a *app) printDnssec(zone map[string]any) {
+	d, _ := zone["dnssec"].(map[string]any)
+	r, _ := d["rollover"].(map[string]any)
+	if ds, ok := d["ds"].(map[string]any); ok {
+		if r != nil && r["step"] != "publish" {
+			fmt.Fprintf(a.out, "New DS record: %s\n", cell(ds["record"]))
+		} else {
+			fmt.Fprintf(a.out, "DS record:     %s\n", cell(ds["record"]))
+		}
+	}
+	p, _ := d["parent"].(map[string]any)
+	if r != nil {
+		fmt.Fprintf(a.out, "Key change:    %s\n", rolloverSteps[cell(r["step"])])
+		if r["until"] != nil {
+			fmt.Fprintf(a.out, "Step ends:     not before %s\n", cell(r["until"]))
+		}
+		old, _ := r["oldDs"].(map[string]any)
+		if r["step"] == "retire" && p != nil && strings.Contains(", "+keyTags(p["keyTags"])+", ", ", "+cell(old["keyTag"])+", ") {
+			fmt.Fprintf(a.out, "Old DS record: %s (remove it at the registrar)\n", cell(old["record"]))
+		}
+	}
+	if p != nil {
+		fmt.Fprintf(a.out, "Registry:      %s (checked %s)\n", registryText(p), cell(p["checkedAt"]))
+	}
+}
+
 // printZone shows a zone: what the customer gives to the registrar, and the state of the zone.
 func (a *app) printZone(zone map[string]any) {
 	fmt.Fprintf(a.out, "Name:          %s\nID:            %s\nStatus:        %s\nCustomer:      %s\nRecords:       %s\nSerial:        %s\n",
@@ -86,10 +147,7 @@ func (a *app) printZone(zone map[string]any) {
 		}
 	}
 	fmt.Fprintf(a.out, "Public DNS:    %s\nDNSSEC:        %s\n", delegationText(zone), dnssecText(zone))
-	if d, _ := zone["dnssec"].(map[string]any); d["ds"] != nil {
-		ds, _ := d["ds"].(map[string]any)
-		fmt.Fprintf(a.out, "DS record:     %s\n", cell(ds["record"]))
-	}
+	a.printDnssec(zone)
 	a.printTransfers(zone)
 	if d, _ := zone["delegation"].(map[string]any); d["state"] != "here" {
 		fmt.Fprintln(a.out, "Give the name servers to the registrar of the domain. Then run: cf dns check "+cell(zone["name"]))
@@ -302,8 +360,21 @@ func (a *app) dns(ctx context.Context, sub string, args []string) error {
 		}
 		return a.changeZone(ctx, http.MethodDelete, path+"/records/"+url.PathEscape(rest[0]), nil)
 	case "dnssec":
-		if len(rest) != 1 || (rest[0] != "on" && rest[0] != "off") {
-			return errors.New("give on or off")
+		if len(rest) != 1 || (rest[0] != "on" && rest[0] != "off" && rest[0] != "rollover" && rest[0] != "cancel") {
+			return errors.New("give on, off, rollover or cancel")
+		}
+		switch rest[0] {
+		case "rollover":
+			// A change of the key: the panel moves it to the next step when it can.
+			if err := a.changeZone(ctx, http.MethodPost, path+"/dnssec/rollover", nil); err != nil {
+				return err
+			}
+			if !a.json {
+				fmt.Fprintln(a.out, "In approximately 3 hours, give the new DS record to the registrar. Run \"cf dns get "+cell(zone["name"])+"\" to see the step.")
+			}
+			return nil
+		case "cancel":
+			return a.changeZone(ctx, http.MethodDelete, path+"/dnssec/rollover", nil)
 		}
 		if err := a.changeZone(ctx, http.MethodPut, path+"/dnssec", map[string]any{"enabled": rest[0] == "on"}); err != nil {
 			return err
@@ -321,6 +392,9 @@ func (a *app) dns(ctx context.Context, sub string, args []string) error {
 			return a.printJSON(out)
 		}
 		fmt.Fprintf(a.out, "%s: %s.\n", cell(out["name"]), delegationText(out))
+		if d, _ := out["dnssec"].(map[string]any); d["rollover"] != nil || d["parent"] != nil {
+			a.printDnssec(out)
+		}
 		return nil
 	case "sync":
 		return a.changeZone(ctx, http.MethodPost, path+"/sync", nil)

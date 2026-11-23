@@ -52,6 +52,13 @@ func testDnssecKey(t *testing.T) (string, int) {
 	return text, sum & 0xffff
 }
 
+// testKey makes a DNSSEC key with a state.
+func testKey(t *testing.T, state string) dnssecKey {
+	t.Helper()
+	key, tag := testDnssecKey(t)
+	return dnssecKey{Key: key, Tag: tag, State: state}
+}
+
 // These tests use a real Knot DNS server on this computer, with no container. They are the
 // proof that Knot accepts the configuration and the zone files of the agent, and that the
 // sequence of the commands is correct. Set CF_TEST_KNOT=1 on a computer that has knotd, knotc,
@@ -152,11 +159,24 @@ func TestKnotServer(t *testing.T) {
 
 	// DNSSEC on: the server signs the zone with the key of the panel.
 	z.Serial++
-	z.Key, z.KeyTag = testDnssecKey(t)
+	z.Keys = []dnssecKey{testKey(t, keyActive)}
 	set(z)
 	out := dig("example.com", "DNSKEY", "+dnssec", "+multiline")
-	if !strings.Contains(out, "id = "+strconv.Itoa(z.KeyTag)) || !strings.Contains(out, "RRSIG") {
-		t.Errorf("the key with the tag %d:\n%s", z.KeyTag, out)
+	if !strings.Contains(out, "id = "+strconv.Itoa(z.Keys[0].Tag)) || !strings.Contains(out, "RRSIG") {
+		t.Errorf("the key with the tag %d:\n%s", z.Keys[0].Tag, out)
+	}
+	// records gives the records of a type in the answer of a query.
+	records := func(name, rtype string) []string {
+		var out []string
+		for _, line := range strings.Split(dig(name, rtype), "\n") {
+			if f := strings.Fields(line); !strings.HasPrefix(line, ";") && len(f) > 4 && f[3] == rtype {
+				out = append(out, strings.Join(f[4:], " "))
+			}
+		}
+		return out
+	}
+	if cds := records("example.com", "CDS"); len(cds) != 0 {
+		t.Errorf("a CDS record with no change of the key: %v", cds)
 	}
 	if out := dig("example.com", "A", "+dnssec"); !strings.Contains(out, "RRSIG") || !strings.Contains(out, "203.0.113.99") {
 		t.Errorf("a signed answer:\n%s", out)
@@ -175,17 +195,76 @@ func TestKnotServer(t *testing.T) {
 		t.Errorf("keys: %v %v", keys, err)
 	}
 
-	// A new key replaces the key.
+	// A change of the key, in steps. signers gives the key tags of the signatures of an
+	// answer.
+	signers := func(args ...string) []int {
+		tags := []int{}
+		for _, line := range strings.Split(dig(append(args, "+dnssec")...), "\n") {
+			if f := strings.Fields(line); len(f) > 10 && f[3] == "RRSIG" && f[4] == args[1] {
+				tag, _ := strconv.Atoi(f[10])
+				tags = append(tags, tag)
+			}
+		}
+		slices.Sort(tags)
+		return tags
+	}
+	old, next := z.Keys[0], testKey(t, keyReady)
+	both := []int{min(old.Tag, next.Tag), max(old.Tag, next.Tag)}
+	// 1. The new key is in the DNSKEY records and signs them. The old key signs the zone.
 	z.Serial++
-	z.Key, z.KeyTag = testDnssecKey(t)
+	z.Keys = []dnssecKey{old, next}
 	set(z)
-	if out := dig("example.com", "DNSKEY", "+dnssec", "+multiline"); !strings.Contains(out, "id = "+strconv.Itoa(z.KeyTag)) || strings.Count(out, ", id = ") != 1 {
-		t.Errorf("the new key with the tag %d:\n%s", z.KeyTag, out)
+	if got := signers("example.com", "DNSKEY"); !slices.Equal(got, both) {
+		t.Errorf("ready: the DNSKEY records have signatures of %v", got)
+	}
+	if got := signers("example.com", "A"); !slices.Equal(got, []int{old.Tag}) {
+		t.Errorf("ready: the A record has signatures of %v", got)
+	}
+	if cds := records("example.com", "CDS"); len(cds) != 0 {
+		t.Errorf("ready: a CDS record before the step submit: %v", cds)
+	}
+	// 2. The zone has a CDS record and a CDNSKEY record for the new key.
+	z.Serial++
+	z.Keys[1].State = keySubmit
+	set(z)
+	if cds := records("example.com", "CDS"); len(cds) != 1 || !strings.HasPrefix(cds[0], strconv.Itoa(next.Tag)+" 13 2 ") {
+		t.Errorf("submit: the CDS record of the new key: %v", cds)
+	}
+	if cdnskey := records("example.com", "CDNSKEY"); len(cdnskey) != 1 || !strings.HasPrefix(cdnskey[0], "257 3 13 ") {
+		t.Errorf("submit: the CDNSKEY record: %v", cdnskey)
+	}
+	// 3. The registry has the new DS record: both keys sign the zone, and the CDS record goes.
+	z.Serial++
+	z.Keys = []dnssecKey{{Key: next.Key, Tag: next.Tag, State: keyActive}, old}
+	set(z)
+	if got := signers("example.com", "A"); !slices.Equal(got, both) {
+		t.Errorf("both active: the A record has signatures of %v", got)
+	}
+	if cds := records("example.com", "CDS"); len(cds) != 0 {
+		t.Errorf("both active: a CDS record: %v", cds)
+	}
+	// 4. The old key goes.
+	z.Serial++
+	z.Keys = z.Keys[:1]
+	set(z)
+	if got := signers("example.com", "A"); !slices.Equal(got, []int{next.Tag}) {
+		t.Errorf("done: the A record has signatures of %v", got)
+	}
+	if out := dig("example.com", "DNSKEY", "+dnssec", "+multiline"); !strings.Contains(out, "id = "+strconv.Itoa(next.Tag)) || strings.Count(out, ", id = ") != 1 {
+		t.Errorf("done: the new key with the tag %d:\n%s", next.Tag, out)
+	}
+
+	// A new key replaces the key at once, for example after DNSSEC was off.
+	z.Serial++
+	z.Keys = []dnssecKey{testKey(t, keyActive)}
+	set(z)
+	if out := dig("example.com", "DNSKEY", "+dnssec", "+multiline"); !strings.Contains(out, "id = "+strconv.Itoa(z.Keys[0].Tag)) || strings.Count(out, ", id = ") != 1 {
+		t.Errorf("the new key with the tag %d:\n%s", z.Keys[0].Tag, out)
 	}
 
 	// DNSSEC off: the signatures and the keys go.
 	z.Serial++
-	z.Key, z.KeyTag = "", 0
+	z.Keys = nil
 	set(z)
 	if out := dig("example.com", "A", "+dnssec"); strings.Contains(out, "RRSIG") || !strings.Contains(out, "203.0.113.50") {
 		t.Errorf("a zone with no DNSSEC:\n%s", out)
@@ -200,7 +279,7 @@ func TestKnotServer(t *testing.T) {
 	// A second zone, and then the removal of the first one.
 	second := exampleZone()
 	second.Name = "second.example"
-	second.Key, second.KeyTag = testDnssecKey(t)
+	second.Keys = []dnssecKey{testKey(t, keyActive)}
 	set(second)
 	if err := d.removeDnsZones(ctx, []string{"example.com"}); err != nil {
 		t.Fatal(err)
@@ -392,7 +471,7 @@ func TestKnotServerTransfersTheZonesToTheSecondaries(t *testing.T) {
 	set(z)
 	signed := exampleZone()
 	signed.Name = "signed.example"
-	signed.Key, signed.KeyTag = testDnssecKey(t)
+	signed.Keys = []dnssecKey{testKey(t, keyActive)}
 	set(signed)
 
 	key := &dnsTsig{Name: "cf-anycast", Algorithm: "hmac-sha256", Secret: testSecret}

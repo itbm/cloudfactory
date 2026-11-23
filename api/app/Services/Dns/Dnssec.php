@@ -70,11 +70,7 @@ class Dnssec
     public static function ds(string $zone, string $publicKey): array
     {
         $public = (string) base64_decode($publicKey, true);
-        $owner = '';
-        foreach (explode('.', $zone) as $label) {
-            $owner .= chr(strlen($label)).$label;
-        }
-        $digest = strtoupper(hash('sha256', $owner."\0".self::rdata($public)));
+        $digest = (string) self::digest($zone, $publicKey, self::DIGEST_TYPE);
         $tag = self::keyTag($public);
 
         return [
@@ -84,6 +80,38 @@ class Dnssec
             'digest' => $digest,
             'record' => "{$zone}. IN DS {$tag} ".self::ALGORITHM.' '.self::DIGEST_TYPE." {$digest}",
         ];
+    }
+
+    /** The digest types of a DS record that the panel can check, and their hash functions. */
+    private const DIGESTS = [1 => 'sha1', 2 => 'sha256', 4 => 'sha384'];
+
+    /**
+     * The digest of a DS record for a key of the zone, in upper case hexadecimal (RFC 4034,
+     * section 5.1.4). Null for a digest type that the panel does not know.
+     */
+    public static function digest(string $zone, string $publicKey, int $type): ?string
+    {
+        if (! isset(self::DIGESTS[$type])) {
+            return null;
+        }
+        $owner = '';
+        foreach (explode('.', $zone) as $label) {
+            $owner .= chr(strlen($label)).$label;
+        }
+
+        return strtoupper(hash(self::DIGESTS[$type], $owner."\0".self::rdata((string) base64_decode($publicKey, true))));
+    }
+
+    /**
+     * True when a DS record of the registry is for a key of the zone. The registrar can make
+     * the DS record from the DNSKEY record with a different digest type.
+     *
+     * @param  array{keyTag: int, algorithm: int, digestType: int, digest: string}  $ds
+     */
+    public static function matches(string $zone, string $publicKey, array $ds): bool
+    {
+        return $ds['keyTag'] === self::keyTag((string) base64_decode($publicKey, true)) && $ds['algorithm'] === self::ALGORITHM
+            && self::digest($zone, $publicKey, $ds['digestType']) === strtoupper($ds['digest']);
     }
 
     /** The DNSKEY record of a zone, as text. */

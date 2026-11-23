@@ -169,6 +169,8 @@ Route::prefix('v1')->group(function () {
             Route::patch('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'updateRecord'])->middleware('throttle:dns-changes');
             Route::delete('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'destroyRecord'])->middleware('throttle:dns-changes');
             Route::put('dns-zones/{id}/dnssec', [DnsZoneController::class, 'dnssec'])->middleware('throttle:dns-changes');
+            Route::post('dns-zones/{id}/dnssec/rollover', [DnsZoneController::class, 'startRollover'])->middleware('throttle:dns-changes');
+            Route::delete('dns-zones/{id}/dnssec/rollover', [DnsZoneController::class, 'cancelRollover'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/check', [DnsZoneController::class, 'check'])->middleware('throttle:domain-checks');
             Route::post('dns-zones/{id}/sync', [DnsZoneController::class, 'sync'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/import', [DnsZoneController::class, 'import'])->middleware('throttle:dns-changes');

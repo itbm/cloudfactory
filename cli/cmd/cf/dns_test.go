@@ -171,6 +171,77 @@ func TestDnsChanges(t *testing.T) {
 }
 
 // One DNS server took the record, and one did not. The command shows both results and fails.
+func TestDnsKeyChange(t *testing.T) {
+	var calls []string
+	ds := func(tag string) string {
+		return `{"keyTag":` + tag + `,"algorithm":13,"digestType":2,"digest":"AB` + tag + `","record":"example.com. IN DS ` + tag + ` 13 2 AB` + tag + `"}`
+	}
+	zone := func(rollover, parent string) string {
+		return `{"id":"Z1","name":"example.com","customerId":"C1","status":"active","serial":1,"recordCount":1,"nameServers":["ns1.panel.example"],` +
+			`"delegation":{"state":"here","nameServers":["ns1.panel.example"],"checkedAt":null},"servers":[],"websites":0,"createdAt":null,` +
+			`"dnssec":{"enabled":true,"state":"active","ds":` + ds("200") + `,"dnskey":null,"rollover":` + rollover + `,"parent":` + parent + `}}`
+	}
+	const job = `{"id":"J1","title":"Publish a new DNSSEC key for example.com","state":"succeeded","steps":["Write zones"],"step":1}`
+	answer := zone(`null`, `null`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1")
+		if r.Method != http.MethodGet {
+			calls = append(calls, r.Method+" "+path)
+		}
+		switch {
+		case path == "/dns-zones" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"data":[` + answer + `],"nameServers":["ns1.panel.example"]}`))
+		case path == "/dns-zones/Z1" && r.Method == http.MethodGet, path == "/dns-zones/Z1/check":
+			w.Write([]byte(answer))
+		case path == "/dns-zones/Z1/dnssec/rollover":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"zone":` + answer + `,"jobs":[` + job + `]}`))
+		case path == "/jobs/J1":
+			w.Write([]byte(`{"data":` + job + `}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	a, out := testApp(srv)
+	ctx := context.Background()
+	expect := func(args []string, want ...string) {
+		t.Helper()
+		out.Reset()
+		if err := a.dispatch(ctx, args); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		for _, w := range want {
+			if !strings.Contains(out.String(), w) {
+				t.Errorf("%v: no %q in:\n%s", args, w, out)
+			}
+		}
+	}
+
+	answer = zone(`{"step":"publish","startedAt":"2026-11-14T10:00:00+00:00","until":null,"newDs":`+ds("200")+`,"oldDs":`+ds("100")+`}`, `{"state":"ok","keyTags":[100],"otherKeyTags":[],"checkedAt":"2026-11-14T10:00:00+00:00"}`)
+	expect([]string{"dns", "dnssec", "example.com", "rollover"},
+		"Key change:    step 1 of 3: the DNS servers publish the new key.", "Registry:      has the DS record of key 100 (checked 2026-11-14T10:00:00+00:00)\n",
+		"Publish a new DNSSEC key for example.com: complete.\n", "In approximately 3 hours, give the new DS record to the registrar.")
+
+	answer = zone(`{"step":"submit","startedAt":"2026-11-14T13:00:00+00:00","until":null,"newDs":`+ds("200")+`,"oldDs":`+ds("100")+`}`, `{"state":"ok","keyTags":[100],"otherKeyTags":[],"checkedAt":"2026-11-14T13:00:00+00:00"}`)
+	expect([]string{"dns", "get", "example.com"}, "New DS record: example.com. IN DS 200 13 2 AB200\n", "Key change:    step 2 of 3: give the new DS record to the registrar of the domain\n")
+
+	answer = zone(`{"step":"retire","startedAt":"2026-11-14T14:00:00+00:00","until":"2026-11-15T15:00:00+00:00","newDs":`+ds("200")+`,"oldDs":`+ds("100")+`}`, `{"state":"ok","keyTags":[100,200],"otherKeyTags":[],"checkedAt":"2026-11-14T14:00:00+00:00"}`)
+	expect([]string{"dns", "check", "example.com"}, "example.com: the registrar sends the queries to the panel.\n", "Step ends:     not before 2026-11-15T15:00:00+00:00\n",
+		"Old DS record: example.com. IN DS 100 13 2 AB100 (remove it at the registrar)\n", "Registry:      has the DS record of key 100, 200 (checked")
+
+	answer = zone(`null`, `{"state":"other","keyTags":[],"otherKeyTags":[4242],"checkedAt":"2026-11-14T14:00:00+00:00"}`)
+	expect([]string{"dns", "dnssec", "example.com", "cancel"}, "Registry:      has a DS record of key 4242, which the zone does not have. Resolvers that check DNSSEC refuse the answers")
+	if strings.Contains(out.String(), "Key change:") {
+		t.Errorf("output:\n%s", out)
+	}
+	if strings.Join(calls, "; ") != "POST /dns-zones/Z1/dnssec/rollover; POST /dns-zones/Z1/check; DELETE /dns-zones/Z1/dnssec/rollover" {
+		t.Errorf("calls: %v", calls)
+	}
+}
+
 func TestDnsAddShowsTheJobOfEachServer(t *testing.T) {
 	srv, calls := dnsPanel(t)
 	defer srv.Close()

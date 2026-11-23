@@ -1376,6 +1376,27 @@ export function setDnssec(zoneId: string, enabled: boolean): Promise<void> {
   });
 }
 
+/**
+ * Starts a change of the DNSSEC key of a zone on the DNS servers of the panel. The panel makes a
+ * new key, and moves the change to the next step when it can.
+ */
+export function startDnssecRollover(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", `/dns-zones/${zoneId}/dnssec/rollover`);
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Stops a change of the DNSSEC key before the registry has the new DS record. The new key goes. */
+export function cancelDnssecRollover(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("DELETE", `/dns-zones/${zoneId}/dnssec/rollover`);
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
 /** The result of an import of a zone file, or of its preview. */
 export interface DnsImportResult {
   dryRun: boolean;

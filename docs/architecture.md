@@ -852,8 +852,44 @@ each DNS server with the zone, so all servers sign with the same key. The root h
 the key to Knot DNS, and Knot DNS signs the zone with NSEC3 (no more iterations, no salt).
 The panel shows the DS record that the customer gives to the registrar.
 
-The panel does not change the key of a zone on a schedule. To change the key, remove the DS
-record at the registrar, turn DNSSEC off and on, and give the new DS record to the registrar.
+#### Change of the key
+
+A user can change the key of a zone on the DNS servers of the panel. The change is a key
+rollover with double signatures (RFC 6781 and RFC 7583). The panel changes the key only when
+a user asks, because the registrar must get the new DS record. The change has three steps:
+
+| Step | Keys in the zone | The step ends |
+| --- | --- | --- |
+| `publish` | The old key signs the zone. The new key signs only the DNSKEY records. | Each DNS server has the new key. Then the panel waits 3 hours: the TTL of the DNSKEY records, the refresh time of the secondary servers and a margin, each 1 hour. |
+| `submit` | As in `publish`. The DNS servers also publish CDS and CDNSKEY records for the new key. The user gives the new DS record to the registrar. | The public DNS gives the new DS record, or no DS record. |
+| `retire` | Both keys sign each record. | The panel waits the largest of one day, the TTL of the DS records and the largest TTL of the zone, plus 1 hour. The step does not end while the registry has only the old DS record. |
+
+Then the new key replaces the old key, and the DNS servers remove the old key. In each step,
+a resolver that has the old DS record or the new DS record in its cache can check the zone.
+
+- The command `cloudfactory:check-dns` (each 15 minutes) and "Check now" on the page of the
+  zone move a change to the next step.
+- The panel sends the keys to each DNS server with the zone. Each key has a state: `active`
+  (it signs the zone), `ready` (it signs only the DNSKEY records) or `submit` (as `ready`,
+  and the server publishes CDS and CDNSKEY records for it). The root helper gives the keys and
+  their times to Knot DNS with `keymgr`, and Knot DNS signs the zone again.
+- A registry that reads CDS records (RFC 7344 and RFC 8078) can get the new DS record by itself.
+- A user can stop a change in the steps `publish` and `submit`. The panel refuses to stop it
+  when the registry has the new DS record. When a change stops, the new key goes.
+
+#### DS records at the registry
+
+The panel asks the public DNS for the DS records of each zone with DNSSEC. The command
+`cloudfactory:check-dns` asks once each day for each zone, and each 15 minutes for a zone
+with a change of the key. The panel compares each DS record with the keys of the zone and
+keeps the result (`dnssec_parent`):
+
+| State | Meaning |
+| --- | --- |
+| `ok` | A DS record is for a key of the zone. |
+| `none` | The registry has no DS record. Resolvers do not check the signatures. |
+| `other` | No DS record is for a key of the zone. Resolvers that check DNSSEC refuse the answers for the domain. |
+| `unknown` | The lookup failed. |
 
 For a zone at an external DNS provider, the provider makes the key and signs the zone. The
 plugin gives the DS record in the answer to `sync`.

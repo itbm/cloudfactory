@@ -87,7 +87,7 @@ class DnsTest extends TestCase
                     ['name' => '@', 'type' => 'NS', 'ttl' => 3600, 'value' => self::NS[0], 'priority' => 0],
                     ['name' => '@', 'type' => 'NS', 'ttl' => 3600, 'value' => self::NS[1], 'priority' => 0],
                 ],
-                'dnssecKey' => '', 'dnssecKeyTag' => 0, 'transfers' => null,
+                'dnssecKeys' => [], 'transfers' => null,
             ]], $job->payload['zones']);
         }
 
@@ -431,20 +431,19 @@ class DnsTest extends TestCase
         $jobs = AgentJob::whereIn('id', $response->json('jobs.*.id'))->get();
         foreach ($jobs as $job) {
             // The job record has no key. The panel adds the key when it sends the job.
-            $this->assertSame('', $job->payload['zones'][0]['dnssecKey']);
-            $this->assertSame($zone->dnssec_key, Zones::keysFor($job)['zones'][0]['dnssecKey']);
-            $this->assertSame($zone->dnssec_key_tag, $job->payload['zones'][0]['dnssecKeyTag']);
+            $this->assertSame([['key' => '', 'keyTag' => $zone->dnssec_key_tag, 'state' => 'active']], $job->payload['zones'][0]['dnssecKeys']);
+            $this->assertSame([['key' => $zone->dnssec_key, 'keyTag' => $zone->dnssec_key_tag, 'state' => 'active']], Zones::keysFor($job)['zones'][0]['dnssecKeys']);
         }
         // The DNS servers have the key. The record of the job does not keep it.
         $this->finish($jobs->pluck('id')->all());
-        $this->assertArrayNotHasKey('dnssecKey', AgentJob::find($jobs[0]->id)->payload['zones'][0]);
+        $this->assertSame([['keyTag' => $zone->dnssec_key_tag, 'state' => 'active']], AgentJob::find($jobs[0]->id)->payload['zones'][0]['dnssecKeys']);
 
         // The same request again changes nothing.
         $this->putJson("/api/v1/dns-zones/{$zone->id}/dnssec", ['enabled' => true])->assertAccepted()->assertJsonCount(0, 'jobs')->assertJsonPath('zone.dnssec.ds.keyTag', $ds['keyTag']);
 
         $off = $this->putJson("/api/v1/dns-zones/{$zone->id}/dnssec", ['enabled' => false])->assertAccepted()
             ->assertJsonPath('zone.dnssec.enabled', false)->assertJsonPath('zone.dnssec.ds', null);
-        $this->assertSame('', AgentJob::find($off->json('jobs.0.id'))->payload['zones'][0]['dnssecKey']);
+        $this->assertSame([], AgentJob::find($off->json('jobs.0.id'))->payload['zones'][0]['dnssecKeys']);
         $this->assertNull($zone->fresh()->dnssec_key);
     }
 

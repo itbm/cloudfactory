@@ -590,7 +590,8 @@ class JobOutcome
         }
         // The DNS servers have the DNSSEC keys now. The zone keeps its key.
         if (is_array($payload['zones'] ?? null)) {
-            $payload['zones'] = array_map(fn ($z) => is_array($z) ? array_diff_key($z, ['dnssecKey' => true]) : $z, $payload['zones']);
+            $payload['zones'] = array_map(fn ($z) => is_array($z) && is_array($z['dnssecKeys'] ?? null)
+                ? ['dnssecKeys' => array_map(fn ($k) => is_array($k) ? array_diff_key($k, ['key' => true]) : $k, $z['dnssecKeys'])] + $z : $z, $payload['zones']);
         }
         if (isset($payload['copyUsers'])) {
             $payload['copyUsers'] = array_map(fn ($u) => array_diff_key($u, ['password' => true]), $payload['copyUsers']);

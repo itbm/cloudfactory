@@ -900,6 +900,9 @@ a.stat-link .stat-value { margin-bottom: 8px; }
 .cluster-step-todo { color: var(--text-muted); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .cluster-step-now svg { animation: none; } }
+/* DNS zones: a change of the DNSSEC key, with the steps of the mail clusters. */
+.key-change { margin: 12px 0; padding: 2px 12px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.key-change .section-title { margin-top: 10px; }
 .cluster-members { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .cluster-member { border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; }
 .cluster-member-on { border-color: var(--primary); padding-bottom: 12px; }

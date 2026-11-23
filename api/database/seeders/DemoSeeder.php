@@ -43,6 +43,7 @@ use App\Models\Website;
 use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
 use App\Services\Dns\Dnssec;
+use App\Services\Dns\Rollover;
 use App\Services\Dns\Secondaries;
 use App\Services\Dns\Zones;
 use App\Services\Networks;
@@ -662,6 +663,19 @@ class DemoSeeder extends Seeder
             ]);
             $zone->created_at = now()->subDays($days);
             $zone->save();
+            // The registry has the DS record of each zone with DNSSEC.
+            if ($key) {
+                $zone->update(['dnssec_parent' => ['state' => 'ok', 'keys' => ['current'], 'keyTags' => [$key['keyTag']], 'ttl' => 86400, 'checkedAt' => now()->subMinutes(9)->toIso8601String()]]);
+            }
+            // Acme Ltd changes the DNSSEC key of its main zone. The DNS servers publish the CDS
+            // record of the new key, and the panel waits for the new DS record at the registry.
+            if ($name === 'acme.example.com') {
+                do {
+                    $next = Dnssec::generate();
+                } while ($next['keyTag'] === $key['keyTag']);
+                $zone->update(['dnssec_rollover' => Rollover::SUBMIT, 'dnssec_next_key' => $next['key'], 'dnssec_next_public_key' => $next['publicKey'],
+                    'dnssec_next_key_tag' => $next['keyTag'], 'dnssec_rollover_at' => now()->subHours(5), 'dnssec_rollover_until' => null]);
+            }
             // Acme Ltd also sends its main zone to its own secondary DNS server.
             if ($name === 'acme.example.com') {
                 $zone->update(['transfer_addresses' => ['192.0.2.200'], 'transfer_notify' => true, 'transfer_tsig_algorithm' => 'hmac-sha256',

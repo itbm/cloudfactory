@@ -22,6 +22,9 @@ import type {
   DnsProvider,
   DnsSecondaries,
   DnsZone,
+  DnssecParent,
+  DnssecRollover,
+  DsRecord,
   DnsZoneProvider,
   DomainVerification,
   Job,
@@ -192,7 +195,11 @@ interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" |
   delegation: { state: DnsZone["delegation"]["state"]; nameServers: string[]; checkedAt: string | null };
   transfers?: ApiDnsTransfers | null;
   // A panel API of an earlier release has no state and no provider.
-  dnssec: { enabled: boolean; state?: DnsZone["dnssec"]["state"]; ds: DnsZone["dnssec"]["ds"] | null; dnskey: string | null };
+  dnssec: {
+    enabled: boolean; state?: DnsZone["dnssec"]["state"]; ds: DsRecord | null; dnskey: string | null;
+    rollover?: (Omit<DnssecRollover, "startedAt" | "until"> & { startedAt: string | null; until: string | null }) | null;
+    parent?: (Omit<DnssecParent, "checkedAt"> & { checkedAt: string | null }) | null;
+  };
   provider?: ApiDnsZoneProvider | null;
   createdAt: string | null;
   records?: ApiDnsRecord[];
@@ -362,7 +369,11 @@ const toDnsZoneProvider = (p: ApiDnsZoneProvider): DnsZoneProvider => ({
 export const toDnsZone = (z: ApiDnsZone): DnsZone => ({
   ...z,
   delegation: { state: z.delegation.state, nameServers: z.delegation.nameServers ?? [], checkedAt: z.delegation.checkedAt ?? undefined },
-  dnssec: { enabled: z.dnssec.enabled, state: z.dnssec.state ?? (z.dnssec.enabled ? "active" : "off"), ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined },
+  dnssec: {
+    enabled: z.dnssec.enabled, state: z.dnssec.state ?? (z.dnssec.enabled ? "active" : "off"), ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined,
+    rollover: z.dnssec.rollover ? { ...z.dnssec.rollover, startedAt: z.dnssec.rollover.startedAt ?? undefined, until: z.dnssec.rollover.until ?? undefined } : undefined,
+    parent: z.dnssec.parent ? { ...z.dnssec.parent, checkedAt: z.dnssec.parent.checkedAt ?? undefined } : undefined,
+  },
   provider: z.provider ? toDnsZoneProvider(z.provider) : undefined,
   transfers: z.transfers ? { ...z.transfers, tsig: z.transfers.tsig ?? undefined } : undefined,
   createdAt: z.createdAt ?? "",

@@ -295,7 +295,11 @@ The product specification, section 6.4, gives the requirements.
 - The container `cf-dns` runs in gVisor with a Unix user that has no other work. It can read
   the zone files and cannot change them. It can write only its keys and signatures.
 - The private DNSSEC key of a zone is encrypted in the panel database. On a DNS server, only
-  the user `cf-dns` and root can read it.
+  the user `cf-dns` and root can read it. During a change of the key, the same is true for
+  the new key. The DNS servers remove the old key after the change.
+- The panel asks the public DNS for the DS records of each zone with DNSSEC each day. The page
+  of the zone shows a DS record for a different key, which stops the domain for the
+  resolvers that check DNSSEC.
 - The DNS server answers only for its zones. It has no recursion, and it limits the rate of
   the answers to one network.
 

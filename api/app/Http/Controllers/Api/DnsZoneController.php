@@ -17,6 +17,7 @@ use App\Services\Branding;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Import;
 use App\Services\Dns\Records;
+use App\Services\Dns\Rollover;
 use App\Services\Dns\Secondaries;
 use App\Services\Dns\ZoneFile;
 use App\Services\Dns\Zones;
@@ -193,6 +194,29 @@ class DnsZoneController extends Controller
     }
 
     /**
+     * Starts a change of the DNSSEC key of the zone. Refer to Rollover: the new key goes to the
+     * DNS servers, and some hours later the panel shows its DS record for the registrar.
+     */
+    public function startRollover(Request $request, string $id, Rollover $rollover): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $jobs = $rollover->start($zone);
+        Audit::record($request, 'Started a change of the DNSSEC key', $zone->name, $zone->customer_id);
+
+        return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /** Stops a change of the DNSSEC key before the registry has the new DS record. */
+    public function cancelRollover(Request $request, string $id, Rollover $rollover): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $jobs = $rollover->cancel($zone);
+        Audit::record($request, 'Stopped a change of the DNSSEC key', $zone->name, $zone->customer_id);
+
+        return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /**
      * Sends the zone to secondary DNS servers of the owner of the zone with zone transfers, or
      * changes them. Refer to Secondaries::setTransfers. The answer does not give the TSIG
      * secret: the route "transfers/secret" gives it.
@@ -287,10 +311,12 @@ class DnsZoneController extends Controller
     }
 
     /** Asks the public DNS again if the name servers of the zone are the name servers of the panel. */
-    public function check(Request $request, string $id): JsonResponse
+    public function check(Request $request, string $id, Rollover $rollover): JsonResponse
     {
         $zone = $this->findActive($request, $id);
         $this->zones->checkDelegation($zone);
+        // The DS records at the registry. A change of the key can go to its next step.
+        $rollover->check($zone);
 
         return response()->json(self::present($zone->fresh(), Zones::servers(), records: true));
     }
@@ -443,6 +469,9 @@ class DnsZoneController extends Controller
                 'state' => ! $z->dnssec ? 'off' : ($account ? ($state['dnssec']['state'] ?? 'pending') : 'active'),
                 'ds' => $ds,
                 'dnskey' => $z->dnssec && $z->dnssec_public_key ? Dnssec::dnskey($z->name, $z->dnssec_public_key) : null,
+                // The change of the key, and the DS records at the registry (Rollover). Null
+                // for a zone at an external DNS provider.
+                ...Rollover::present($z),
             ],
             // The zone transfers to the secondary DNS servers of the owner. Null for a zone at an
             // external provider. "primaries" are the addresses that a secondary copies the zone

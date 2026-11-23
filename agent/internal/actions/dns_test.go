@@ -98,7 +98,16 @@ func TestRenderZoneRefusesValuesOutsideTheRules(t *testing.T) {
 		"an SRV value with no port":     func(z *dnsZone) { z.Records[7].Value = "5 sip.voice.example" },
 		"a CAA value with a quote":      func(z *dnsZone) { z.Records[8].Value = `0 issue "a" "b"` },
 		"a CAA value with a backslash":  func(z *dnsZone) { z.Records[8].Value = `0 issue "a\"` },
-		"a key that is not a PEM key":   func(z *dnsZone) { z.Key, z.KeyTag = "key", 1 },
+		"a key that is not a PEM key":   func(z *dnsZone) { z.Keys = []dnssecKey{{Key: "key", Tag: 1, State: keyActive}} },
+		"two keys with the same tag": func(z *dnsZone) {
+			k := testKey(t, keyActive)
+			z.Keys = []dnssecKey{k, k}
+		},
+		"no key that signs the zone": func(z *dnsZone) { z.Keys = []dnssecKey{testKey(t, keyReady)} },
+		"a key with no state":        func(z *dnsZone) { z.Keys = []dnssecKey{testKey(t, "")} },
+		"three keys": func(z *dnsZone) {
+			z.Keys = []dnssecKey{testKey(t, keyActive), testKey(t, keyReady), testKey(t, keyReady)}
+		},
 		"more records than the limit": func(z *dnsZone) {
 			for i := 0; i < 1001; i++ {
 				z.Records = append(z.Records, dnsRecord{Name: "h", Type: "TXT", TTL: 60, Value: "x"})
@@ -176,7 +185,10 @@ func dnsDeps(t *testing.T) (*Deps, *execx.Fake) {
 const knotInContainer = "runuser -u cf-dns -- env XDG_RUNTIME_DIR=/run/user/987 podman exec cf-dns "
 
 func protoZone(z dnsZone) *agentv1.DnsZone {
-	out := &agentv1.DnsZone{Name: z.Name, Serial: z.Serial, DnssecKey: z.Key, DnssecKeyTag: int32(z.KeyTag)}
+	out := &agentv1.DnsZone{Name: z.Name, Serial: z.Serial}
+	for _, k := range z.Keys {
+		out.DnssecKeys = append(out.DnssecKeys, &agentv1.DnssecKey{Key: k.Key, KeyTag: int32(k.Tag), State: k.State})
+	}
 	for _, r := range z.Records {
 		out.Records = append(out.Records, &agentv1.DnsRecord{Name: r.Name, Type: r.Type, Ttl: int32(r.TTL), Value: r.Value, Priority: int32(r.Priority)})
 	}
@@ -300,19 +312,20 @@ func TestSetDnsZonesImportsTheKeyOnlyOnce(t *testing.T) {
 	d, f := dnsDeps(t)
 	root := rootOf(d)
 	z := exampleZone()
-	z.Key, z.KeyTag = testDnssecKey(t)
+	z.Keys = []dnssecKey{testKey(t, keyActive)}
+	tag := z.Keys[0].Tag
 	const listRule = 0
 	f.Rules = []execx.Rule{
 		{Prefix: knotInContainer + "keymgr -c /etc/knot/knot.conf example.com. list"},
 		{Prefix: knotInContainer + "knotc -c /etc/knot/knot.conf zone-status", Output: "[example.com.] serial: 1794000001\n"},
 		{Prefix: knotInContainer + "keymgr -c /etc/knot/knot.conf example.com. import-pem", Do: func() error {
 			// The key file is there while Knot reads it, and only the DNS user can read it.
-			info, err := os.Stat(filepath.Join(root.dnsImportDir(), "example.com.pem"))
+			info, err := os.Stat(filepath.Join(root.dnsImportDir(), "example.com-"+fmtInt(tag)+".pem"))
 			if err != nil || info.Mode().Perm() != 0o600 {
 				t.Errorf("key file: %v %v", info, err)
 			}
 			// Knot has the new key now, and a key from an earlier time.
-			f.Rules[listRule].Output = "0123456789abcdef0123456789abcdef01234567 " + fmtInt(z.KeyTag) + " CSK ECDSAP256SHA256 publish=1 ready=1 active=1\n" +
+			f.Rules[listRule].Output = "0123456789abcdef0123456789abcdef01234567 " + fmtInt(tag) + " CSK ECDSAP256SHA256 publish=1 active=1\n" +
 				"1111111111111111111111111111111111111111 4242 CSK ECDSAP256SHA256 publish=1 ready=1 active=1\n"
 			return nil
 		}},
@@ -326,13 +339,13 @@ func TestSetDnsZonesImportsTheKeyOnlyOnce(t *testing.T) {
 	if err := run(t)(d.SetDnsZones(request)); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. import-pem /var/lib/knot/import/example.com.pem ksk=yes zsk=yes algorithm=13") ||
+	if !f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. import-pem /var/lib/knot/import/example.com-"+fmtInt(tag)+".pem ksk=yes zsk=yes algorithm=13 publish=+0 active=+0") ||
 		// A key from an earlier time goes.
 		!f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. delete 1111111111111111111111111111111111111111") ||
 		f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. delete 0123") {
 		t.Errorf("calls: %v", f.Calls)
 	}
-	if _, err := os.Stat(filepath.Join(root.dnsImportDir(), "example.com.pem")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root.dnsImportDir(), "example.com-"+fmtInt(tag)+".pem")); !os.IsNotExist(err) {
 		t.Error("the key file is still there")
 	}
 	conf, _ := os.ReadFile(filepath.Join(root.dnsConfigDir(), "knot.conf"))
@@ -350,12 +363,62 @@ func TestSetDnsZonesImportsTheKeyOnlyOnce(t *testing.T) {
 	if err := run(t)(d.SetDnsZones(request)); err != nil {
 		t.Fatal(err)
 	}
-	if f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. import-pem") || f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. delete") {
+	if f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. import-pem") || f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. delete") ||
+		f.Called(knotInContainer+"keymgr -c /etc/knot/knot.conf example.com. set") {
 		t.Errorf("calls: %v", f.Calls)
 	}
 
+	// A change of the key: the new key is ready, then the zone has CDS records for it, then
+	// both keys sign the zone, and then the old key goes.
+	next := testKey(t, keyReady)
+	steps := []struct {
+		keys     []dnssecKey
+		list     string
+		calls    []string
+		template string
+	}{
+		{[]dnssecKey{z.Keys[0], next}, "", []string{"import-pem /var/lib/knot/import/example.com-" + fmtInt(next.Tag) + ".pem ksk=yes zsk=yes algorithm=13 publish=+0 ready=+0 active=0"}, "signed"},
+		{[]dnssecKey{z.Keys[0], {Key: next.Key, Tag: next.Tag, State: keySubmit}}, "2222222222222222222222222222222222222222 " + fmtInt(next.Tag) + " CSK ECDSAP256SHA256 publish=2 ready=2\n", nil, "submit"},
+		{[]dnssecKey{{Key: next.Key, Tag: next.Tag, State: keyActive}, z.Keys[0]}, "2222222222222222222222222222222222222222 " + fmtInt(next.Tag) + " CSK ECDSAP256SHA256 publish=2 ready=2\n", []string{"set 2222222222222222222222222222222222222222 publish=+0 active=+0"}, "signed"},
+		{[]dnssecKey{{Key: next.Key, Tag: next.Tag, State: keyActive}}, "2222222222222222222222222222222222222222 " + fmtInt(next.Tag) + " CSK ECDSAP256SHA256 publish=2 ready=2 active=3\n", []string{"delete 0123456789abcdef0123456789abcdef01234567"}, "signed"},
+	}
+	first := strings.SplitAfter(f.Rules[listRule].Output, "\n")[0]
+	const importRule = 2
+	f.Rules[importRule].Do = func() error {
+		f.Rules[listRule].Output += "2222222222222222222222222222222222222222 " + fmtInt(next.Tag) + " CSK ECDSAP256SHA256 publish=2 ready=2\n"
+		return nil
+	}
+	for i, step := range steps {
+		z.Keys, z.Serial = step.keys, z.Serial+1
+		f.Rules[listRule].Output = first + step.list
+		f.Calls = nil
+		if err := run(t)(d.SetDnsZones(&agentv1.SetDnsZonesRequest{JobId: jobID, Zones: []*agentv1.DnsZone{protoZone(z)}})); err != nil {
+			t.Fatalf("step %d: %v", i, err)
+		}
+		keymgr := 0
+		for _, c := range f.Calls {
+			if strings.HasPrefix(c, knotInContainer+"keymgr") && !strings.HasSuffix(c, " list") {
+				keymgr++
+			}
+		}
+		for _, c := range step.calls {
+			if !f.Called(knotInContainer + "keymgr -c /etc/knot/knot.conf example.com. " + c) {
+				t.Errorf("step %d: no %q in %v", i, c, f.Calls)
+			}
+		}
+		if keymgr != len(step.calls) {
+			t.Errorf("step %d: calls %v", i, f.Calls)
+		}
+		conf, _ := os.ReadFile(filepath.Join(root.dnsConfigDir(), "knot.conf"))
+		if !strings.Contains(string(conf), "  - domain: example.com.\n    template: "+step.template+"\n") {
+			t.Errorf("step %d: knot.conf:\n%s", i, conf)
+		}
+	}
+	z.Keys = []dnssecKey{{Key: next.Key, Tag: next.Tag, State: keyActive}}
+	f.Rules[listRule].Output = "0123456789abcdef0123456789abcdef01234567 " + fmtInt(next.Tag) + " CSK ECDSAP256SHA256 publish=1 active=1\n"
+
 	// DNSSEC is off: the keys and the signatures go.
-	z.Key, z.KeyTag, z.Serial = "", 0, z.Serial+1
+	z.Keys, z.Serial = nil, z.Serial+1
 	f.Calls = nil
 	if err := run(t)(d.SetDnsZones(&agentv1.SetDnsZonesRequest{JobId: jobID, Zones: []*agentv1.DnsZone{protoZone(z)}})); err != nil {
 		t.Fatal(err)

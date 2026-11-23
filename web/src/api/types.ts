@@ -386,6 +386,39 @@ export type DnsZoneStatus = "active" | "updating" | "failed" | "removing";
  */
 export type DnsDelegation = "here" | "elsewhere" | "none" | "unknown";
 
+/** A DS record: the digest of a DNSSEC key, for the registry of the domain. */
+export interface DsRecord { keyTag: number; algorithm: number; digestType: number; digest: string; record: string }
+
+/**
+ * The steps of a change of the DNSSEC key (a rollover with double signatures).
+ * publish: the DNS servers publish the new key. submit: the customer gives the new DS record to
+ * the registrar. retire: both keys sign the zone, then the old key goes.
+ */
+export type DnssecRolloverStep = "publish" | "submit" | "retire";
+
+export interface DnssecRollover {
+  step: DnssecRolloverStep;
+  startedAt?: string;
+  /** The time when the step can end. Undefined in the step "submit", and in the step "publish" until each DNS server has the new key. */
+  until?: string;
+  newDs: DsRecord;
+  oldDs: DsRecord;
+}
+
+/**
+ * ok: a DS record at the registry is for a key of the zone. none: the registry has no DS record,
+ * and resolvers do not check the signatures. other: no DS record is for a key of the zone, and
+ * resolvers that check DNSSEC refuse the answers. unknown: the lookup failed.
+ */
+export interface DnssecParent {
+  state: "ok" | "none" | "other" | "unknown";
+  /** The key tags of the keys of the zone that the registry has a DS record for. */
+  keyTags: number[];
+  /** The key tags of the other DS records at the registry. */
+  otherKeyTags: number[];
+  checkedAt?: string;
+}
+
 export interface DnsZone {
   id: string;
   name: string;
@@ -399,9 +432,13 @@ export interface DnsZone {
     enabled: boolean;
     /** pending: the external DNS provider makes the key. The DS record comes after that. */
     state: "off" | "pending" | "active";
-    /** The DS record that the customer gives to the registrar of the domain. */
-    ds?: { keyTag: number; algorithm: number; digestType: number; digest: string; record: string };
+    /** The DS record that the customer gives to the registrar of the domain. During a change of the key, the DS record of the new key. */
+    ds?: DsRecord;
     dnskey?: string;
+    /** A change of the key on the DNS servers of the panel. Undefined when the key does not change. */
+    rollover?: DnssecRollover;
+    /** The DS records of the zone at the registry, from the public DNS. Undefined until the panel checks, and for a zone at an external DNS provider. */
+    parent?: DnssecParent;
   };
   /** The state of the zone on each name server of the panel. */
   servers: { nameServer: string; state: "ok" | "pending" | "failed" | "removed" }[];

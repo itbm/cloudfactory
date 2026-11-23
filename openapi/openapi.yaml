@@ -2010,7 +2010,7 @@ paths:
         Before you turn DNSSEC off, remove the DS record at the registrar and wait for one day.
         A resolver that has the DS record refuses a zone that has no signatures. The panel
         makes a new key each time DNSSEC is turned on. `jobs` is empty when the value did not
-        change.
+        change. Turning DNSSEC off also stops a change of the key.
       requestBody:
         required: true
         content:
@@ -2026,6 +2026,49 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '429': { description: Too many DNS changes in one minute. }
 
+  /v1/dns-zones/{id}/dnssec/rollover:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Start a change of the DNSSEC key of a zone
+      description: >-
+        The panel makes a new key and changes the key in steps (`dnssec.rollover.step`), so
+        that resolvers can check the zone during the change:
+
+
+        1. `publish`: the DNS servers publish the new key. The step ends about 3 hours after
+           each DNS server has the key (`dnssec.rollover.until`).
+
+        2. `submit`: the zone has CDS and CDNSKEY records for the new key. Give the new DS
+           record (`dnssec.rollover.newDs`) to the registrar of the domain, and remove the old
+           one. The step ends when the public DNS gives the new DS record.
+
+        3. `retire`: both keys sign the zone until the old DS record is out of the caches, at
+           least one day (`dnssec.rollover.until`). Then the old key goes.
+
+
+        The panel checks the DS records every 15 minutes, and when you ask for a check
+        (`/check`). Only a zone on the DNS servers of the panel can change its key: an external
+        DNS provider makes its own key.
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'DNSSEC is off, the zone is at an external DNS provider, or the key changes already (`errors.rollover`).' }
+        '429': { description: Too many DNS changes in one minute. }
+    delete:
+      tags: [DNS]
+      summary: Stop a change of the DNSSEC key
+      description: >-
+        Only in the steps `publish` and `submit`, and only while the public DNS does not give
+        the new DS record. The new key goes, and the old key stays. If you gave the new DS
+        record to the registrar, do not stop the change.
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: 'The key does not change, or the registry has the new DS record (`errors.rollover`).' }
+        '429': { description: Too many DNS changes in one minute. }
+
   /v1/dns-zones/{id}/check:
     parameters:
       - { $ref: '#/components/parameters/Id' }
@@ -2035,7 +2078,9 @@ paths:
       description: >-
         The panel also asks every 15 minutes. When the public DNS gives the name servers of
         the panel (`delegation.state` is `here`), the customer controls the zone: the panel
-        then verifies the domains of the websites of the customer that are in the zone.
+        then verifies the domains of the websites of the customer that are in the zone. For a
+        zone with DNSSEC, the panel also asks for the DS records at the registry
+        (`dnssec.parent`), and a change of the key can go to its next step.
       responses:
         '200':
           description: The zone, with the new `delegation`.
@@ -5837,6 +5882,36 @@ components:
                 digest: { type: string }
                 record: { type: string, description: 'The full record, for example `example.com. IN DS 22976 13 2 3A81…`.' }
             dnskey: { type: [string, 'null'], description: The DNSKEY record. Some registrars ask for it and not for the DS record. }
+            rollover:
+              type: [object, 'null']
+              description: >-
+                A change of the key (`/dnssec/rollover`). Null when the key does not change, and
+                for a zone at an external DNS provider. From the step `submit`, `ds` is the DS
+                record of the new key.
+              properties:
+                step: { type: string, enum: [publish, submit, retire] }
+                startedAt: { type: string, format: date-time, description: The start of the step. }
+                until: { type: [string, 'null'], format: date-time, description: 'The step can end at this time. Null in the step `publish` until each DNS server has the new key, and in the step `submit`.' }
+                newDs: { $ref: '#/components/schemas/DsRecord' }
+                oldDs: { $ref: '#/components/schemas/DsRecord' }
+            parent:
+              type: [object, 'null']
+              description: >-
+                The DS records of the zone at the registry, as the public DNS gave them last. The
+                panel asks one time each day, and every 15 minutes during a change of the key. Null
+                before the first check, and for a zone at an external DNS provider.
+              properties:
+                state:
+                  type: string
+                  enum: [ok, none, other, unknown]
+                  description: >-
+                    `ok`: a DS record is for a key of the zone. `none`: the registry has no DS
+                    record, so resolvers do not check the signatures. `other`: no DS record is for
+                    a key of the zone, so resolvers that check DNSSEC refuse the answers for the
+                    domain. `unknown`: the lookup failed.
+                keyTags: { type: array, items: { type: integer }, description: The keys of the zone that the registry has a DS record for. }
+                otherKeyTags: { type: array, items: { type: integer }, description: The key tags of the other DS records. }
+                checkedAt: { type: [string, 'null'], format: date-time }
         transfers:
           type: [object, 'null']
           description: The zone transfers to the secondary DNS servers of the owner of the zone (`/transfers`). Null for a zone at an external DNS provider.
@@ -5861,6 +5936,15 @@ components:
         websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
         createdAt: { type: string, format: date-time }
         records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
+    DsRecord:
+      type: object
+      description: A DS record (RFC 4034) of a DNSSEC key.
+      properties:
+        keyTag: { type: integer }
+        algorithm: { type: integer }
+        digestType: { type: integer }
+        digest: { type: string }
+        record: { type: string, description: 'For example `example.com. IN DS 22976 13 2 3A81…`.' }
     DnsSecondary:
       type: object
       properties:

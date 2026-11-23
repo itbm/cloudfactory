@@ -626,11 +626,12 @@ class Zones
 
             return $this->changed($zone, ($enabled ? 'Turn on' : 'Turn off')." DNSSEC for {$zone->name} at {$name}");
         }
+        Rollover::clear($zone);
         if ($enabled) {
             $key = Dnssec::generate();
-            $zone->update(['dnssec' => true, 'dnssec_key' => $key['key'], 'dnssec_public_key' => $key['publicKey'], 'dnssec_key_tag' => $key['keyTag']]);
+            $zone->update(['dnssec' => true, 'dnssec_key' => $key['key'], 'dnssec_public_key' => $key['publicKey'], 'dnssec_key_tag' => $key['keyTag'], 'dnssec_parent' => null]);
         } else {
-            $zone->update(['dnssec' => false, 'dnssec_key' => null, 'dnssec_public_key' => null, 'dnssec_key_tag' => null]);
+            $zone->update(['dnssec' => false, 'dnssec_key' => null, 'dnssec_public_key' => null, 'dnssec_key_tag' => null, 'dnssec_parent' => null]);
         }
 
         return $this->changed($zone, ($enabled ? 'Turn on' : 'Turn off')." DNSSEC for {$zone->name}");
@@ -825,19 +826,19 @@ class Zones
             'name' => $zone->name,
             'serial' => $zone->serial,
             'records' => $zone->records()->orderBy('name')->orderBy('type')->orderBy('id')->get()->map(fn (DnsRecord $r) => $r->forAgent())->all(),
-            // Adversarial review, finding A6-13: the DNSSEC key is not in the job record. The
-            // panel adds it each time that it sends the job (keysFor).
-            'dnssecKey' => '',
-            'dnssecKeyTag' => $zone->dnssec ? (int) $zone->dnssec_key_tag : 0,
+            // Adversarial review, finding A6-13: the DNSSEC keys are not in the job record. The
+            // panel adds them each time that it sends the job (keysFor).
+            'dnssecKeys' => Rollover::keys($zone, false),
             // The TSIG secret of the transfers is not in the job record either.
             'transfers' => Secondaries::transfersFor($zone, false),
         ];
     }
 
     /**
-     * The zones of a SetDnsZones job, with the DNSSEC key of each signed zone. A zone that has
-     * a different key now, or no key, goes with no key: a later job has its new state. Each
-     * zone gets its current transfers with the TSIG secret.
+     * The zones of a SetDnsZones job, with the DNSSEC keys of each signed zone. Each zone gets
+     * its current keys and transfers with their secrets, also when they changed after the panel
+     * made the job: the states of the keys of a change (Rollover) only go forward, and a job
+     * with an older serial does not replace a newer zone on the DNS server.
      *
      * @return array<string, mixed>
      */
@@ -849,13 +850,8 @@ class Zones
         $zones = $job->payload['zones'];
         $current = DnsZone::whereIn('name', array_column($zones, 'name'))->get()->keyBy('name');
         foreach ($zones as &$zone) {
-            $tag = (int) ($zone['dnssecKeyTag'] ?? 0);
             $now = $current->get($zone['name'] ?? '');
-            if ($tag > 0 && $now && $now->dnssec && (int) $now->dnssec_key_tag === $tag) {
-                $zone['dnssecKey'] = (string) $now->dnssec_key;
-            } elseif ($tag > 0) {
-                $zone['dnssecKeyTag'] = 0;
-            }
+            $zone['dnssecKeys'] = $now ? Rollover::keys($now, true) : [];
             $zone['transfers'] = $now ? Secondaries::transfersFor($now, true) : null;
         }
 
