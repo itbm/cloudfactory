@@ -11,6 +11,9 @@ Schedule::command('cloudfactory:backups')->everyMinute()->withoutOverlapping();
 // FR-1112: host updates in the maintenance window of each server.
 Schedule::command('cloudfactory:host-updates')->everyTenMinutes()->withoutOverlapping();
 
+// FR-206: the automatic updates of the WordPress sites, in the maintenance window of each server.
+Schedule::command('cloudfactory:wordpress-updates')->everyTenMinutes()->withoutOverlapping();
+
 // DNS hosting: the name servers of each zone in the public DNS.
 Schedule::command('cloudfactory:check-dns')->everyFifteenMinutes()->withoutOverlapping();
 

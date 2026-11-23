@@ -183,6 +183,21 @@ final class InputRules
     /** An agent version, for example "0.1.0". */
     public const VERSION = '/^(?=[\\s\\S]{0,32}\\z)(?:^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$)/D';
 
+    /** The language of a WordPress site, as a WordPress locale, for example en_GB or de_DE_formal. */
+    public const WORDPRESS_LOCALE = '/^(?=[\\s\\S]{0,20}\\z)(?:^[a-z]{2,3}(_[A-Z]{2})?(_[a-z0-9]+)?$)/D';
+
+    /** The name of a WordPress plugin or theme: the name of its directory in wp-content. It cannot start with "-", so that WP-CLI does not read it as an option. */
+    public const WORDPRESS_SLUG = '/^(?![\\s\\S]*?(?:\\.\\.))(?:^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$)/D';
+
+    /** The title of a WordPress site. It is on one line and has no control characters. */
+    public const WORDPRESS_TITLE = '/^(?=[\\s\\S]{0,100}\\z)(?:^[^\\x00-\\x1f\\x7f]+$)/D';
+
+    /** The user name of the first WordPress administrator. It has 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. It is not "admin" or "administrator", because attackers try these names first. */
+    public const WORDPRESS_USER = '/^(?![\\s\\S]*?(?:^(?i:admin|administrator)$))(?:^[A-Za-z0-9][A-Za-z0-9._@-]{2,59}$)/D';
+
+    /** One argument of a WP-CLI command. The agent gives each argument to WP-CLI as it is, with no shell. It has no control characters. It can be empty. */
+    public const WP_CLI_ARGUMENT = '/^(?:\\z|(?=[\\s\\S]{0,1000}\\z)(?:^[^\\x00-\\x1f\\x7f]*$))/D';
+
     /** Each pattern by the name of its rule in schema/input-rules.json. */
     public const PATTERNS = [
         'commandArgument' => self::COMMAND_ARGUMENT,
@@ -243,6 +258,11 @@ final class InputRules
         'tsigSecret' => self::TSIG_SECRET,
         'unixUser' => self::UNIX_USER,
         'version' => self::VERSION,
+        'wordpressLocale' => self::WORDPRESS_LOCALE,
+        'wordpressSlug' => self::WORDPRESS_SLUG,
+        'wordpressTitle' => self::WORDPRESS_TITLE,
+        'wordpressUser' => self::WORDPRESS_USER,
+        'wpCliArgument' => self::WP_CLI_ARGUMENT,
     ];
 
     /** The text that tells a person how to correct a value. */
@@ -305,6 +325,11 @@ final class InputRules
         'tsigSecret' => 'Enter the secret in base64, with 16 to 64 bytes.',
         'unixUser' => 'Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits.',
         'version' => 'Enter a version, for example 0.1.0.',
+        'wordpressLocale' => 'Enter a WordPress locale, for example en_GB.',
+        'wordpressSlug' => 'Enter the name of a plugin or a theme, for example akismet.',
+        'wordpressTitle' => 'Enter a title of 1 to 100 characters on one line.',
+        'wordpressUser' => 'Use 3 to 60 letters, digits, dots, underscores, hyphens and @ signs. Do not use admin or administrator.',
+        'wpCliArgument' => 'Each argument must have at most 1000 characters and no control characters.',
     ];
 
     /** The types of DNS record that a user can make. */
@@ -420,4 +445,10 @@ final class InputRules
 
     /** The largest number of sign-in paths of a website. */
     public const MAX_SIGN_IN_PATHS = 20;
+
+    /** The largest number of plugins or themes in one update of a WordPress site. */
+    public const MAX_WORDPRESS_UPDATES = 200;
+
+    /** The largest number of arguments of one WP-CLI command. */
+    public const MAX_WP_CLI_ARGUMENTS = 40;
 }

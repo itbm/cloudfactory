@@ -96,6 +96,7 @@ class Fixtures
         '/websites/{id}/snapshots',
         '/websites/{id}/terminal-sessions',
         '/websites/{id}/uptime-checks',
+        '/websites/{id}/wordpress',
     ];
 
     /**

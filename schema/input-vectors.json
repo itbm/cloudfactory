@@ -1377,6 +1377,26 @@
       "valid": ["1.25", "3.4.1", "1.25-alpine", "2024_1", "1+r2", "abcdefghijklmnop"],
       "invalid": ["", "-1.25", ".1", "1 25", "1/25", "1.25\n", "abcdefghijklmnopq"]
     },
+    "wordpressUser": {
+      "valid": ["editor", "site_owner", "jane.doe@example.com", "Admin2", "a-b", {"repeat": [["a", 60]]}],
+      "invalid": ["", "ab", "admin", "Admin", "ADMINISTRATOR", "-admin", ".abc", "jane doe", "user\n", {"repeat": [["a", 61]]}]
+    },
+    "wordpressTitle": {
+      "valid": ["My shop", "Caf\u00e9 & Co \u2014 B\u00fccher", "A", {"repeat": [["a", 100]]}],
+      "invalid": ["", "line\nbreak", "tab\there", "\u007f", {"repeat": [["a", 101]]}]
+    },
+    "wordpressLocale": {
+      "valid": ["en_GB", "de_DE_formal", "fr_FR", "ja", "pt_PT_ao90", "haw_US"],
+      "invalid": ["", "EN_GB", "en-GB", "en_GBR", "e", "english", "en_GB\n"]
+    },
+    "wordpressSlug": {
+      "valid": ["akismet", "woocommerce", "twentytwentyfive", "hello", "my_plugin.v2", "Plugin-Name"],
+      "invalid": ["", "-x", "--all", ".hidden", "../x", "a..b", "a/b", "a b", {"repeat": [["a", 101]]}]
+    },
+    "wpCliArgument": {
+      "valid": ["", "plugin", "--format=json", "option update blogname 'My shop'", "--user_pass=s3cret"],
+      "invalid": ["a\nb", "a\u0000b", "\u001b[31m", {"repeat": [["a", 1001]]}]
+    },
     "logSearch": {
       "valid": ["/checkout", "500 -bot", "\"PHP Fatal error\" stock", "café", { "repeat": [["a", 200]] }],
       "invalid": ["", "a\nb", "a\tb", "a\u0000b", "a\u007fb", { "repeat": [["a", 201]] }]

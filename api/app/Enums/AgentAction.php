@@ -13,6 +13,7 @@ enum AgentAction: string
     case ActivateRelease = 'ActivateRelease';
     case AddDomain = 'AddDomain';
     case Backup = 'Backup';
+    case CheckWordPress = 'CheckWordPress';
     case ConfigureHost = 'ConfigureHost';
     case CreateDatabase = 'CreateDatabase';
     case CreateWebsite = 'CreateWebsite';
@@ -35,6 +36,7 @@ enum AgentAction: string
     case ImportMail = 'ImportMail';
     case InstallDependencies = 'InstallDependencies';
     case InstallHostUpdates = 'InstallHostUpdates';
+    case InstallWordPress = 'InstallWordPress';
     case MakeArchive = 'MakeArchive';
     case OpenTerminal = 'OpenTerminal';
     case PrepareMailNode = 'PrepareMailNode';
@@ -44,9 +46,11 @@ enum AgentAction: string
     case ReceiveWebsite = 'ReceiveWebsite';
     case RemoveDomain = 'RemoveDomain';
     case Restore = 'Restore';
+    case RestoreWordPress = 'RestoreWordPress';
     case RotateMeshKey = 'RotateMeshKey';
     case RunCommand = 'RunCommand';
     case RunCronJob = 'RunCronJob';
+    case RunWpCli = 'RunWpCli';
     case ScanWebsite = 'ScanWebsite';
     case SendDatabaseServer = 'SendDatabaseServer';
     case SendWebsite = 'SendWebsite';
@@ -72,6 +76,7 @@ enum AgentAction: string
     case SetWebsitePower = 'SetWebsitePower';
     case SetWebsiteSecurity = 'SetWebsiteSecurity';
     case UpdateAgent = 'UpdateAgent';
+    case UpdateWordPress = 'UpdateWordPress';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -80,6 +85,7 @@ enum AgentAction: string
             self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
             self::AddDomain => ['Add edge proxy route', 'Check DNS', 'Get TLS certificate'],
             self::Backup => ['Snapshot files', 'Dump databases', 'Upload to object storage', 'Apply retention'],
+            self::CheckWordPress => ['Check WordPress'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::CreateDatabase => ['Create database', 'Create user', 'Allow the website container only'],
             self::CreateWebsite => ['Create Unix user', 'Copy databases', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Get TLS certificate'],
@@ -107,6 +113,7 @@ enum AgentAction: string
             // again with no stop.
             self::InstallDependencies => ['Install dependencies', ...self::SetRuntime->steps()],
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
+            self::InstallWordPress => ['Check the website', 'Create database', 'Download WordPress', 'Install WordPress', 'Check WordPress'],
             self::MakeArchive => ['Make the archive'],
             self::OpenTerminal => ['Open the terminal'],
             self::PrepareMailNode => ['Make keys'],
@@ -116,9 +123,11 @@ enum AgentAction: string
             self::ReceiveWebsite => ['Create Unix user', 'Receive files', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Set SFTP access and cron jobs', 'Get TLS certificate'],
             self::RemoveDomain => ['Remove edge proxy route'],
             self::Restore => ['Download snapshot', 'Restore', 'Health check'],
+            self::RestoreWordPress => ['Put back the restore point', 'Check WordPress'],
             self::RotateMeshKey => ['Make new key'],
             self::RunCommand => ['Run the command'],
             self::RunCronJob => ['Run the command'],
+            self::RunWpCli => ['Run the command', 'Check WordPress'],
             self::ScanWebsite => ['Update malware signatures', 'Scan files'],
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
             self::SendWebsite => ['Stop website', 'Send files'],
@@ -144,6 +153,8 @@ enum AgentAction: string
             self::SetWebsitePower => ['Change container state', 'Health check'],
             self::SetWebsiteSecurity => ['Set edge proxy rules'],
             self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],
+            // When a step after "Save a restore point" fails, the agent puts back the restore point.
+            self::UpdateWordPress => ['Check WordPress', 'Save a restore point', 'Update WordPress', 'Update plugins', 'Update themes', 'Health check'],
         };
     }
 

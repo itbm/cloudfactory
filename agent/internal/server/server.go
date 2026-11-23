@@ -56,6 +56,10 @@ func (s *Service) Backup(_ context.Context, r *connect.Request[agentv1.BackupReq
 	return s.submit(s.Deps.Backup(r.Msg))
 }
 
+func (s *Service) CheckWordPress(_ context.Context, r *connect.Request[agentv1.CheckWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.CheckWordPress(r.Msg))
+}
+
 func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.ConfigureHostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.ConfigureHost(r.Msg))
 }
@@ -136,6 +140,10 @@ func (s *Service) InstallHostUpdates(_ context.Context, r *connect.Request[agent
 	return s.submit(s.Deps.InstallHostUpdates(r.Msg))
 }
 
+func (s *Service) InstallWordPress(_ context.Context, r *connect.Request[agentv1.InstallWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.InstallWordPress(r.Msg))
+}
+
 func (s *Service) MakeArchive(_ context.Context, r *connect.Request[agentv1.MakeArchiveRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.MakeArchive(r.Msg))
 }
@@ -172,6 +180,10 @@ func (s *Service) Restore(_ context.Context, r *connect.Request[agentv1.RestoreR
 	return s.submit(s.Deps.Restore(r.Msg))
 }
 
+func (s *Service) RestoreWordPress(_ context.Context, r *connect.Request[agentv1.RestoreWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RestoreWordPress(r.Msg))
+}
+
 func (s *Service) RotateMeshKey(_ context.Context, r *connect.Request[agentv1.RotateMeshKeyRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.RotateMeshKey(r.Msg))
 }
@@ -182,6 +194,10 @@ func (s *Service) RunCommand(_ context.Context, r *connect.Request[agentv1.RunCo
 
 func (s *Service) RunCronJob(_ context.Context, r *connect.Request[agentv1.RunCronJobRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.RunCronJob(r.Msg))
+}
+
+func (s *Service) RunWpCli(_ context.Context, r *connect.Request[agentv1.RunWpCliRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunWpCli(r.Msg))
 }
 
 func (s *Service) ScanWebsite(_ context.Context, r *connect.Request[agentv1.ScanWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
@@ -282,6 +298,10 @@ func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agent
 
 func (s *Service) UpdateAgent(_ context.Context, r *connect.Request[agentv1.UpdateAgentRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.UpdateAgent(r.Msg))
+}
+
+func (s *Service) UpdateWordPress(_ context.Context, r *connect.Request[agentv1.UpdateWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.UpdateWordPress(r.Msg))
 }
 
 // fileError gives the error of a file operation or of the logs its code for the panel.

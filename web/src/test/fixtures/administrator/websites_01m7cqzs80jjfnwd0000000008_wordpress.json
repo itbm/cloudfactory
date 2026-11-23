@@ -1,0 +1,59 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000008/wordpress",
+    "status": 200,
+    "body": {
+        "wordpress": {
+            "status": "ready",
+            "version": "6.9",
+            "coreMinor": null,
+            "coreLatest": null,
+            "siteUrl": "https://harbourbooks.example.net",
+            "adminUrl": "https://harbourbooks.example.net/wp-admin/",
+            "adminUser": "harbourbooks",
+            "databaseId": "01m7cqzs803h34e20000000008",
+            "plugins": [
+                {
+                    "name": "woocommerce",
+                    "title": "WooCommerce",
+                    "status": "active",
+                    "version": "10.3.4",
+                    "update": "10.3.5"
+                },
+                {
+                    "name": "woocommerce-payments",
+                    "title": "WooPayments",
+                    "status": "active",
+                    "version": "9.9.1",
+                    "update": null
+                },
+                {
+                    "name": "mailpoet",
+                    "title": "MailPoet",
+                    "status": "inactive",
+                    "version": "5.16.2",
+                    "update": "5.17.0"
+                }
+            ],
+            "themes": [
+                {
+                    "name": "storefront",
+                    "title": "Storefront",
+                    "status": "active",
+                    "version": "4.6.1",
+                    "update": null
+                }
+            ],
+            "checkedAt": "2026-11-14T07:00:00+00:00",
+            "autoUpdates": {
+                "core": "minor",
+                "plugins": false,
+                "themes": false
+            },
+            "lastUpdate": null,
+            "restorePoint": null,
+            "error": null
+        },
+        "commands": [],
+        "busy": null
+    }
+}

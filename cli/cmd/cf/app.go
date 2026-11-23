@@ -85,6 +85,22 @@ Usage:
   cf cron set WEBSITE CRON_ID [--schedule SCHEDULE] [--command COMMAND] [--on | --off]
   cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
   cf cron delete WEBSITE CRON_ID
+  cf wordpress show WEBSITE                            The versions, the updates, the plugins, the themes and the restore point.
+  cf wordpress install WEBSITE --title TITLE --admin-user USER --admin-email EMAIL [--locale en_GB]
+                                                       Install WordPress with a new MariaDB database. The document root must be
+                                                       empty. The command shows the password of the administrator once.
+  cf wordpress check WEBSITE                           Read the versions and the updates. On a website with no WordPress record,
+                                                       find WordPress that you uploaded with SFTP.
+  cf wordpress update WEBSITE [--all] [--core minor|latest] [--plugin SLUG]... [--theme SLUG]...
+                                                       The agent saves a restore point first. If an update or the health check
+                                                       fails, it puts back the restore point.
+  cf wordpress restore WEBSITE                         Put back the restore point of the last update: the files with no uploads,
+                                                       and the database. The changes to the database since the update go.
+  cf wordpress settings WEBSITE [--core off|minor|all] [--plugins on|off] [--themes on|off]
+                                                       The automatic updates, in the maintenance window of the server.
+  cf wordpress cli WEBSITE -- ARGUMENTS...             Run one WP-CLI command, for example: cf wordpress cli acme.example -- plugin list.
+                                                       No shell: each argument goes to WP-CLI as it is. Fails when the exit code is not 0.
+  cf wordpress commands WEBSITE                        The WP-CLI commands that users ran, with no passwords.
   cf uptime-checks list [WEBSITE] [--state up|down|pending|paused]
                                                        The checks that are down come first.
   cf uptime-checks get WEBSITE CHECK_ID                The state, the uptime and the incidents of a check.
@@ -618,6 +634,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.logs(ctx, sub, rest)
 	case "cron":
 		return a.cron(ctx, sub, rest)
+	case "wordpress", "wp":
+		return a.wordpress(ctx, sub, rest)
 	case "uptime-checks", "uptime-check":
 		return a.uptime(ctx, sub, rest)
 	case "commands", "command":

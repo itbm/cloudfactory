@@ -1,0 +1,68 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000006/wordpress",
+    "status": 200,
+    "body": {
+        "wordpress": {
+            "status": "ready",
+            "version": "6.9",
+            "coreMinor": null,
+            "coreLatest": null,
+            "siteUrl": "https://northwind.example.com",
+            "adminUrl": "https://northwind.example.com/wp-admin/",
+            "adminUser": "northwind",
+            "databaseId": "01m7cqzs803h34e20000000006",
+            "plugins": [
+                {
+                    "name": "akismet",
+                    "title": "Akismet Anti-spam: Spam Protection",
+                    "status": "active",
+                    "version": "5.5",
+                    "update": null
+                },
+                {
+                    "name": "wp-mail-smtp",
+                    "title": "WP Mail SMTP",
+                    "status": "active",
+                    "version": "4.6.0",
+                    "update": null
+                }
+            ],
+            "themes": [
+                {
+                    "name": "twentytwentyfive",
+                    "title": "Twenty Twenty-Five",
+                    "status": "active",
+                    "version": "1.3",
+                    "update": null
+                }
+            ],
+            "checkedAt": "2026-11-14T07:00:00+00:00",
+            "autoUpdates": {
+                "core": "all",
+                "plugins": true,
+                "themes": true
+            },
+            "lastUpdate": {
+                "jobId": null,
+                "at": "2026-11-13T08:00:00+00:00",
+                "automatic": true,
+                "core": "",
+                "plugins": [
+                    "wp-mail-smtp"
+                ],
+                "themes": [],
+                "state": "succeeded",
+                "from": "6.9",
+                "to": "6.9"
+            },
+            "restorePoint": {
+                "at": "2026-11-13T08:00:00+00:00",
+                "version": "6.9",
+                "database": true
+            },
+            "error": null
+        },
+        "commands": [],
+        "busy": null
+    }
+}

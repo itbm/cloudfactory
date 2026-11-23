@@ -78,6 +78,11 @@ import type {
   UsageRange,
   UsageSubject,
   MailCluster,
+  WordPressAdmin,
+  WordPressAutoUpdates,
+  WordPressSite,
+  WordPressState,
+  WpCliCommand,
 } from "./types";
 
 /** An error that the API returns for incorrect input. The UI shows it next to the field. */
@@ -369,11 +374,23 @@ export interface NewWebsite {
   installCommand?: string;
   /** True for a Node.js or Python image. */
   app?: boolean;
+  /** FR-206: install WordPress in the new website. */
+  wordpress?: WordPressInstall;
 }
 
-export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; job: Promise<Job> }> | { websiteId: string; job: Promise<Job> } {
+/** The site and the first administrator of a new WordPress site. */
+export interface WordPressInstall {
+  title: string;
+  adminUser: string;
+  adminEmail: string;
+  locale: string;
+}
+
+const wordpressBody = (w: WordPressInstall) => ({ title: w.title.trim(), adminUser: w.adminUser.trim(), adminEmail: w.adminEmail.trim(), locale: w.locale || undefined });
+
+export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; job: Promise<Job>; wordpress?: WordPressAdmin }> {
   return call(async () => {
-    const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", "/websites", {
+    const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob; wordpress?: { admin: WordPressAdmin } }>("POST", "/websites", {
       // CF-07: only an administrator selects the plan here. The panel uses the plan of the customer.
       // A private website and a worker have no domain: the name is a short name.
       kind: input.kind && input.kind !== "public" ? input.kind : undefined,
@@ -381,11 +398,12 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
       installCommand: input.app && input.installCommand !== undefined ? input.installCommand.trim() : undefined,
       name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: state.session.contextId === "platform" || state.session.user.role === "administrator" ? input.planId : undefined,
       serverId: input.serverId || undefined, customerId: input.customerId && input.customerId !== "platform" ? input.customerId : undefined,
+      wordpress: input.wordpress ? wordpressBody(input.wordpress) : undefined,
     });
     update((d) => {
       d.websites = [live.toWebsite(r.website), ...d.websites.filter((w) => w.id !== r.website.id)];
     });
-    return { websiteId: r.website.id, job: track(r.job) };
+    return { websiteId: r.website.id, job: track(r.job), wordpress: r.wordpress?.admin };
   });
 }
 
@@ -683,6 +701,88 @@ export function removeCronJob(websiteId: string, cronJobId: string): Promise<voi
 /** Runs the command of a cron job now. The promise resolves when the command has finished. */
 export function runCronJob(websiteId: string, cronJobId: string): Promise<Job> {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/cron-jobs/${cronJobId}/run`)).then((r) => track(r.job));
+}
+
+/** FR-206: the WordPress site of a website, or null, and the last WP-CLI commands. */
+export function readWordPress(websiteId: string): Promise<WordPressState> {
+  return call(() => live.request<WordPressState>("GET", `/websites/${websiteId}/wordpress`));
+}
+
+/** Installs WordPress on an empty website. The API gives the password of the administrator one time. */
+export function installWordPress(websiteId: string, input: WordPressInstall): Promise<{ admin: WordPressAdmin; job: Promise<Job> }> {
+  return call(() => live.request<{ wordpress: WordPressSite; admin: WordPressAdmin; job: live.ApiJob }>("POST", `/websites/${websiteId}/wordpress`, wordpressBody(input)))
+    .then((r) => ({ admin: r.admin, job: track(r.job) }));
+}
+
+/** Reads the versions and the updates. On a website with no WordPress record, the agent looks for WordPress. */
+export function checkWordPress(websiteId: string): Promise<Job> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/wordpress/check`)).then((r) => track(r.job));
+}
+
+export interface WordPressUpdateInput {
+  core?: "minor" | "latest" | null;
+  plugins?: string[];
+  themes?: string[];
+  /** Each available update. */
+  all?: boolean;
+}
+
+/** Updates WordPress, plugins and themes, with a restore point and a health check. */
+export function updateWordPress(websiteId: string, input: WordPressUpdateInput): Promise<Job> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/wordpress/updates`, input)).then((r) => track(r.job));
+}
+
+/** Puts back the restore point of the last update: the files with no uploads, and the database. */
+export function restoreWordPress(websiteId: string): Promise<Job> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/wordpress/restore`)).then((r) => track(r.job));
+}
+
+export function setWordPressUpdates(websiteId: string, autoUpdates: Partial<WordPressAutoUpdates>): Promise<WordPressSite> {
+  return call(() => live.request<{ wordpress: WordPressSite }>("PATCH", `/websites/${websiteId}/wordpress`, { autoUpdates })).then((r) => r.wordpress);
+}
+
+/**
+ * Splits a WP-CLI command line into arguments, as a shell does: quotes keep spaces, and a
+ * backslash keeps the next character. The panel sends each argument to WP-CLI with no shell.
+ * The word "wp" at the start is optional.
+ */
+export function wpCliArguments(line: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  let has = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (c === "\\" && quote === '"' && i + 1 < line.length) current += line[++i];
+      else current += c;
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      has = true;
+    } else if (c === "\\" && i + 1 < line.length) {
+      current += line[++i];
+      has = true;
+    } else if (/\s/.test(c)) {
+      if (has || current) args.push(current);
+      current = "";
+      has = false;
+    } else {
+      current += c;
+    }
+  }
+  if (quote) throw new ApiError("A quote has no end.", { args: "A quote has no end." });
+  if (has || current) args.push(current);
+  return args[0] === "wp" ? args.slice(1) : args;
+}
+
+/** Runs one WP-CLI command. The promise gives the command when its job ends. */
+export function runWpCli(websiteId: string, line: string): Promise<{ command: WpCliCommand; job: Promise<Job> }> {
+  return call(async () => {
+    const args = wpCliArguments(line);
+    const r = await live.request<{ command: WpCliCommand; job: live.ApiJob }>("POST", `/websites/${websiteId}/wordpress/cli`, { args });
+    return { command: r.command, job: track(r.job) };
+  });
 }
 
 // The protection of a website in the edge proxy

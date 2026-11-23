@@ -30,6 +30,8 @@ tags:
       Run a command in the container of a website, and the command log of the website. The
       command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
       website.
+  - name: WordPress
+    description: One-click WordPress, updates with a restore point, and WP-CLI (FR-206).
   - name: Uptime
     description: >-
       Uptime checks of websites. The panel requests an address of a domain of a website on a
@@ -907,9 +909,27 @@ paths:
                 planId: { type: string, description: The plan of the customer when you do not give it. Only an administrator or the reseller of the customer can give a different plan. }
                 serverId: { type: string }
                 customerId: { type: string, description: Necessary for administrators and resellers. }
+                wordpress:
+                  allOf: [{ $ref: '#/components/schemas/WordPressInstall' }]
+                  description: >-
+                    Install WordPress when the website runs (FR-206). Only for a public website
+                    with a PHP runtime, on a server whose agent runs WP-CLI. The panel makes a
+                    MariaDB database and its user. A token also needs the scope databases:write.
                 documentRoot: { type: string, maxLength: 200, description: 'The directory of the website that the web server serves, relative to the directory of the website, for example "public". The default is ".". Not for an application image.' }
       responses:
-        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '202':
+          description: The panel recorded the website. The job is in the queue. With `wordpress`, the answer has the password of the WordPress administrator, one time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  website: { $ref: '#/components/schemas/Website' }
+                  job: { $ref: '#/components/schemas/Job' }
+                  wordpress:
+                    type: object
+                    properties:
+                      admin: { $ref: '#/components/schemas/WordPressAdmin' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Invalid' }
 
@@ -2046,6 +2066,202 @@ paths:
                       - type: object
                         properties:
                           output: { type: [string, 'null'], description: 'The end of the standard output and the standard error. For a command that did not start, the reason.' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{websiteId}/wordpress:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [WordPress]
+      summary: Show WordPress on a website
+      responses:
+        '200':
+          description: The WordPress site, or null when the website has none, and the last 20 WP-CLI commands.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wordpress: { oneOf: [{ $ref: '#/components/schemas/WordPress' }, { type: 'null' }] }
+                  commands: { type: array, items: { $ref: '#/components/schemas/WpCliCommand' } }
+                  busy: { type: [string, 'null'], description: The ID of the WordPress job that is open now. }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [WordPress]
+      summary: Install WordPress on a website that runs
+      description: >-
+        The document root must be empty, or have only the default page of a new website. The
+        panel makes a MariaDB database and its user on a database server of the customer on the
+        server of the website, or makes a database server. The agent downloads WordPress with
+        WP-CLI, writes wp-config.php and runs the installer. The answer has the password of the
+        administrator, one time. A token also needs the scope databases:write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WordPressInstall' }
+      responses:
+        '202':
+          description: The install job is in the queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wordpress: { $ref: '#/components/schemas/WordPress' }
+                  admin: { $ref: '#/components/schemas/WordPressAdmin' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, WordPress has an open job, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    patch:
+      tags: [WordPress]
+      summary: Change the automatic updates of WordPress
+      description: >-
+        In the maintenance window of its server, the panel looks for updates one time each day.
+        It updates WordPress, the plugins and the themes as these settings allow, with a restore
+        point and a health check. "minor" updates WordPress only to a new version with the same
+        major version, for example 6.8.1 to 6.8.3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [autoUpdates]
+              properties:
+                autoUpdates: { $ref: '#/components/schemas/WordPressAutoUpdates' }
+      responses:
+        '200':
+          description: The WordPress site.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wordpress: { $ref: '#/components/schemas/WordPress' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/check:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [WordPress]
+      summary: Read the versions and the available updates
+      description: >-
+        On a website with no WordPress site in the panel, the panel looks for WordPress in the
+        document root, for example for a site from an import. When the job fails, the website has
+        no WordPress site in the panel.
+      responses:
+        '202':
+          description: The job is in the queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wordpress: { $ref: '#/components/schemas/WordPress' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, WordPress has an open job, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/updates:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [WordPress]
+      summary: Update WordPress, plugins and themes
+      description: >-
+        The agent saves a restore point first: the files with no uploads and no caches, and a
+        dump of the database. Then it updates, and checks that WordPress loads and that the site
+        answers. When an update or the check fails, the agent puts back the restore point. With
+        `all`, the panel updates WordPress, each plugin and each theme with an update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                core: { type: [string, 'null'], enum: [minor, latest, null] }
+                plugins: { type: array, maxItems: 200, items: { type: string }, example: [akismet] }
+                themes: { type: array, maxItems: 200, items: { type: string } }
+                all: { type: boolean }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'WordPress is not ready, the website does not run, WordPress has an open job, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/restore:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [WordPress]
+      summary: Roll back the last update
+      description: >-
+        The agent puts back the restore point of the last update: the files, and the database.
+        The uploads and the caches stay as they are. The changes to the database after the update,
+        for example new posts, comments and orders, go.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'WordPress is not ready, the website does not run, WordPress has an open job, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/cli:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [WordPress]
+      summary: Run a WP-CLI command
+      description: >-
+        The agent runs WP-CLI in the container of the website, as the Unix user of the website,
+        in the document root. Each argument goes to WP-CLI as it is, with no shell. The command
+        has no terminal, so "shell" and "db cli" are not permitted. The agent stops a command
+        after 20 minutes. The audit log and the history have the command with no values of
+        password options, for example `--user_pass=***`. The output can have data of the site.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [args]
+              properties:
+                args: { type: array, maxItems: 40, items: { type: string, maxLength: 1000 }, example: [plugin, list, --status=active] }
+      responses:
+        '202':
+          description: The command, and its job. The command gets the result when the job is complete.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command: { $ref: '#/components/schemas/WpCliCommand' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, or the customer is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/wordpress/commands:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [WordPress]
+      summary: List the WP-CLI commands of a website
+      responses:
+        '200':
+          description: The last 100 commands, the newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/WpCliCommand' } }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/websites/{websiteId}/terminal-sessions:
@@ -8124,6 +8340,83 @@ components:
         lastResult: { type: [string, 'null'], enum: [ok, failed, null] }
         lastExitCode: { type: [integer, 'null'], description: -1 when the command did not start. }
         lastOutput: { type: [string, 'null'], description: The end of the output of the last run. }
+    WordPressInstall:
+      type: object
+      required: [title, adminUser, adminEmail]
+      properties:
+        title: { type: string, maxLength: 100, example: Acme shop }
+        adminUser: { type: string, minLength: 3, maxLength: 60, description: 'The first administrator. Not "admin" or "administrator".', example: jane }
+        adminEmail: { type: string, format: email }
+        locale: { type: [string, 'null'], default: en_GB, description: A WordPress locale., example: de_DE }
+    WordPressAdmin:
+      type: object
+      description: The sign-in of the first administrator. The panel shows the password one time and does not keep it.
+      properties:
+        user: { type: string }
+        password: { type: string }
+        loginUrl: { type: string, example: 'https://acme.example/wp-login.php' }
+    WordPressAutoUpdates:
+      type: object
+      properties:
+        core: { type: string, enum: ['off', minor, all], default: minor }
+        plugins: { type: boolean, default: false }
+        themes: { type: boolean, default: false }
+    WordPressItem:
+      type: object
+      properties:
+        name: { type: string, description: The directory of the plugin or the theme. }
+        title: { type: string }
+        status: { type: string, example: active }
+        version: { type: string }
+        update: { type: [string, 'null'], description: The version of the available update. }
+    WordPress:
+      type: object
+      properties:
+        status: { type: string, enum: [installing, checking, ready, failed] }
+        version: { type: [string, 'null'] }
+        coreMinor: { type: [string, 'null'], description: The latest version with the same major version, when it is newer. }
+        coreLatest: { type: [string, 'null'], description: The latest version, when it is a newer major version. }
+        siteUrl: { type: [string, 'null'] }
+        adminUrl: { type: [string, 'null'] }
+        adminUser: { type: [string, 'null'] }
+        databaseId: { type: [string, 'null'], description: The database of the site. The restore point has a dump of it. }
+        plugins: { type: array, items: { $ref: '#/components/schemas/WordPressItem' } }
+        themes: { type: array, items: { $ref: '#/components/schemas/WordPressItem' } }
+        checkedAt: { type: [string, 'null'], format: date-time }
+        autoUpdates: { $ref: '#/components/schemas/WordPressAutoUpdates' }
+        lastUpdate:
+          type: [object, 'null']
+          properties:
+            jobId: { type: string }
+            at: { type: string, format: date-time }
+            automatic: { type: boolean }
+            state: { type: string, enum: [succeeded, rolledBack, failed], description: '"rolledBack": the update failed and the agent put back the restore point.' }
+            core: { type: string }
+            plugins: { type: array, items: { type: string } }
+            themes: { type: array, items: { type: string } }
+            from: { type: [string, 'null'] }
+            to: { type: [string, 'null'] }
+            error: { type: [string, 'null'] }
+        restorePoint:
+          type: [object, 'null']
+          properties:
+            at: { type: string, format: date-time }
+            version: { type: [string, 'null'], description: The version of WordPress in the restore point. }
+            database: { type: boolean, description: True when the restore point has a dump of the database. }
+            restoredAt: { type: string, format: date-time }
+        error: { type: [string, 'null'] }
+    WpCliCommand:
+      type: object
+      properties:
+        id: { type: string }
+        command: { type: string, example: 'wp user update 1 --user_pass=***' }
+        status: { type: string, enum: [running, done, failed], description: '"failed": the command did not start.' }
+        exitCode: { type: [integer, 'null'] }
+        output: { type: [string, 'null'], description: The end of the output, at most 16 KB. }
+        ranAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        user: { type: [string, 'null'] }
+        jobId: { type: [string, 'null'] }
     WebsiteCommand:
       type: object
       properties:

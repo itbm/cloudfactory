@@ -130,6 +130,8 @@ class JobOutcome
             if ($job->action === AgentAction::SetPacks && $state === JobState::Succeeded) {
                 Packs::jobFinished($job, $result);
             }
+            // FR-206: the WordPress sites, and the install that waits for a new website.
+            WordPress::jobFinished($job, $state === JobState::Succeeded, $result);
             // A part of an account export is complete, or the export failed.
             if ($job->action === AgentAction::ExportWebsite) {
                 AccountExports::jobFinished($job, $state === JobState::Succeeded, $error, $result);
@@ -829,6 +831,9 @@ class JobOutcome
     private static function withoutPasswords(array $payload): array
     {
         unset($payload['password'], $payload['passwordHash'], $payload['token'], $payload['wordpressValues']);
+        // WordPress: the passwords of an install, and the arguments of a WP-CLI command, which
+        // can have a password. The panel keeps the command with no passwords (WordPress::redact).
+        unset($payload['adminPassword'], $payload['databasePassword'], $payload['args']);
         // The token and the webhook secret of a plugin that the panel runs.
         if (is_array($payload['website'] ?? null)) {
             unset($payload['website']['environment']);
