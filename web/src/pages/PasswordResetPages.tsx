@@ -6,7 +6,7 @@ import { BrandMark, useBrand } from "../components/Brand";
 import { Field, FormError, Status } from "../components/ui";
 
 /** The card of the pages before sign-in: the brand, a heading and the text under it. */
-function SignInCard({ title, intro, children }: { title: string; intro: React.ReactNode; children: React.ReactNode }) {
+export function SignInCard({ title, intro, children }: { title: string; intro: React.ReactNode; children: React.ReactNode }) {
   const brand = useBrand();
   return (
     <main className="login" id="main">
