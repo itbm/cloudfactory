@@ -25,6 +25,11 @@ tags:
   - name: Files
     description: The file manager of a website.
   - name: Cron jobs
+  - name: Commands
+    description: >-
+      Run a command in the container of a website, and the command log of the website. The
+      command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
+      website.
   - name: Deploys
     description: Deploys of a website from a Git repository.
   - name: Previews
@@ -1737,6 +1742,97 @@ paths:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'The website does not run, or its customer is suspended.' }
+
+  /v1/websites/{websiteId}/commands:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Commands]
+      summary: List the command log of a website
+      description: >-
+        Each command that a user ran in the container of the website, with who ran it, when,
+        from which address and the result. The newest command is first. The list has no output:
+        get one command for its output. A user who is not an administrator sees a command of an
+        administrator or of the provider with the name "Administrator" or "Your provider" and
+        with no address.
+      parameters:
+        - { name: source, in: query, schema: { type: string, enum: [run] } }
+        - { name: q, in: query, description: A part of the command text., schema: { type: string, maxLength: 200 } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: One page of the command log.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/WebsiteCommand' } }
+                  meta:
+                    type: object
+                    properties:
+                      currentPage: { type: integer }
+                      lastPage: { type: integer }
+                      total: { type: integer }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    post:
+      tags: [Commands]
+      summary: Run a command now
+      description: >-
+        The agent runs the command with `sh -c` in the directory `/app` of the container of the
+        website, as the Unix user of the website, with the limits of the website. The command has
+        no terminal and no input. The panel adds the command to the command log before it sends
+        the job. The job succeeds when the command ran, also when its exit code is not 0. When the
+        job is complete, the command has the exit code and the last 64 KiB of the output. A
+        website can run 2 commands at the same time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [command]
+              properties:
+                command: { type: string, maxLength: 1000, example: php artisan migrate --force, description: One line. }
+                timeoutSeconds: { type: integer, minimum: 1, maximum: 3600, default: 600, description: The agent stops the command after this time. }
+      responses:
+        '202':
+          description: The entry of the command log, and the job that runs the command.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command: { $ref: '#/components/schemas/WebsiteCommand' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, its customer is suspended, or 2 commands of the website run now.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/commands/{commandId}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: commandId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Commands]
+      summary: Get one command of the command log, with its output
+      responses:
+        '200':
+          description: The command.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command:
+                    allOf:
+                      - { $ref: '#/components/schemas/WebsiteCommand' }
+                      - type: object
+                        properties:
+                          output: { type: [string, 'null'], description: 'The end of the standard output and the standard error. For a command that did not start, the reason.' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/websites/{websiteId}/deploy:
     parameters:
@@ -6679,6 +6775,23 @@ components:
         lastResult: { type: [string, 'null'], enum: [ok, failed, null] }
         lastExitCode: { type: [integer, 'null'], description: -1 when the command did not start. }
         lastOutput: { type: [string, 'null'], description: The end of the output of the last run. }
+    WebsiteCommand:
+      type: object
+      properties:
+        id: { type: string }
+        websiteId: { type: string }
+        source: { type: string, enum: [run], description: '"run" is the action "Run a command" of the panel, the API and the CLI.' }
+        command: { type: string }
+        state: { type: string, enum: [running, done, failed], description: '"done": the command ran and has an exit code. "failed": the command did not start.' }
+        exitCode: { type: [integer, 'null'] }
+        timedOut: { type: boolean, description: True when the agent stopped the command at its time limit. }
+        timeoutSeconds: { type: [integer, 'null'] }
+        actor: { type: string, description: The user who ran the command, as in the audit log. }
+        ip: { type: [string, 'null'], description: The address of the client. Null when the user must not see it. }
+        jobId: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
     Deploy:
       type: object
       properties:

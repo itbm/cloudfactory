@@ -74,7 +74,7 @@ The product specification, section 6.4, gives the requirements.
   The panel refuses to turn on SFTP for a suspended customer and for a website in the state
   `failed`.
 
-## Files, logs, cron jobs and deploys
+## Files, logs, cron jobs, commands and deploys
 
 - The agent does each file operation, each read of the logs, each cron command and each
   build as the Unix user of the website. The root helper has no new command and no new
@@ -102,6 +102,17 @@ The product specification, section 6.4, gives the requirements.
   limits of a website. The firewall rules for the website user apply to both.
 - A customer controls the commands of its cron jobs and its builds. This gives the customer
   no new rights: the customer can run the same code in its website.
+- **Run a command** runs a command in the gVisor container of the website as the website
+  user, the same as a cron command. The command has no standard input and a time limit of
+  1 hour at most. A website can have 2 commands that run at the same time.
+- The panel records each command in the command log of the website before it sends the job:
+  the command, the user or the token, the IP address and the time. The result completes the
+  entry. The panel also records each command in the audit log. A customer cannot change or
+  remove an entry of the command log.
+- The command log keeps the last 64 KiB of the output. The output can contain secrets of the
+  customer, for example when a command prints an environment variable. Only the users who
+  can see the website can read the command log. When a command does not start, the entry
+  has the short error for customers, not the error of the server.
 - The agent keeps a limited quantity of the output of each command: the first 8 MiB of the
   standard output, and the start and the end of the error output. It discards the remainder
   while the command runs. A command of a customer thus cannot use all the memory of the
@@ -140,7 +151,8 @@ The product specification, section 6.4, gives the requirements.
 - A user needs the token scope for websites to use these routes. An owner sees only its own
   websites. For a suspended customer, the panel refuses each change of a file, a cron job and
   a Git source, each deploy and each new preview.
-- The panel records each change of a file, a cron job and a Git source in the audit log.
+- The panel records each change of a file, a cron job and a Git source, and each command
+  that a user runs, in the audit log.
   It does not record the content of a file.
 
 ## Databases

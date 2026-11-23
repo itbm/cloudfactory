@@ -258,6 +258,16 @@ class DemoTest extends TestCase
         $job = $this->runJob($this->postJson("{$base}/cron-jobs/{$cron->id}/run")->assertAccepted()->json('job.id'));
         $this->assertSame([JobState::Succeeded, 0], [$job->state, $cron->fresh()->last_exit_code]);
 
+        // "Run a command" gives a sample output. A command with the word "fail" ends with exit code 1.
+        $ran = $this->postJson("{$base}/commands", ['command' => 'php artisan migrate --force'])->assertAccepted()->json();
+        $this->assertSame(JobState::Succeeded, $this->runJob($ran['job']['id'])->state);
+        $this->getJson("{$base}/commands/{$ran['command']['id']}")->assertJsonPath('command.state', 'done')->assertJsonPath('command.exitCode', 0)
+            ->assertJsonPath('command.actor', 'Olu Owner');
+        $this->assertStringContainsString('Running migrations', $this->getJson("{$base}/commands/{$ran['command']['id']}")->json('command.output'));
+        $ran = $this->postJson("{$base}/commands", ['command' => 'php fail.php'])->json();
+        $this->runJob($ran['job']['id']);
+        $this->getJson("{$base}/commands/{$ran['command']['id']}")->assertJsonPath('command.exitCode', 1);
+
         // A deploy goes live. A repository with "fail" in its address fails in the build.
         $this->getJson("{$base}/deploy")->assertOk()->assertJsonPath('source.trigger', 'webhook')->assertJsonPath('source.secrets', ['COMPOSER_AUTH', 'SENTRY_AUTH_TOKEN'])->assertJsonCount(6, 'releases');
         $answer = $this->postJson("{$base}/deploy/releases")->assertAccepted()->json();
