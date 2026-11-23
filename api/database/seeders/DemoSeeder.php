@@ -1075,25 +1075,27 @@ class DemoSeeder extends Seeder
 
         $api = $this->websites['api.acme.example.com'];
         $key = SshKey::generate('cloudfactory-'.$api->unix_user);
-        $api->gitSource()->create([
+        $api->gitSource()->create(GitSource::newWebhook() + [
             'repository' => 'git@github.com:acme-example/api.git', 'branch' => 'main', 'web_directory' => 'public', 'trigger' => GitSource::WEBHOOK,
-            'build_commands' => ['composer install --no-dev --optimize-autoloader', 'ln -s /app/shared/.env .env', 'php artisan migrate --force'],
+            'build_commands' => ['composer install --no-dev --optimize-autoloader', 'ln -s /app/shared/.env .env'],
+            'migration_command' => 'php artisan migrate --force',
             'public_key' => $key['public'], 'private_key' => $key['private'],
-            'webhook_token' => $token = Str::random(48), 'webhook_token_hash' => hash('sha256', $token),
             'secrets' => ['COMPOSER_AUTH' => '{"github-oauth":{"github.com":"demo"}}', 'SENTRY_AUTH_TOKEN' => 'demo'],
         ]);
-        // hours ago, commit subject, state, live, seconds, trigger, error
+        // hours ago, commit subject, state, live, seconds, trigger, error, migration. A deploy
+        // takes about 6 minutes: the agent checks the website for 5 minutes after the switch.
         $releases = [
-            [400, 'Add the invoice endpoints', Release::REMOVED, false, 71, GitSource::MANUAL, null],
-            [170, 'Cache the product list', Release::READY, false, 64, GitSource::WEBHOOK, null],
-            [72, 'Use the new stock service', Release::READY, false, 69, GitSource::WEBHOOK, null],
-            [26, 'Update the dependencies', Release::FAILED, false, 22, GitSource::WEBHOOK, "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.\n\n  Problem 1\n    - laravel/framework is locked to version v13.2.0 and an update of this package was not requested."],
-            [25, 'Update the dependencies and the lock file', Release::READY, true, 75, GitSource::WEBHOOK, null],
+            [400, 'Add the invoice endpoints', Release::REMOVED, false, 371, GitSource::MANUAL, null, true],
+            [170, 'Cache the product list', Release::READY, false, 364, GitSource::WEBHOOK, null, false],
+            [72, 'Use the new stock service', Release::READY, false, 369, GitSource::WEBHOOK, null, true],
+            [50, 'Show the stock of each warehouse', Release::FAILED, false, 352, GitSource::WEBHOOK, 'the health check failed after the switch: 9 of 30 checks failed, last error: status 500', false],
+            [26, 'Update the dependencies', Release::FAILED, false, 22, GitSource::WEBHOOK, "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.\n\n  Problem 1\n    - laravel/framework is locked to version v13.2.0 and an update of this package was not requested.", false],
+            [25, 'Update the dependencies and the lock file', Release::READY, true, 375, GitSource::WEBHOOK, null, true],
         ];
-        foreach ($releases as [$hours, $message, $state, $live, $seconds, $trigger, $error]) {
+        foreach ($releases as [$hours, $message, $state, $live, $seconds, $trigger, $error, $migration]) {
             $release = new Release([
                 'website_id' => $api->id, 'ref' => 'main', 'commit' => sha1($message), 'message' => $message, 'state' => $state, 'live' => $live,
-                'duration_seconds' => $seconds, 'trigger' => $trigger, 'error' => $error,
+                'duration_seconds' => $seconds, 'trigger' => $trigger, 'error' => $error, 'migration' => $migration,
             ]);
             $release->id = $release->newUniqueId();
             $release->document_root = 'releases/'.$release->id.'/public';

@@ -91,12 +91,24 @@ The product specification, section 6.4, gives the requirements.
   standard output, and the start and the end of the error output. It discards the remainder
   while the command runs. A command of a customer thus cannot use all the memory of the
   agent with its output. A cron job keeps only the last 16 KiB of its output.
-- The panel encrypts the private deploy key, the webhook token and the build secrets in its
-  database. The API gives the names of the secrets, not their values. The private key and
-  the secrets are in a job only when the panel sends it to the agent.
-- The address of a webhook has a random token. Each person who has the address can start a
-  deploy of the branch, but cannot change what the deploy does. The route accepts 30
-  requests each minute. The panel does not start a second deploy while one is in progress.
+- The panel encrypts the private deploy key, the webhook secret and the build secrets in its
+  database. It keeps only the SHA-256 hash of the webhook token. The API gives the names of
+  the secrets, not their values. The private key and the secrets are in a job only when the
+  panel sends it to the agent. Only a token with the scope to change websites gets the
+  webhook address and the webhook secret.
+- The address of a webhook has a random token. The panel also checks the signature of each
+  request with the webhook secret of the website: HMAC-SHA256 of the body for GitHub, Gitea,
+  Forgejo, Gogs and Bitbucket, and the secret token for GitLab. It compares in constant
+  time, and refuses a request with no correct signature. Thus a person who knows only the
+  address cannot start a deploy. A correct request can start a deploy of the branch, but
+  cannot change what the deploy does. The route accepts 30 requests each minute. The panel
+  does not start a second deploy while one is in progress: it deploys the last push after
+  the deploy. **New address and secret** changes both at once.
+- A check of the branch for a deploy on a schedule runs `git ls-remote` in the build
+  container of the website, as the website user, with the deploy key of the website. The
+  host of the agent runs no Git command. The agent removes the key after the check.
+- The migration command runs in the build container, before the switch, with the build
+  secrets. A customer controls this command, as it controls the build commands.
 - A user needs the token scope for websites to use these routes. An owner sees only its own
   websites. For a suspended customer, the panel refuses each change of a file, a cron job and
   a Git source, and each deploy.

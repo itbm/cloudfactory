@@ -1670,6 +1670,16 @@ paths:
         the build commands is the release. The directory `/app/shared` is for the files that all
         releases use, for example an `.env` file. The link `/app/current` points to the release
         that the website serves.
+
+
+        The migration command runs after the build commands, in the build container, before the
+        switch. After the switch, the agent checks the website for 5 minutes. When the check
+        fails, the website goes back to the previous release. After a migration command, the
+        website keeps the new release, and the owner gets the email `deploy.attention`.
+
+
+        The trigger `schedule` checks the branch each `checkMinutes` minutes, and deploys each new
+        commit one time. A commit whose deploy failed does not deploy again on the next check.
       requestBody:
         required: true
         content:
@@ -1681,8 +1691,10 @@ paths:
                 repository: { type: string, example: 'git@github.com:acme/shop.git' }
                 branch: { type: string, example: main }
                 webDirectory: { type: string, default: public, description: 'The directory in the repository that the web server serves. "." is the repository itself.' }
-                trigger: { type: string, enum: [manual, webhook], default: manual, description: With "webhook", a request to `webhookUrl` starts a deploy. }
+                trigger: { type: string, enum: [manual, webhook, schedule], default: manual, description: 'With "webhook", a signed request to `webhookUrl` starts a deploy. With "schedule", the panel checks the branch each `checkMinutes` minutes.' }
+                checkMinutes: { type: integer, minimum: 1, maximum: 1440, default: 5, description: The interval of the branch check for the trigger "schedule". }
                 buildCommands: { type: array, maxItems: 10, items: { type: string, maxLength: 1000 }, example: ['composer install --no-dev', 'ln -s /app/shared/.env .env'] }
+                migrationCommand: { type: [string, 'null'], maxLength: 1000, example: 'php artisan migrate --force', description: A command that changes the database. Empty or null removes it. }
       responses:
         '200':
           description: The repository and the releases.
@@ -1701,6 +1713,25 @@ paths:
         '204': { description: Disconnected. }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: A deploy is in progress. }
+
+  /v1/websites/{websiteId}/deploy/webhook:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Deploys]
+      summary: Make a new webhook address and secret
+      description: >-
+        The old address stops at once. Give the new `webhookUrl` and `webhookSecret` to the Git
+        host.
+      responses:
+        '200':
+          description: The repository with the new address and secret.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/deploy/secrets/{name}:
     parameters:
@@ -1749,9 +1780,11 @@ paths:
       tags: [Deploys]
       summary: Deploy the branch now
       description: >-
-        The job gets the code, builds it, starts a new container from the new release, checks
-        it, and only then sends the traffic to it. If a step fails, the website continues from
-        the release that it had, and the release has the state `failed` with the error. The
+        The job gets the code, builds it, runs the migration command, starts a new container
+        from the new release, checks it, and only then sends the traffic to it. Then the agent
+        checks the website for 5 minutes. If a step or this check fails, the website goes back to
+        the release that it had, and the release has the state `failed` with the error. After a
+        migration command, a failed check does not go back: the release has `healthError`. The
         server keeps the last 5 releases. A website has one deploy at a time (409).
       responses:
         '202': { $ref: '#/components/responses/ReleaseJob' }
@@ -1782,13 +1815,23 @@ paths:
       tags: [Deploys]
       summary: Start a deploy from a webhook
       description: >-
-        The address is `webhookUrl` of the deploy settings. The token in the address is the only
-        credential, so keep the address secret. The route operates only when the trigger of the
-        website is `webhook` (404). A Git host sends the branch of a push in `ref`, for example
-        `refs/heads/main`: a push to a different branch starts no deploy (`ignored`). A request
-        while a deploy is in progress starts no second deploy (`busy`). At most 30 requests in
-        one minute from one address.
+        The address is `webhookUrl` of the deploy settings. Each request must have a signature
+        from `webhookSecret` (401): `X-Hub-Signature-256: sha256=<HMAC-SHA256 of the body>` from
+        GitHub, Gitea, Forgejo or a script, `X-Gitea-Signature`, `X-Forgejo-Signature` or
+        `X-Gogs-Signature` with the HMAC-SHA256 as hexadecimal, `X-Hub-Signature:
+        sha256=<HMAC-SHA256>` from Bitbucket, or `X-Gitlab-Token: <secret>` from GitLab.
+
+
+        A push to the branch of the website starts a deploy when the trigger is `webhook`. The
+        panel reads the push events of GitHub, GitLab, Gitea, Forgejo, Gogs and Bitbucket, and
+        `ref` of a different request, for example `refs/heads/main` or `main`. A push to a
+        different branch, a tag, a removed branch and a different event start no deploy
+        (`ignored`). A push while a deploy is in progress starts a deploy when that deploy is
+        complete (`queued`). At most 30 requests in one minute from one address.
       security: []
+      parameters:
+        - { name: X-Hub-Signature-256, in: header, required: false, schema: { type: string, example: 'sha256=5d1f...' } }
+        - { name: X-Gitlab-Token, in: header, required: false, schema: { type: string } }
       requestBody:
         required: false
         content:
@@ -1797,17 +1840,19 @@ paths:
               type: object
               properties:
                 ref: { type: string, example: refs/heads/main }
+                after: { type: string, description: The ID of the new commit. }
       responses:
         '200':
-          description: The push was to a different branch.
+          description: 'A test request of the Git host (`ok`), or a request that starts no deploy (`ignored`).'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HookAnswer' }
         '202':
-          description: 'The deploy started, or a deploy is in progress.'
+          description: 'The deploy started, or it starts when the deploy in progress is complete.'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HookAnswer' }
+        '401': { description: The request has no correct signature. }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: 'The panel could not make the website, or its customer is suspended.' }
 
@@ -6634,10 +6679,16 @@ components:
             repository: { type: string }
             branch: { type: string }
             webDirectory: { type: string }
-            trigger: { type: string, enum: [manual, webhook] }
+            trigger: { type: string, enum: [manual, webhook, schedule] }
+            checkMinutes: { type: integer, description: The interval of the branch check for the trigger "schedule". }
+            checkedAt: { type: [string, 'null'], format: date-time, description: The time of the last branch check. }
+            checkError: { type: [string, 'null'], description: The error of the last branch check. }
             buildCommands: { type: array, items: { type: string } }
+            migrationCommand: { type: [string, 'null'], description: The command that changes the database. }
             deployKey: { type: string, description: The public SSH key of the website. Add it to a private repository as a read-only deploy key. }
-            webhookUrl: { type: string, description: A POST request to this address starts a deploy when the trigger is "webhook". }
+            webhookUrl: { type: [string, 'null'], description: 'A signed POST request to this address starts a deploy when the trigger is "webhook". Only a token with the scope to change websites gets it.' }
+            webhookSecret: { type: [string, 'null'], description: The secret of the webhook signatures. Only a token with the scope to change websites gets it. }
+            deployQueued: { type: boolean, description: True when a push came during a deploy. The panel deploys it when the deploy is complete. }
             secrets: { type: array, items: { type: string }, description: The names of the secrets. No route gives a value. }
         releases: { type: array, items: { $ref: '#/components/schemas/Release' } }
     Release:
@@ -6649,15 +6700,17 @@ components:
         message: { type: string, description: The subject of the commit. }
         state: { type: string, enum: [building, ready, failed, removed], description: '"ready": the release is on the server. "removed": the agent removed its directory.' }
         live: { type: boolean, description: True for the release that the website serves. }
-        trigger: { type: string, enum: [manual, webhook] }
+        trigger: { type: string, enum: [manual, webhook, schedule] }
+        migration: { type: boolean, description: True when the deploy ran the migration command. }
+        healthError: { type: [string, 'null'], description: 'The error of the health check after the switch, for a deploy with a migration. The website kept the release.' }
         durationSeconds: { type: integer }
-        error: { type: [string, 'null'], description: 'The error of a deploy that failed, with the end of the output of Git or of the build command.' }
+        error: { type: [string, 'null'], description: 'The error of a deploy that failed, with the end of the output of Git, of a build command or of the migration command.' }
         jobId: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
     HookAnswer:
       type: object
       properties:
-        status: { type: string, enum: [started, busy, ignored] }
+        status: { type: string, enum: [ok, started, queued, ignored] }
         message: { type: string }
         releaseId: { type: string }
     JobState:
@@ -7700,7 +7753,7 @@ components:
             id: { type: string }
     NotificationEvent:
       type: string
-      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline]
+      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline, deploy.attention, password.reset]
     NotificationPreference:
       type: object
       properties:
