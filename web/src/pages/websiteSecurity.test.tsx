@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
-import type { WebsiteSecurity } from "../api/types";
+import type { MalwareScans, WebsiteSecurity } from "../api/types";
 import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelApi";
 
 afterEach(() => {
@@ -102,13 +102,63 @@ describe("the Security tab", () => {
   });
 });
 
+describe("the malware scan", () => {
+  /** The card of the malware scan, when it has loaded. */
+  async function card() {
+    const heading = await screen.findByRole("heading", { name: "Malware scan" });
+    const section = heading.closest("section")!;
+    await within(section).findByLabelText("Schedule");
+    return section;
+  }
+
+  it("shows the file that the last scan found, and deletes it after a confirmation", async () => {
+    const { api, id } = await open("shop.acme.example.com");
+    const scans = await card();
+    expect(within(scans).getAllByText("Malware found").length).toBeGreaterThan(0);
+    expect(within(scans).getByRole("cell", { name: "/public/uploads/invoice-2026-11.php" })).toBeTruthy();
+    expect(within(scans).getByRole("cell", { name: "Eicar-Test-Signature" })).toBeTruthy();
+    // The earlier scan of the shop found no malware.
+    expect(within(scans).getByRole("heading", { name: "Earlier scans" })).toBeTruthy();
+    expect(within(scans).getByText("No malware")).toBeTruthy();
+
+    api.on(`DELETE /websites/${id}/files?path=*`, () => {
+      api.change<MalwareScans>(`/websites/${id}/malware-scans`, (body) => { body.scans[0].findings[0].removed = true; });
+      return [204, null];
+    });
+    fireEvent.click(within(scans).getByRole("button", { name: /^Delete file/ }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete file" }));
+    await waitFor(() => expect(api.changes.at(-1)).toEqual({ method: "DELETE", path: `/websites/${id}/files?path=%2Fpublic%2Fuploads%2Finvoice-2026-11.php`, body: undefined }));
+    expect(await within(scans).findByText("Deleted")).toBeTruthy();
+  });
+
+  it("starts a scan now and changes the schedule", async () => {
+    const { api, id } = await open("acme.example.com");
+    const scans = await card();
+    expect(within(scans).getAllByText("No malware")).toHaveLength(2);
+    expect(within(scans).getByText(/Next scan/)).toBeTruthy();
+    const scan = { id: "01scan", trigger: "manual", state: "running", scannedFiles: 0, infectedFiles: 0, errors: 0, signatures: 0, engine: null, findings: [], truncated: false, error: null, jobId: "01job", startedAt: new Date().toISOString(), finishedAt: null };
+    api.on(`POST /websites/${id}/malware-scans`, () => [202, { scan, job: apiJob({ title: "Scan for malware", action: "ScanWebsite", websiteId: id }) }]);
+    fireEvent.click(within(scans).getByRole("button", { name: "Scan now" }));
+    await waitFor(() => expect(api.changes.at(-1)).toEqual({ method: "POST", path: `/websites/${id}/malware-scans`, body: undefined }));
+
+    api.on(`PATCH /websites/${id}/malware-scans`, (body) => ({ schedule: (body as { schedule: string }).schedule, nextScanAt: null, scans: [] }));
+    fireEvent.change(within(scans).getByLabelText("Schedule"), { target: { value: "off" } });
+    await waitFor(() => expect(api.changes.at(-1)).toEqual({ method: "PATCH", path: `/websites/${id}/malware-scans`, body: { schedule: "off" } }));
+    expect(await within(scans).findByText("No scheduled scans.")).toBeTruthy();
+  });
+});
+
 describe("a website with no domains", () => {
-  it("has no Security tab", async () => {
+  it("has only the malware scan on the Security tab", async () => {
     await signedIn("owner");
     const worker = (await import("../api/store")).getState().websites.find((w) => w.kind !== "public");
     expect(worker).toBeTruthy();
-    render(<MemoryRouter initialEntries={[`/websites/${worker!.id}`]}><App /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={[`/websites/${worker!.id}/security`]}><App /></MemoryRouter>);
     const tabs = await screen.findByRole("navigation", { name: "Website sections" });
-    expect(within(tabs).queryByRole("link", { name: "Security" })).toBeNull();
+    expect(within(tabs).getByRole("link", { name: "Security" })).toBeTruthy();
+    expect(within(tabs).queryByRole("link", { name: "Domains" })).toBeNull();
+    expect(await screen.findByRole("heading", { name: "Malware scan" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "No protection in the edge proxy" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Firewall" })).toBeNull();
   });
 });

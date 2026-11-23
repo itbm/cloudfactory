@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\MailboxController;
 use App\Http\Controllers\Api\MailClusterController;
 use App\Http\Controllers\Api\MailDomainController;
 use App\Http\Controllers\Api\MailServerController;
+use App\Http\Controllers\Api\MalwareScanController;
 use App\Http\Controllers\Api\MeshController;
 use App\Http\Controllers\Api\NetworkController;
 use App\Http\Controllers\Api\NotificationController;
@@ -162,6 +163,10 @@ Route::prefix('v1')->group(function () {
             Route::get('websites/{websiteId}/security', [SecurityController::class, 'show']);
             Route::patch('websites/{websiteId}/security', [SecurityController::class, 'update']);
             Route::get('websites/{websiteId}/security/events', [SecurityController::class, 'events'])->middleware('throttle:site-tools');
+            // The malware scans of a website: the schedule, the last scans, and a scan now.
+            Route::get('websites/{websiteId}/malware-scans', [MalwareScanController::class, 'index']);
+            Route::post('websites/{websiteId}/malware-scans', [MalwareScanController::class, 'store'])->middleware('throttle:10,1,post-websites-x-malware-scans');
+            Route::patch('websites/{websiteId}/malware-scans', [MalwareScanController::class, 'update']);
             Route::get('usage-alerts', [UsageController::class, 'alerts']);
 
             Route::get('websites/{websiteId}/cron-jobs', [CronJobController::class, 'index']);

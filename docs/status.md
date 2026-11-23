@@ -101,6 +101,10 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `agent/internal/caddy/security.go`, `agent/internal/actions/security.go`, `api/app/Services/WebsiteSecurity.php`, `api/app/Http/Controllers/Api/SecurityController.php`, `web/src/pages/website/SecurityTab.tsx`, `cli/cmd/cf/security.go`, `images/edge/Containerfile`
 
+- Malware scan of each website with ClamAV: a scan now and a weekly schedule, the infected files of the last scan with a delete action, the last 20 scans, and the email `malware.found`. The scan runs as the website user in a gVisor container with no network, with the website and the signatures read-only. The **Security** tab of a website, `cf security scan` and `/v1/websites/{id}/malware-scans`. The image workflow checks the scan image with a test signature. Not tested on a real server: freshclam as `cf-scan` and the scan container with `systemd-run --user` in gVisor
+
+  Where: `agent/internal/actions/scan.go`, `agent/internal/quadlet/scan.go`, `images/scan/Containerfile`, `api/app/Services/MalwareScans.php`, `api/app/Http/Controllers/Api/MalwareScanController.php`, `web/src/pages/website/MalwareScanCard.tsx`, `cli/cmd/cf/security.go`
+
 - Run a command and the command log: a user runs one command line in the container of a website, without a terminal, in the web panel (**Commands**), the API and the CLI (`cf commands run`). The panel records each command before it runs: the user or the token, the time, the IP address, and then the exit code and the end of the output
 
   Where: `api/app/Http/Controllers/Api/WebsiteCommandController.php`, `agent/internal/actions/command.go`, `web/src/pages/website/CommandsTab.tsx`, `cli/cmd/cf/commands.go`
