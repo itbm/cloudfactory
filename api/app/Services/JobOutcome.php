@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\WebsiteStatus;
+use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\BackupRemoval;
 use App\Models\CronJob;
@@ -18,6 +19,7 @@ use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
+use App\Models\WebsiteCommand;
 use App\Services\Certificates\Certificates;
 use App\Services\Deploys\Deploys;
 use App\Services\Dns\Zones;
@@ -262,6 +264,7 @@ class JobOutcome
                 'reboot_required' => (bool) ($result['rebootRequired'] ?? $job->server->reboot_required),
             ]),
             AgentAction::RunCronJob => self::cronRan($job, (int) ($result['exitCode'] ?? 0), (string) ($result['output'] ?? '')),
+            AgentAction::RunCommand => self::commandRan($job, $result),
             AgentAction::Deploy => $website && self::deployed($job, $website, $result),
             AgentAction::ActivateRelease => $website && self::releaseLive($website, (string) ($p['releaseId'] ?? '')),
             AgentAction::Reboot => $job->server->update(['state' => 'healthy', 'reboot_required' => false]),
@@ -310,6 +313,8 @@ class JobOutcome
             AgentAction::Reboot => $job->server->update(['state' => 'degraded']),
             // The command failed, or it did not start. The error has the end of its output.
             AgentAction::RunCronJob => self::cronRan($job, preg_match('/exit code (-?\d+)/', (string) $job->error, $m) ? (int) $m[1] : -1, (string) preg_replace('/^the command ended with exit code -?\d+: /', '', (string) $job->error)),
+            // The command did not start. The error of the job tells why.
+            AgentAction::RunCommand => self::commandRan($job, null),
             // The website continues from the release that it had (FR-1008). The release records
             // a migration command that ran: the database can have changes.
             AgentAction::Deploy => Release::whereKey($p['releaseId'] ?? '')->where('website_id', $job->website_id)->where('state', Release::BUILDING)
@@ -451,6 +456,34 @@ class JobOutcome
     {
         CronJob::whereKey($job->payload['cronJob']['id'] ?? '')->where('website_id', $job->website_id)
             ->update(['last_run_at' => $job->started_at ?? now(), 'last_exit_code' => $exitCode, 'last_output' => Str::limit($output, 4000)]);
+
+        return true;
+    }
+
+    /**
+     * Completes the entry of the command log of a job "Run a command". A result of null is a
+     * command that did not start: the entry gets the error of the job as its output.
+     *
+     * @param  array<string, mixed>|null  $result
+     */
+    private static function commandRan(AgentJob $job, ?array $result): bool
+    {
+        $exit = $result['exitCode'] ?? null;
+        WebsiteCommand::where('agent_job_id', $job->id)->where('website_id', $job->website_id)->where('state', WebsiteCommand::RUNNING)->update($result === null ? [
+            'state' => WebsiteCommand::FAILED,
+            // The error with no details of the server: each user of the website can read the log.
+            'output' => (string) JobResource::publicError($job),
+            'started_at' => $job->started_at,
+            'finished_at' => now(),
+        ] : [
+            'state' => WebsiteCommand::DONE,
+            'exit_code' => is_int($exit) ? $exit : -1,
+            'timed_out' => (bool) ($result['timedOut'] ?? false),
+            // The agent keeps the end of the output. The panel keeps the same end.
+            'output' => mb_strcut((string) ($result['output'] ?? ''), -WebsiteCommand::OUTPUT_MAX),
+            'started_at' => $job->started_at,
+            'finished_at' => now(),
+        ]);
 
         return true;
     }

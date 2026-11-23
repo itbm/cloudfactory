@@ -293,11 +293,12 @@ type Deps struct {
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	// packsMu protects packs: the packs whose runtimes the agent has loaded.
-	packsMu sync.Mutex
-	packs   []packs.Pack
-	rtMu    sync.RWMutex
-	obs     observer
-	cron    cronRuns
+	packsMu  sync.Mutex
+	packs    []packs.Pack
+	rtMu     sync.RWMutex
+	obs      observer
+	cron     cronRuns
+	commands commandRuns
 }
 
 // Images is the part of the shared image store that the actions use (images.Store).
