@@ -23,6 +23,40 @@ const panel = () => render(<MemoryRouter><DatabasesPanel websiteId={shop().id} /
 const database = (suffix: string) => getState().databases.find((d) => d.name === prefix + suffix)!;
 const row = (name: string, table: number) => within(screen.getAllByRole("table")[table]).getAllByRole("row").find((r) => r.textContent?.startsWith(name))!;
 
+describe("a database of a pack engine", () => {
+  // The sample data has the database pack MySQL, and a MySQL database server of Acme with the database of its API.
+  const apiSite = () => website("api.acme.example.com");
+  const open = () => render(<MemoryRouter><DatabasesPanel websiteId={apiSite().id} /></MemoryRouter>);
+
+  it("shows the version, the network name and no Adminer", () => {
+    open();
+    const events = within(screen.getAllByRole("table")[0]).getAllByRole("row").find((r) => r.textContent?.startsWith(`${apiSite().unixUser}_events`))!;
+    expect(events.textContent).toContain("MySQL 8.4");
+    expect(events.textContent).toContain("mysql-1.internal:3306");
+    expect(within(events).queryByRole("button", { name: "Open in Adminer" })).toBeNull();
+    // The user of the database connects only from the container of the website.
+    const user = within(screen.getAllByRole("table")[1]).getAllByRole("row").find((r) => r.textContent?.startsWith(`${apiSite().unixUser}_events`))!;
+    expect(within(user).getAllByRole("option").map((o) => o.textContent)).toEqual(["Website container only"]);
+  });
+
+  it("offers the engine for a new database, with the database server of the engine", () => {
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "New database" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("radio", { name: /MySQL/ }));
+    expect(within(dialog).getAllByRole("option").map((o) => o.textContent)).toContain("mysql-1 · port 3306 · 1 of 20 databases");
+  });
+
+  it("does not offer the engine when the server did not load the pack", () => {
+    getState().servers.find((s) => s.id === apiSite().serverId)!.databaseEngines = ["mariadb", "postgresql", "valkey"];
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "New database" }));
+    const dialog = screen.getByRole("dialog");
+    expect((within(dialog).getByRole("radio", { name: /MySQL/ }) as HTMLInputElement).disabled).toBe(true);
+    expect(dialog.textContent).toContain("did not load the pack of MySQL.");
+  });
+});
+
 describe("Valkey in the databases panel", () => {
   it("shows the host, the database number and the keys of a Valkey database", () => {
     panel();
@@ -91,7 +125,7 @@ describe("Valkey in the databases panel", () => {
   it("has no Valkey for a new database user", () => {
     panel();
     fireEvent.click(screen.getByRole("button", { name: "New user" }));
-    expect(within(screen.getByRole("dialog")).getAllByRole("radio").map((r) => r.closest("label")!.textContent)).toEqual(["MariaDBMariaDB 12.3", "PostgreSQLPostgreSQL 18"]);
+    expect(within(screen.getByRole("dialog")).getAllByRole("radio").map((r) => r.closest("label")!.textContent)).toEqual(["MariaDBMariaDB 12.3", "PostgreSQLPostgreSQL 18", "MySQLFrom a pack"]);
   });
 
   it("does not offer Valkey when the agent of the server cannot operate it", () => {

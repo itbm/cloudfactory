@@ -82,23 +82,41 @@ func (d *Deps) LoadPacks() error {
 	return d.usePacks(good)
 }
 
-// usePacks loads the runtimes of the packs, and keeps the packs for the report.
+// usePacks loads the runtimes and the database engines of the packs, and keeps the packs for
+// the report.
 func (d *Deps) usePacks(list []packs.Pack) error {
 	if err := quadlet.SetPackRuntimes(runtimesOf(list)); err != nil {
+		return err
+	}
+	if err := quadlet.SetPackEngines(packEngines(list)); err != nil {
 		return err
 	}
 	d.packsMu.Lock()
 	d.packs = slices.Clone(list)
 	d.packsMu.Unlock()
 	for _, p := range list {
+		if p.Manifest.IsDatabase() {
+			logPackEngine(p)
+			continue
+		}
+		if p.Manifest.PHP() {
+			slog.Info("PHP versions of a pack", "pack", p.Manifest.Slug, "version", p.Manifest.Version, "runtime", p.Manifest.Runtime.Family, "signed", p.Signed())
+			continue
+		}
 		slog.Info("runtime of a pack", "pack", p.Manifest.Slug, "version", p.Manifest.Version, "signed", p.Signed())
 	}
 	return nil
 }
 
+// runtimesOf gives the runtimes of the packs. A PHP pack (cf-php/1) adds no runtime: its
+// images are versions of a built-in PHP runtime, and the agent runs them as that runtime. A
+// database pack adds an engine (packEngines), not a runtime.
 func runtimesOf(list []packs.Pack) []quadlet.RuntimeSpec {
 	out := make([]quadlet.RuntimeSpec, 0, len(list))
 	for _, p := range list {
+		if p.Manifest.PHP() || p.Manifest.IsDatabase() {
+			continue
+		}
 		out = append(out, quadlet.RuntimeSpec{Name: p.Manifest.Slug, Label: p.Manifest.Name, Kind: quadlet.KindApp, Pack: p.Manifest.Slug + " " + p.Manifest.Version})
 	}
 	return out
@@ -158,7 +176,7 @@ func (d *Deps) SetPacks(req *agentv1.SetPacksRequest) (jobs.Job, error) {
 		{Name: "Save the packs and the image policy", Do: func(ctx context.Context) error {
 			return d.savePacks(ctx, in)
 		}},
-		{Name: "Load the runtimes", Do: func(ctx context.Context) error {
+		{Name: "Load the runtimes and the database engines", Do: func(ctx context.Context) error {
 			return d.usePacks(list)
 		}},
 	}, Result: func() map[string]any {
@@ -168,22 +186,57 @@ func (d *Deps) SetPacks(req *agentv1.SetPacksRequest) (jobs.Job, error) {
 		for _, rt := range quadlet.Runtimes() {
 			names = append(names, rt.Name)
 		}
-		return map[string]any{"packs": d.PackStates(), "runtimes": names}
+		return map[string]any{"packs": d.PackStates(), "runtimes": names, "databaseEngines": engines()}
 	}}, nil
 }
 
-// checkPackUse refuses to remove the pack of a runtime that a website of the server uses: the
-// agent could not start the website again. The panel refuses to remove such a pack too.
+// checkPackUse refuses to remove a pack that a website of the server uses: the runtime of
+// the pack, or an image of the pack (a PHP pack has no runtime of its own). It also refuses to
+// remove a database pack that a database server of the server uses, or a version of it. The
+// agent could not start the website or the database server again. The panel refuses to
+// remove such a pack too.
 func (d *Deps) checkPackUse(list []packs.Pack) error {
 	keep := map[string]bool{}
+	// versions gives the versions of each database pack of the list.
+	versions := map[string][]string{}
 	for _, p := range list {
 		keep[p.Manifest.Slug] = true
+		if p.Manifest.IsDatabase() {
+			for _, img := range p.Manifest.Images {
+				versions[p.Manifest.Slug] = append(versions[p.Manifest.Slug], img.Version)
+			}
+		}
+	}
+	if d.State != nil {
+		instances, err := d.State.DatabaseInstances()
+		if err != nil {
+			return err
+		}
+		for _, inst := range instances {
+			for id, srv := range inst.Servers {
+				if !isManaged(srv.Engine) {
+					continue
+				}
+				if !keep[srv.Engine] {
+					return fmt.Errorf("the database server %s uses the engine %s, so its pack cannot go", id, srv.Engine)
+				}
+				if !slices.Contains(versions[srv.Engine], srv.Version) {
+					return fmt.Errorf("the database server %s uses the version %s of the pack %s, so the version cannot go", id, srv.Version, srv.Engine)
+				}
+			}
+		}
 	}
 	d.packsMu.Lock()
 	var gone []string
+	// repos gives the pack of each image repository of the packs that go.
+	repos := map[string]string{}
 	for _, p := range d.packs {
-		if !keep[p.Manifest.Slug] {
-			gone = append(gone, p.Manifest.Slug)
+		if keep[p.Manifest.Slug] {
+			continue
+		}
+		gone = append(gone, p.Manifest.Slug)
+		for _, img := range p.Manifest.Images {
+			repos[img.Repository()] = p.Manifest.Slug
 		}
 	}
 	d.packsMu.Unlock()
@@ -195,8 +248,14 @@ func (d *Deps) checkPackUse(list []packs.Pack) error {
 		return err
 	}
 	for _, s := range sites {
-		if s.Website != nil && slices.Contains(gone, s.Website.GetRuntime()) {
+		if s.Website == nil {
+			continue
+		}
+		if slices.Contains(gone, s.Website.GetRuntime()) {
 			return fmt.Errorf("the website %s uses the runtime %s, so its pack cannot go", s.ID, s.Website.GetRuntime())
+		}
+		if pack, ok := repos[packs.Repository(s.Website.GetImage())]; ok {
+			return fmt.Errorf("the website %s uses the image %s of the pack %s, so the pack cannot go", s.ID, packs.Repository(s.Website.GetImage()), pack)
 		}
 	}
 	return nil
@@ -212,7 +271,12 @@ func (d *Deps) savePacks(ctx context.Context, in []packIn) error {
 	if err != nil {
 		return err
 	}
-	return d.writePacks(list)
+	if err := d.writePacks(list); err != nil {
+		return err
+	}
+	// The root helper makes the units of the database servers of pack engines, with the
+	// images of the packs that it checked.
+	return d.usePacks(list)
 }
 
 // writePacks writes the files of each pack, then the image policy, then removes the packs

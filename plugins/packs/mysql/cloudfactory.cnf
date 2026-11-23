@@ -1,0 +1,15 @@
+# The settings of the example MySQL pack. The agent starts the container with a read-only root
+# file system: only the data directory and /tmp are writable (cf-database/1, docs/packs.md).
+# The files in /etc/mysql/conf.d come after /etc/my.cnf, so these values replace its values.
+[mysqld]
+socket=/tmp/mysqld.sock
+pid-file=/tmp/mysqld.pid
+# No file import and no file export: the directory of the base image is not writable.
+secure-file-priv=NULL
+# Only the classic protocol on port 3306. The agent publishes only that port.
+mysqlx=OFF
+# A plan can give a database server 512 MB of memory. The performance schema uses about 200 MB.
+performance_schema=OFF
+
+[client]
+socket=/tmp/mysqld.sock
