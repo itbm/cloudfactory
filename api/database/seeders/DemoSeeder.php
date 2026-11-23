@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Demo\DemoAcme;
 use App\Demo\DemoImport;
 use App\Demo\DemoMailDns;
+use App\Demo\StableValues;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
 use App\Enums\JobState;
@@ -158,7 +159,7 @@ class DemoSeeder extends Seeder
      */
     private function packs(): void
     {
-        $private = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $private = StableValues::ecKey('pack key');
         $public = openssl_pkey_get_details($private)['key'];
         $key = PluginKey::create(['name' => 'Example Packs Ltd', 'public_key' => $public, 'fingerprint' => Signatures::fingerprint($public)]);
         $image = fn (string $version, string $ends) => [
@@ -203,7 +204,7 @@ class DemoSeeder extends Seeder
      */
     private function plugins(): void
     {
-        $private = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $private = StableValues::ecKey('plugin key');
         $public = openssl_pkey_get_details($private)['key'];
         $key = PluginKey::create(['name' => 'Example Plugins Ltd', 'public_key' => $public, 'fingerprint' => Signatures::fingerprint($public)]);
         $sign = function (array $manifest) use ($private): array {
@@ -420,8 +421,7 @@ class DemoSeeder extends Seeder
             'client_id' => '123456789012-demo.apps.googleusercontent.com', 'client_secret' => 'demo-secret',
             'link_by_email' => true, 'email_domains' => ['example.com'],
         ]);
-        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
-        openssl_x509_export(openssl_csr_sign(openssl_csr_new(['commonName' => 'Microsoft Azure Federated SSO Certificate'], $key), null, $key, 1095), $certificate);
+        $certificate = DemoAcme::makeAuthority('Microsoft Azure Federated SSO Certificate', days: 1095)['cert'];
         IdentityProvider::create([
             'name' => 'Microsoft Entra ID', 'protocol' => IdentityProvider::SAML, 'enabled' => false,
             'entity_id' => 'https://sts.windows.net/0b5c1e5e-demo-4e0a-9d8e-000000000000/',
@@ -581,7 +581,7 @@ class DemoSeeder extends Seeder
         // One mailbox with encryption: the panel made its OpenPGP keys, and the mail server
         // encrypts its new mail with the public key.
         $encrypted = Mailbox::with('domain')->where('local_part', 'olu')->first();
-        $keys = OpenPgpKey::generate($encrypted->address(), 'Demo-password-123');
+        $keys = OpenPgpKey::generate($encrypted->address(), 'Demo-password-123', now()->getTimestamp(), StableValues::bytes('OpenPGP '.$encrypted->address()));
         $encrypted->update([
             'public_key' => $keys['publicKey'], 'private_key' => $keys['privateKey'],
             'encryption' => ['fingerprints' => [$keys['fingerprint']], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
@@ -735,7 +735,7 @@ class DemoSeeder extends Seeder
             ['harbourbooks.example.net', 'books', 38, null, false, 'web-2'],
         ];
         foreach ($rows as [$name, $customer, $days, $seen, $dnssec, $failed]) {
-            $key = $dnssec ? Dnssec::generate() : null;
+            $key = $dnssec ? Dnssec::generate(StableValues::ecKey("DNSSEC {$name}")) : null;
             $serial = now()->subHours(strlen($name))->timestamp;
             $zone = new DnsZone([
                 'customer_id' => $this->customers[$customer]->id, 'name' => $name, 'serial' => $serial, 'status' => DnsZone::ACTIVE,
@@ -779,7 +779,7 @@ class DemoSeeder extends Seeder
      * The certificates of the customers (docs/certificates.md): a wildcard certificate with DNS
      * validation, an uploaded certificate that expires soon, and an order that failed. web-1
      * and web-2 loaded the certificates. The dates follow the clock of the panel, as the other
-     * sample data does. The PEM data has the dates of the computer that made the sample data.
+     * sample data does.
      */
     private function certificates(): void
     {
@@ -1064,7 +1064,7 @@ class DemoSeeder extends Seeder
         }
 
         $api = $this->websites['api.acme.example.com'];
-        $key = SshKey::generate('cloudfactory-'.$api->unix_user);
+        $key = SshKey::generate('cloudfactory-'.$api->unix_user, StableValues::bytes('deploy key '.$api->name));
         $api->gitSource()->create(GitSource::newWebhook() + [
             'repository' => 'git@github.com:acme-example/api.git', 'branch' => 'main', 'web_directory' => 'public', 'trigger' => GitSource::WEBHOOK,
             'build_commands' => ['composer install --no-dev --optimize-autoloader', 'ln -s /app/shared/.env .env'],
@@ -1350,10 +1350,6 @@ class DemoSeeder extends Seeder
     /** A self-signed certificate, as an example of the certificate of the panel CA. */
     private static function certificate(): string
     {
-        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
-        $request = openssl_csr_new(['commonName' => 'Cloudfactory panel CA (demo)'], $key, ['digest_alg' => 'sha256']);
-        openssl_x509_export(openssl_csr_sign($request, null, $key, 3650, ['digest_alg' => 'sha256']), $pem);
-
-        return $pem;
+        return DemoAcme::makeAuthority('Cloudfactory panel CA (demo)')['cert'];
     }
 }

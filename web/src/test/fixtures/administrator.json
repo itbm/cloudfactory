@@ -2856,8 +2856,8 @@
             "method": "internal",
             "state": "valid",
             "expiresAt": "2027-02-07T10:00:00+00:00",
-            "caCertificate": "-----BEGIN CERTIFICATE-----\nMIICGTCCAcCgAwIBAgIBADAKBggqhkjOPQQDAjBsMSUwIwYDVQQDDBxDbG91ZGZh\nY3RvcnkgcGFuZWwgQ0EgKGRlbW8pMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29t\nZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTI2\nMTEyMzAwNDI0MVoXDTM2MTEyMDAwNDI0MVowbDElMCMGA1UEAwwcQ2xvdWRmYWN0\nb3J5IHBhbmVsIENBIChkZW1vKTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUt\nU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqG\nSM49AgEGCCqGSM49AwEHA0IABCqzB1r9Nbcpu4Wo9vUUtuWee/tvFT3a8GWw1YWq\nlsFCogUJZJHSdaqMdDFennp2BhPoQqkrs6EB/qpCaGKgZROjUzBRMB0GA1UdDgQW\nBBQ373iX2JOoC3zQH7fAmkWuGLmbhjAfBgNVHSMEGDAWgBQ373iX2JOoC3zQH7fA\nmkWuGLmbhjAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0cAMEQCIHPn6vkP\nLh0Rvvcq3Hrrgpy7gpQSdMAKLGN2dY7/EOUZAiBua7kGyWZsle2GuDFLG+UlgQi4\nxHPVruNpqQcU7RpKIw==\n-----END CERTIFICATE-----\n",
-            "caSha256": "4483c0c237b7e54b2cdba41b65130cc06404404642a89d8cd103ca5d609c6d16",
+            "caCertificate": "-----BEGIN CERTIFICATE-----\r\nMIIBQjCB9aADAgECAgh/7gPIZkuhwTAFBgMrZXAwJzElMCMGA1UEAwwcQ2xvdWRm\r\nYWN0b3J5IHBhbmVsIENBIChkZW1vKTAeFw0yNjExMTQxMDAwMDBaFw0zNjExMTEx\r\nMDAwMDBaMCcxJTAjBgNVBAMMHENsb3VkZmFjdG9yeSBwYW5lbCBDQSAoZGVtbykw\r\nKjAFBgMrZXADIQDpVoSa0Iw+ssPwkfenU0GxwVXw/5no4FjF9bFp68BDCaM/MD0w\r\nCwYDVR0PBAQDAgEGMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFM0mny5QujyG\r\nl2woaM9sTmCLAGYEMAUGAytlcANBADj79zKhHsmlJG5F8Vke9JgAULdGPkW5/FHM\r\nHGyx/m+59iZ2pL7qF85G2lPe8QCSqF76Uc3A4as2wXbPOFhycgQ=\r\n-----END CERTIFICATE-----\n",
+            "caSha256": "5bd710312c8c340d8e4abde7f84eaebbbcfbc642e961c57a568e36e5a35aa8be",
             "reportedAt": "2026-11-14T10:00:00+00:00",
             "letsEncryptAvailable": true,
             "serversWithoutCa": [
@@ -3417,13 +3417,13 @@
                         "enabled": true,
                         "state": "active",
                         "ds": {
-                            "keyTag": 37293,
+                            "keyTag": 31959,
                             "algorithm": 13,
                             "digestType": 2,
-                            "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                            "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                            "digest": "574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492",
+                            "record": "acme.example.com. IN DS 31959 13 2 574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492"
                         },
-                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 xouWXR6lNIfgHzR5q3HGtUwwehAnRz/iqKeC/jSDkjBzfc28BJl+OM9IjTvgOWainGwzDWQOe+M9mZn3Axgwrg=="
                     },
                     "servers": [
                         {
@@ -4711,7 +4711,7 @@
                     "usedBytes": 3576692736,
                     "encryption": {
                         "fingerprints": [
-                            "DE7384E41EC8FD096EB5D5D921B98642CC731725"
+                            "F599CF78071D0028CDD8011AD759A533D7FC8FF0"
                         ],
                         "keyType": "OpenPGP v4: X25519",
                         "expiresAt": null,
@@ -8114,8 +8114,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8202,8 +8202,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8254,8 +8254,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8337,8 +8337,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8380,15 +8380,15 @@
                 {
                     "id": "01m7cqzs80ykv31f0000000002",
                     "name": "Example Packs Ltd",
-                    "fingerprint": "3d489adccd3f0024a4a3b44001b1d19a55b64de50f63022e501e52685639c30a",
-                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+b2cT1MollG283P4hJdJDPlOylto\nbbP5xdiei/+wigJGS8/wHArRY9XtoHsfez4E3N1NNGl+0eMqAZ4kk/jVGg==\n-----END PUBLIC KEY-----\n",
+                    "fingerprint": "067005014690dd7fc66989ecc7cf98cb8715565d111930631d3908ebc606bb78",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEohdvDHyyv8BO70lUL1Qx5UtOBksk\nEhddL8E0NDx++ALsFsZ8cY0sOx87BgNU80w2pBCUBce/49KIYAgVZuuT4Q==\n-----END PUBLIC KEY-----\n",
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
                     "id": "01m7cqzs80ykv31f0000000001",
                     "name": "Example Plugins Ltd",
-                    "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                    "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 }
             ]
@@ -8414,7 +8414,7 @@
                     "signed": true,
                     "signedBy": {
                         "name": "Example Packs Ltd",
-                        "fingerprint": "3d489adccd3f0024a4a3b44001b1d19a55b64de50f63022e501e52685639c30a",
+                        "fingerprint": "067005014690dd7fc66989ecc7cf98cb8715565d111930631d3908ebc606bb78",
                         "release": false
                     },
                     "runtime": {
@@ -8556,7 +8556,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-                    "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+                    "fingerprint": "0a66246b332736f977714ca78546fbdb46450d2cfef69691f264ca5d4c19697f",
                     "notBefore": "2025-11-26T10:00:00+00:00",
                     "expiresAt": "2026-11-26T10:00:00+00:00",
                     "trusted": true,
@@ -8585,7 +8585,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Cloudfactory demonstration (Demo CA R1)",
-                    "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+                    "fingerprint": "bb595d2b1ad1dff958ed129a01207ca57d7374602f8f485afdc5351bdd7a6965",
                     "notBefore": "2026-10-20T10:00:00+00:00",
                     "expiresAt": "2027-01-18T10:00:00+00:00",
                     "trusted": true,
@@ -8698,8 +8698,8 @@
                     "hasClientSecret": false,
                     "entityId": "https://sts.windows.net/0b5c1e5e-demo-4e0a-9d8e-000000000000/",
                     "ssoUrl": "https://login.microsoftonline.com/0b5c1e5e-demo-4e0a-9d8e-000000000000/saml2",
-                    "certificate": "-----BEGIN CERTIFICATE-----\nMIIDwDCCAqigAwIBAgIBADANBgkqhkiG9w0BAQUFADB5MTIwMAYDVQQDDClNaWNy\nb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTELMAkGA1UEBhMC\nQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\ndHMgUHR5IEx0ZDAeFw0yNjExMjMwMDQyMzZaFw0yOTExMjIwMDQyMzZaMHkxMjAw\nBgNVBAMMKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQgU1NPIENlcnRpZmljYXRl\nMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\nZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB\nCgKCAQEAuUFDquBORrY8ilZJXcr0AOYY7z4CoPM/IlYJtjAKIbuwdTEXRtVM83Tg\ntee0xVTJpmhqbHfYknmTYBYEEqAl9+in8RXdkxbudMN8x0mZkKVzt/2Tv0y6vZD4\n/PaqIuHyXsdu3GTVrTUxves/PQiiF3mq9CRmYGTAumU5jM9eKYZMzSNm6dvpZoJs\nvtGxgJ/Tn1fpfdkRl6skYfIRCyBm9dA+8Do/hNccNBBTSxFamWDgBjtM+S+dKOvn\nwfKljd4nqnawS4JvT2nw1FcYIBGFnXSzw2pgW3VLJQ6GpDH/2cD+TxduaE1sjKn3\nfvcfSABgI4FWkbqkDb1/j6rS6psMpQIDAQABo1MwUTAdBgNVHQ4EFgQU/1gt+Af/\n8lDHz7MpVcMaBiKvOcowHwYDVR0jBBgwFoAU/1gt+Af/8lDHz7MpVcMaBiKvOcow\nDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQUFAAOCAQEADJvMun7Ax/y5ZCr3\n6ezGdPBR5CQHxvek5j13yQWo+NYLV7/x2gfTjfY6RJ9ex2tPWblroAP8lzirlUJf\njwvfarxKVQ1SUHzgzb6EI5qE2XurA4yhimI1/Cl5Y+q0nnvCjJFvdrfYUikXT81k\nsswl+0yYvplFZPt+YCBoZbL8ZxOC/3LaB75v2Iqvhozy+IUtx2M0f1F3R5qU86Y/\ng0RTUjUytju5j+IYIRVWtNmcu0M68Luejybhwu87EMf/cQ9PKXBURps9uyVS7577\nJUWm3avlZ7WHCrnYAOlq0AEV6VZqrxeVgyJtFxZyYuHDZBAAL/OwyA4n0Ud3WpKn\nJGuF+w==\n-----END CERTIFICATE-----\n",
-                    "certificateExpiresAt": "2029-11-22T00:42:36+00:00",
+                    "certificate": "-----BEGIN CERTIFICATE-----\r\nMIIBXTCCAQ+gAwIBAgIIKJPO8gTKjw8wBQYDK2VwMDQxMjAwBgNVBAMMKU1pY3Jv\r\nc29mdCBBenVyZSBGZWRlcmF0ZWQgU1NPIENlcnRpZmljYXRlMB4XDTI2MTExNDEw\r\nMDAwMFoXDTI5MTExMzEwMDAwMFowNDEyMDAGA1UEAwwpTWljcm9zb2Z0IEF6dXJl\r\nIEZlZGVyYXRlZCBTU08gQ2VydGlmaWNhdGUwKjAFBgMrZXADIQDpdjXMypCmt4kw\r\nz7/mPMnek16+ieiCH11HsVnt1yIBtKM/MD0wCwYDVR0PBAQDAgEGMA8GA1UdEwEB\r\n/wQFMAMBAf8wHQYDVR0OBBYEFA8ithH4/xg4s8hINwaF4EsmEVcyMAUGAytlcANB\r\nAKPkNdHk4AFU9hASspeTAuQIEtJDyr8dZQPvOO3HUYh0RtdHBBbe/pYH/971EBb8\r\nSQxudROMY/eRNzivknNTlQI=\r\n-----END CERTIFICATE-----\n",
+                    "certificateExpiresAt": "2029-11-13T10:00:00+00:00",
                     "linkByEmail": false,
                     "emailDomains": [],
                     "users": 0,
@@ -9864,7 +9864,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBGFsicoOPB94GHXd46pGtXfJNWuJHkgvh2yjrCBcolx cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/16H7ykJdTkG5pMRXURFTceWP4rPcblfCfP2PsKTbVQSmNGHN",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -14385,7 +14385,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBGFsicoOPB94GHXd46pGtXfJNWuJHkgvh2yjrCBcolx cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/G6mt5KmRycsDBSMMYLLgnRniZtanaanOr6V5GyXkL5c3djlK",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -17420,13 +17420,13 @@
                 "enabled": true,
                 "state": "active",
                 "ds": {
-                    "keyTag": 37293,
+                    "keyTag": 31959,
                     "algorithm": 13,
                     "digestType": 2,
-                    "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                    "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                    "digest": "574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492",
+                    "record": "acme.example.com. IN DS 31959 13 2 574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492"
                 },
-                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 xouWXR6lNIfgHzR5q3HGtUwwehAnRz/iqKeC/jSDkjBzfc28BJl+OM9IjTvgOWainGwzDWQOe+M9mZn3Axgwrg=="
             },
             "servers": [
                 {
@@ -18178,7 +18178,7 @@
             ],
             "state": "valid",
             "issuer": "Cloudfactory demonstration (Demo CA R1)",
-            "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+            "fingerprint": "bb595d2b1ad1dff958ed129a01207ca57d7374602f8f485afdc5351bdd7a6965",
             "notBefore": "2026-10-20T10:00:00+00:00",
             "expiresAt": "2027-01-18T10:00:00+00:00",
             "trusted": true,
@@ -18230,7 +18230,7 @@
                     "serverName": "web-1"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBnTCCAUSgAwIBAgIIaH6rI22SZbYwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMjcwMjIxMDA0MjM2WjAbMRkwFwYDVQQDDBBhY21l\nLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEujYWvqJbFJvJ\n82Zi2kVTvGf88+K1y13ztghLRagfO9ndP0SCLiiUV1gM7MNVSYtnizd32M5woGAR\nCtoGSXLpiaNTMFEwLwYDVR0RBCgwJoIQYWNtZS5leGFtcGxlLmNvbYISKi5hY21l\nLmV4YW1wbGUuY29tMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYI\nKoZIzj0EAwIDRwAwRAIgFHdMizcWY/33ZwOvTZ9qV2FkKQGuSJe9eEiHxXQBJ4wC\nIC/NHgJ+yuBccO9V+KRBCkNqXSbApBhSeiBiH+beY9V8\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIG5rhSOwAyPgwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABA93jFkA8GzewXoiFUy9szI3IbsrCwYE2znC\nv8gPkiJ1Z+Fym0MqOPOAtYZDTZAKZXqo/bc2Ly5D9+KJPu2Iz6ejIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIFFp\nPyd3aVIGzgelzXMigFHSrErmr/1tmQVScSWr1cfgAiEAgoc794eJNBDtCt+SbEPT\nuH/jIsp3jepxljVbLpzHJ/Y=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\r\nMIIBrzCCAWGgAwIBAgIJAPr6dtz+JPxFMAUGAytlcDA6MRMwEQYDVQQDDApEZW1v\r\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjAeFw0y\r\nNjExMTQxMDAwMDBaFw0yNzAyMTIxMDAwMDBaMBsxGTAXBgNVBAMMEGFjbWUuZXhh\r\nbXBsZS5jb20wWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARV6icnFlFnplTvMnMp\r\nfoZrv8cUB3kfQ1nJSSuYxTOYe+QTQDNFcsWfQRXjONmk7Qq/Qo5BLutonxw5RIrY\r\n4CQmo3QwcjAvBgNVHREEKDAmghBhY21lLmV4YW1wbGUuY29tghIqLmFjbWUuZXhh\r\nbXBsZS5jb20wCQYDVR0TBAIwADATBgNVHSUEDDAKBggrBgEFBQcDATAfBgNVHSME\r\nGDAWgBReGjY5iIBoILhHOYBbEGUOf0flhTAFBgMrZXADQQBgiDOE4uR85BoT8Yge\r\nqQB///c4m/lpdUfaDuLTpWfIU02luDd9NLeYWucMWhk20FWJwfaN2ucB0ubDxLjR\r\ngNAB\r\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\r\nMIIBajCCARygAwIBAgIJAJeg6JQiyHxoMAUGAytlcDA6MRMwEQYDVQQDDApEZW1v\r\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjAeFw0y\r\nNjExMTQxMDAwMDBaFw0zNjExMTExMDAwMDBaMDoxEzARBgNVBAMMCkRlbW8gQ0Eg\r\nUjExIzAhBgNVBAoMGkNsb3VkZmFjdG9yeSBkZW1vbnN0cmF0aW9uMCowBQYDK2Vw\r\nAyEAnqf8Kh7nIEk5SwmiIac34Vej/tvAhu9iC/JK7QmWHKijPzA9MAsGA1UdDwQE\r\nAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBReGjY5iIBoILhHOYBbEGUO\r\nf0flhTAFBgMrZXADQQCKeQXsMjVLUp69ylKO79XyCjdwpuDpicJr4v6UECRUH5o+\r\n3JFShXVJP4k+hcymMTReUFLawYjsYZfDQcAKpN4A\r\n-----END CERTIFICATE-----\n",
             "createdAt": "2026-10-20T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }
@@ -18247,7 +18247,7 @@
             ],
             "state": "valid",
             "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-            "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+            "fingerprint": "0a66246b332736f977714ca78546fbdb46450d2cfef69691f264ca5d4c19697f",
             "notBefore": "2025-11-26T10:00:00+00:00",
             "expiresAt": "2026-11-26T10:00:00+00:00",
             "trusted": true,
@@ -18263,7 +18263,7 @@
                     "serverName": "web-2"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBtzCCAV6gAwIBAgIIV5XkHtUD64gwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMjcxMTIzMDA0MjM2WjAjMSEwHwYDVQQDDBhjb3Ju\nZXJiYWtlcnkuZXhhbXBsZS5vcmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATG\nTnE+10SKd268CcAFIjSKOyek9vPdC5DPnUqcUp55Iz6u31zGEz5WOsFUtlrxsquc\nWn8ZgN0dYig922t5ALYUo2UwYzBBBgNVHREEOjA4ghhjb3JuZXJiYWtlcnkuZXhh\nbXBsZS5vcmeCHHd3dy5jb3JuZXJiYWtlcnkuZXhhbXBsZS5vcmcwCQYDVR0TBAIw\nADATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNHADBEAiB+g+BhcX4H\nWy+QmKFpVQ2S6fvNR5BRwwvl4L2vjBjAaAIgMkE+S0zV6nMPzcwb5YJcbipXfAoA\nSxp8b0ARuGv5ptc=\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIKMfbONu0oeAwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRwwGgYDVQQDDBNFeGFt\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABFB4pkW85xFwoajdu+eVeuC/+jRe2E6++WDa\nUA+Yl1PQVCOK2B3qtSz2SRlZ2K53r5Erqf2Ez8BRx/gLy2XXQuOjIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIQDo\nL3yTqs2/rElecBLK2yN2kqW+UD9f/DeWW9gCoLgHYgIgXKLQ0nvmizB0y3g2bwEU\n9P+eKxJkv0QbOmao14s8Vpg=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\r\nMIIByzCCAX2gAwIBAgIJAIj0yXxwBMu0MAUGAytlcDA6MRwwGgYDVQQDDBNFeGFt\r\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDAeFw0y\r\nNjExMTQxMDAwMDBaFw0yNzExMTQxMDAwMDBaMCMxITAfBgNVBAMMGGNvcm5lcmJh\r\na2VyeS5leGFtcGxlLm9yZzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABGfxuQ+g\r\nanuwwt4VcPVRzdCXoBi2h+9+bVzTRpJWUEppk40QcMZe9/pdH0iJAV6q2FskBB3i\r\neoZYd8zeNtXr13KjgYcwgYQwQQYDVR0RBDowOIIYY29ybmVyYmFrZXJ5LmV4YW1w\r\nbGUub3Jnghx3d3cuY29ybmVyYmFrZXJ5LmV4YW1wbGUub3JnMAkGA1UdEwQCMAAw\r\nEwYDVR0lBAwwCgYIKwYBBQUHAwEwHwYDVR0jBBgwFoAUyIhrhwwz2jhVMzMdGgUg\r\ngWLGSp8wBQYDK2VwA0EAsxEmmxd5r2UTe5zJAoksNVOfudJvHZwZHBG7mFN8klJi\r\ntayRSF32r1sU4/srRdTASGhV3/T6ZuETJnam2KsADw==\r\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\r\nMIIBajCCARygAwIBAgIJAOXUPjY56vFWMAUGAytlcDA6MRwwGgYDVQQDDBNFeGFt\r\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDAeFw0y\r\nNjExMTQxMDAwMDBaFw0zNjExMTExMDAwMDBaMDoxHDAaBgNVBAMME0V4YW1wbGUg\r\nVExTIENBIDIwMjYxGjAYBgNVBAoMEUV4YW1wbGUgVHJ1c3QgTHRkMCowBQYDK2Vw\r\nAyEAZZObnNJm+AoJ/BPjqzPJ5lJlHxlbOAOWExBt82M30mejPzA9MAsGA1UdDwQE\r\nAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBTIiGuHDDPaOFUzMx0aBSCB\r\nYsZKnzAFBgMrZXADQQDx5JrSld/02z251Cjw8SxPVdnAxPjU2t9kdoG3Md1e12mU\r\npyhIvXxroh1I/TjLvjjbqlDBJq/tMEKUzqFQO6gK\r\n-----END CERTIFICATE-----\n",
             "createdAt": "2025-11-26T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }

@@ -5522,7 +5522,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-                    "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+                    "fingerprint": "0a66246b332736f977714ca78546fbdb46450d2cfef69691f264ca5d4c19697f",
                     "notBefore": "2025-11-26T10:00:00+00:00",
                     "expiresAt": "2026-11-26T10:00:00+00:00",
                     "trusted": true,
@@ -8066,7 +8066,7 @@
             ],
             "state": "valid",
             "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-            "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+            "fingerprint": "0a66246b332736f977714ca78546fbdb46450d2cfef69691f264ca5d4c19697f",
             "notBefore": "2025-11-26T10:00:00+00:00",
             "expiresAt": "2026-11-26T10:00:00+00:00",
             "trusted": true,
@@ -8082,7 +8082,7 @@
                     "serverName": "web-2"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBtzCCAV6gAwIBAgIIV5XkHtUD64gwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMjcxMTIzMDA0MjM2WjAjMSEwHwYDVQQDDBhjb3Ju\nZXJiYWtlcnkuZXhhbXBsZS5vcmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATG\nTnE+10SKd268CcAFIjSKOyek9vPdC5DPnUqcUp55Iz6u31zGEz5WOsFUtlrxsquc\nWn8ZgN0dYig922t5ALYUo2UwYzBBBgNVHREEOjA4ghhjb3JuZXJiYWtlcnkuZXhh\nbXBsZS5vcmeCHHd3dy5jb3JuZXJiYWtlcnkuZXhhbXBsZS5vcmcwCQYDVR0TBAIw\nADATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNHADBEAiB+g+BhcX4H\nWy+QmKFpVQ2S6fvNR5BRwwvl4L2vjBjAaAIgMkE+S0zV6nMPzcwb5YJcbipXfAoA\nSxp8b0ARuGv5ptc=\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIKMfbONu0oeAwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRwwGgYDVQQDDBNFeGFt\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABFB4pkW85xFwoajdu+eVeuC/+jRe2E6++WDa\nUA+Yl1PQVCOK2B3qtSz2SRlZ2K53r5Erqf2Ez8BRx/gLy2XXQuOjIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIQDo\nL3yTqs2/rElecBLK2yN2kqW+UD9f/DeWW9gCoLgHYgIgXKLQ0nvmizB0y3g2bwEU\n9P+eKxJkv0QbOmao14s8Vpg=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\r\nMIIByzCCAX2gAwIBAgIJAIj0yXxwBMu0MAUGAytlcDA6MRwwGgYDVQQDDBNFeGFt\r\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDAeFw0y\r\nNjExMTQxMDAwMDBaFw0yNzExMTQxMDAwMDBaMCMxITAfBgNVBAMMGGNvcm5lcmJh\r\na2VyeS5leGFtcGxlLm9yZzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABGfxuQ+g\r\nanuwwt4VcPVRzdCXoBi2h+9+bVzTRpJWUEppk40QcMZe9/pdH0iJAV6q2FskBB3i\r\neoZYd8zeNtXr13KjgYcwgYQwQQYDVR0RBDowOIIYY29ybmVyYmFrZXJ5LmV4YW1w\r\nbGUub3Jnghx3d3cuY29ybmVyYmFrZXJ5LmV4YW1wbGUub3JnMAkGA1UdEwQCMAAw\r\nEwYDVR0lBAwwCgYIKwYBBQUHAwEwHwYDVR0jBBgwFoAUyIhrhwwz2jhVMzMdGgUg\r\ngWLGSp8wBQYDK2VwA0EAsxEmmxd5r2UTe5zJAoksNVOfudJvHZwZHBG7mFN8klJi\r\ntayRSF32r1sU4/srRdTASGhV3/T6ZuETJnam2KsADw==\r\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\r\nMIIBajCCARygAwIBAgIJAOXUPjY56vFWMAUGAytlcDA6MRwwGgYDVQQDDBNFeGFt\r\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDAeFw0y\r\nNjExMTQxMDAwMDBaFw0zNjExMTExMDAwMDBaMDoxHDAaBgNVBAMME0V4YW1wbGUg\r\nVExTIENBIDIwMjYxGjAYBgNVBAoMEUV4YW1wbGUgVHJ1c3QgTHRkMCowBQYDK2Vw\r\nAyEAZZObnNJm+AoJ/BPjqzPJ5lJlHxlbOAOWExBt82M30mejPzA9MAsGA1UdDwQE\r\nAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBTIiGuHDDPaOFUzMx0aBSCB\r\nYsZKnzAFBgMrZXADQQDx5JrSld/02z251Cjw8SxPVdnAxPjU2t9kdoG3Md1e12mU\r\npyhIvXxroh1I/TjLvjjbqlDBJq/tMEKUzqFQO6gK\r\n-----END CERTIFICATE-----\n",
             "createdAt": "2025-11-26T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }

@@ -1673,13 +1673,13 @@
                         "enabled": true,
                         "state": "active",
                         "ds": {
-                            "keyTag": 37293,
+                            "keyTag": 31959,
                             "algorithm": 13,
                             "digestType": 2,
-                            "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                            "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                            "digest": "574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492",
+                            "record": "acme.example.com. IN DS 31959 13 2 574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492"
                         },
-                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 xouWXR6lNIfgHzR5q3HGtUwwehAnRz/iqKeC/jSDkjBzfc28BJl+OM9IjTvgOWainGwzDWQOe+M9mZn3Axgwrg=="
                     },
                     "servers": [
                         {
@@ -2175,7 +2175,7 @@
                     "usedBytes": 3576692736,
                     "encryption": {
                         "fingerprints": [
-                            "DE7384E41EC8FD096EB5D5D921B98642CC731725"
+                            "F599CF78071D0028CDD8011AD759A533D7FC8FF0"
                         ],
                         "keyType": "OpenPGP v4: X25519",
                         "expiresAt": null,
@@ -2333,7 +2333,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Cloudfactory demonstration (Demo CA R1)",
-                    "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+                    "fingerprint": "bb595d2b1ad1dff958ed129a01207ca57d7374602f8f485afdc5351bdd7a6965",
                     "notBefore": "2026-10-20T10:00:00+00:00",
                     "expiresAt": "2027-01-18T10:00:00+00:00",
                     "trusted": true,
@@ -3570,7 +3570,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBGFsicoOPB94GHXd46pGtXfJNWuJHkgvh2yjrCBcolx cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/16H7ykJdTkG5pMRXURFTceWP4rPcblfCfP2PsKTbVQSmNGHN",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -5925,7 +5925,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBGFsicoOPB94GHXd46pGtXfJNWuJHkgvh2yjrCBcolx cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/G6mt5KmRycsDBSMMYLLgnRniZtanaanOr6V5GyXkL5c3djlK",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -8492,13 +8492,13 @@
                 "enabled": true,
                 "state": "active",
                 "ds": {
-                    "keyTag": 37293,
+                    "keyTag": 31959,
                     "algorithm": 13,
                     "digestType": 2,
-                    "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                    "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                    "digest": "574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492",
+                    "record": "acme.example.com. IN DS 31959 13 2 574F8C0CFEB38A992ED99F821679289F4340F346AA5AA77B515CBE113EDA3492"
                 },
-                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 xouWXR6lNIfgHzR5q3HGtUwwehAnRz/iqKeC/jSDkjBzfc28BJl+OM9IjTvgOWainGwzDWQOe+M9mZn3Axgwrg=="
             },
             "servers": [
                 {
@@ -8859,7 +8859,7 @@
             ],
             "state": "valid",
             "issuer": "Cloudfactory demonstration (Demo CA R1)",
-            "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+            "fingerprint": "bb595d2b1ad1dff958ed129a01207ca57d7374602f8f485afdc5351bdd7a6965",
             "notBefore": "2026-10-20T10:00:00+00:00",
             "expiresAt": "2027-01-18T10:00:00+00:00",
             "trusted": true,
@@ -8911,7 +8911,7 @@
                     "serverName": "web-1"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBnTCCAUSgAwIBAgIIaH6rI22SZbYwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMjcwMjIxMDA0MjM2WjAbMRkwFwYDVQQDDBBhY21l\nLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEujYWvqJbFJvJ\n82Zi2kVTvGf88+K1y13ztghLRagfO9ndP0SCLiiUV1gM7MNVSYtnizd32M5woGAR\nCtoGSXLpiaNTMFEwLwYDVR0RBCgwJoIQYWNtZS5leGFtcGxlLmNvbYISKi5hY21l\nLmV4YW1wbGUuY29tMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYI\nKoZIzj0EAwIDRwAwRAIgFHdMizcWY/33ZwOvTZ9qV2FkKQGuSJe9eEiHxXQBJ4wC\nIC/NHgJ+yuBccO9V+KRBCkNqXSbApBhSeiBiH+beY9V8\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIG5rhSOwAyPgwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABA93jFkA8GzewXoiFUy9szI3IbsrCwYE2znC\nv8gPkiJ1Z+Fym0MqOPOAtYZDTZAKZXqo/bc2Ly5D9+KJPu2Iz6ejIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIFFp\nPyd3aVIGzgelzXMigFHSrErmr/1tmQVScSWr1cfgAiEAgoc794eJNBDtCt+SbEPT\nuH/jIsp3jepxljVbLpzHJ/Y=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\r\nMIIBrzCCAWGgAwIBAgIJAPr6dtz+JPxFMAUGAytlcDA6MRMwEQYDVQQDDApEZW1v\r\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjAeFw0y\r\nNjExMTQxMDAwMDBaFw0yNzAyMTIxMDAwMDBaMBsxGTAXBgNVBAMMEGFjbWUuZXhh\r\nbXBsZS5jb20wWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARV6icnFlFnplTvMnMp\r\nfoZrv8cUB3kfQ1nJSSuYxTOYe+QTQDNFcsWfQRXjONmk7Qq/Qo5BLutonxw5RIrY\r\n4CQmo3QwcjAvBgNVHREEKDAmghBhY21lLmV4YW1wbGUuY29tghIqLmFjbWUuZXhh\r\nbXBsZS5jb20wCQYDVR0TBAIwADATBgNVHSUEDDAKBggrBgEFBQcDATAfBgNVHSME\r\nGDAWgBReGjY5iIBoILhHOYBbEGUOf0flhTAFBgMrZXADQQBgiDOE4uR85BoT8Yge\r\nqQB///c4m/lpdUfaDuLTpWfIU02luDd9NLeYWucMWhk20FWJwfaN2ucB0ubDxLjR\r\ngNAB\r\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\r\nMIIBajCCARygAwIBAgIJAJeg6JQiyHxoMAUGAytlcDA6MRMwEQYDVQQDDApEZW1v\r\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjAeFw0y\r\nNjExMTQxMDAwMDBaFw0zNjExMTExMDAwMDBaMDoxEzARBgNVBAMMCkRlbW8gQ0Eg\r\nUjExIzAhBgNVBAoMGkNsb3VkZmFjdG9yeSBkZW1vbnN0cmF0aW9uMCowBQYDK2Vw\r\nAyEAnqf8Kh7nIEk5SwmiIac34Vej/tvAhu9iC/JK7QmWHKijPzA9MAsGA1UdDwQE\r\nAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBReGjY5iIBoILhHOYBbEGUO\r\nf0flhTAFBgMrZXADQQCKeQXsMjVLUp69ylKO79XyCjdwpuDpicJr4v6UECRUH5o+\r\n3JFShXVJP4k+hcymMTReUFLawYjsYZfDQcAKpN4A\r\n-----END CERTIFICATE-----\n",
             "createdAt": "2026-10-20T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }

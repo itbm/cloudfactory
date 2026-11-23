@@ -16,6 +16,7 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
         "onelogin/php-saml": "^4.3",
+        "phpseclib/phpseclib": "^3.0",
         "web-auth/webauthn-lib": "^5.3"
     },
     "require-dev": {
