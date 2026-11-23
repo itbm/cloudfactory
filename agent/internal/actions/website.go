@@ -80,7 +80,7 @@ func CheckWebsite(w *agentv1.Website) error {
 			}
 		}
 	}
-	errs = append(errs, checkLimits(w.GetLimits()))
+	errs = append(errs, checkLimits(w.GetLimits()), checkSecurity(w.GetSecurity()))
 	_, err := instanceKey(w.GetDatabaseInstance())
 	return errors.Join(append(errs, err)...)
 }
@@ -360,7 +360,7 @@ func envFileOf(d *Deps, w *agentv1.Website, suffix string) string {
 }
 
 func (d *Deps) site(w *agentv1.Website, port int) caddy.Site {
-	s := caddy.Site{WebsiteID: w.GetId(), Port: port, Primary: primaryDomain(w), Path: w.GetRoutePath()}
+	s := caddy.Site{WebsiteID: w.GetId(), Port: port, Primary: primaryDomain(w), Path: w.GetRoutePath(), Security: edgeSecurity(w.GetSecurity())}
 	for _, dom := range w.GetDomains() {
 		if dom.GetKind() == "redirect" {
 			s.Redirects = append(s.Redirects, dom.GetName())

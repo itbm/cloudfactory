@@ -571,11 +571,3 @@ func (a *app) importStart(ctx context.Context, args []string) error {
 	fmt.Fprintf(a.out, "The import of %s, %s and %s starts.\n", plural(len(selected), "website", "websites"), plural(len(mail), "mail domain", "mail domains"), plural(len(zones), "DNS zone", "DNS zones"))
 	return a.waitImport(ctx, d.ID, "done")
 }
-
-// nonNil gives an empty list for nil, so that the JSON has [] and not null.
-func nonNil(list []string) []string {
-	if list == nil {
-		return []string{}
-	}
-	return list
-}
