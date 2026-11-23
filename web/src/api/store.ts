@@ -57,6 +57,9 @@ import type {
   TokenScope,
   UpdatePolicy,
   Website,
+  TerminalOpening,
+  TerminalSession,
+  TerminalSessionPage,
   WebsiteCommand,
   WebsiteKind,
   WebsiteSecurity,
@@ -603,9 +606,12 @@ export function listFirewallEvents(websiteId: string): Promise<FirewallEvent[]> 
   return call(() => live.request<{ events: FirewallEvent[] }>("GET", `/websites/${websiteId}/security/events`)).then((r) => r.events);
 }
 
-/** A page of the command log of a website. The search finds the commands with the text. */
-export function listCommands(websiteId: string, page = 1, search = ""): Promise<CommandLogPage> {
-  const query = [page > 1 ? `page=${page}` : "", search.trim() ? `q=${q(search.trim())}` : ""].filter(Boolean).join("&");
+/**
+ * A page of the command log of a website. The search finds the commands with the text. With a
+ * session, only the commands of that session of the web terminal.
+ */
+export function listCommands(websiteId: string, page = 1, search = "", sessionId = ""): Promise<CommandLogPage> {
+  const query = [page > 1 ? `page=${page}` : "", search.trim() ? `q=${q(search.trim())}` : "", sessionId ? `sessionId=${q(sessionId)}&perPage=200` : ""].filter(Boolean).join("&");
   return call(() => live.request<CommandLogPage>("GET", `/websites/${websiteId}/commands${query ? `?${query}` : ""}`));
 }
 
@@ -624,6 +630,33 @@ export async function runCommand(websiteId: string, command: string, timeoutSeco
   }));
   await track(r.job);
   return readCommand(websiteId, r.command.id);
+}
+
+/** The sessions of the web terminal of a website, the newest first. */
+export function listTerminalSessions(websiteId: string, page = 1): Promise<TerminalSessionPage> {
+  return call(() => live.request<TerminalSessionPage>("GET", `/websites/${websiteId}/terminal-sessions${page > 1 ? `?page=${page}` : ""}`));
+}
+
+export function readTerminalSession(websiteId: string, sessionId: string): Promise<TerminalSession> {
+  return call(() => live.request<{ session: TerminalSession }>("GET", `/websites/${websiteId}/terminal-sessions/${sessionId}`)).then((r) => r.session);
+}
+
+/**
+ * Opens the web terminal of a website. The server starts the shell when the browser connects to
+ * the WebSocket of the answer. The job of the server does not block: the WebSocket tells when the
+ * shell is ready.
+ */
+export function openTerminal(websiteId: string, cols: number, rows: number): Promise<TerminalOpening> {
+  return call(() => live.request<TerminalOpening & { job: live.ApiJob | null }>("POST", `/websites/${websiteId}/terminal-sessions`, { cols, rows })).then((r) => {
+    // The job shows in the list of jobs. It fails when the terminal does not open.
+    void track(r.job).catch(() => {});
+    return { session: r.session, path: r.path, ticket: r.ticket };
+  });
+}
+
+/** The recording of a session of the web terminal, in the asciicast v2 format. */
+export function readTerminalRecording(websiteId: string, sessionId: string): Promise<string> {
+  return call(() => live.requestText(`/websites/${websiteId}/terminal-sessions/${sessionId}/recording`));
 }
 
 export function readDeploy(websiteId: string): Promise<Deploy> {

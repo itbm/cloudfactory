@@ -8,6 +8,16 @@ RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-in
 COPY api/ ./
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
+# The terminal relay of the panel (FR-802): a small Go program in the same image. The unit
+# cf-panel-terminal runs it (quadlet.PanelUnits).
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.4-alpine AS relay
+ARG TARGETOS TARGETARCH
+WORKDIR /src
+COPY agent/go.mod agent/go.sum ./
+RUN go mod download
+COPY agent/ ./
+RUN CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" go build -trimpath -ldflags "-s -w" -o /usr/local/bin/cf-terminal-relay ./cmd/cf-terminal-relay
+
 FROM docker.io/dunglas/frankenphp:1-php8.4-trixie
 ARG DEBIAN_FRONTEND=noninteractive
 # The build cache keeps this slow step. The Debian security fixes come in a later step.
@@ -34,6 +44,7 @@ WORKDIR /app
 COPY --from=vendor /app /app
 COPY openapi/openapi.yaml /app/public/openapi.yaml
 COPY images/panel-api/start.sh /usr/local/bin/panel-start
+COPY --from=relay /usr/local/bin/cf-terminal-relay /usr/local/bin/cf-terminal-relay
 COPY images/panel-api/Caddyfile images/panel-api/Caddyfile.tls /etc/frankenphp/
 # The API runs as root in a rootless container, with no capabilities. With no DAC_OVERRIDE,
 # root can write only to files that root owns, so storage and bootstrap/cache stay root's.

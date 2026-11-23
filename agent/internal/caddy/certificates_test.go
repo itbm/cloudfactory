@@ -79,7 +79,7 @@ func TestCertificatesFromThePanelAreLoadedSelectedAndSkipped(t *testing.T) {
 	}
 
 	// The panel route comes first, and the policies of the certificates stay.
-	if err := c.ApplyPanel(ctx, "panel.example.net", PanelInternal, 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.example.net", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	json.Unmarshal([]byte(fake.config[connectionPoliciesPath]), &policies)

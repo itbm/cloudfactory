@@ -1730,12 +1730,13 @@ paths:
       summary: List the command log of a website
       description: >-
         Each command that a user ran in the container of the website, with who ran it, when,
-        from which address and the result. The newest command is first. The list has no output:
-        get one command for its output. A user who is not an administrator sees a command of an
-        administrator or of the provider with the name "Administrator" or "Your provider" and
-        with no address.
+        from which address and the result. The log also has each command that a user typed in the
+        web terminal. The newest command is first. The list has no output: get one command for
+        its output. A user who is not an administrator sees a command of an administrator or of
+        the provider with the name "Administrator" or "Your provider" and with no address.
       parameters:
-        - { name: source, in: query, schema: { type: string, enum: [run] } }
+        - { name: source, in: query, schema: { type: string, enum: [run, terminal] } }
+        - { name: sessionId, in: query, description: Only the commands of this session of the web terminal., schema: { type: string } }
         - { name: q, in: query, description: A part of the command text., schema: { type: string, maxLength: 200 } }
         - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
@@ -1812,6 +1813,115 @@ paths:
                         properties:
                           output: { type: [string, 'null'], description: 'The end of the standard output and the standard error. For a command that did not start, the reason.' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{websiteId}/terminal-sessions:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Commands]
+      summary: List the sessions of the web terminal of a website
+      description: >-
+        The newest session is first. The commands of a session are in the command log (source
+        "terminal").
+      parameters:
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: One page of the sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/TerminalSession' } }
+                  meta:
+                    type: object
+                    properties:
+                      currentPage: { type: integer }
+                      lastPage: { type: integer }
+                      total: { type: integer }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Commands]
+      summary: Open the web terminal
+      description: >-
+        The agent of the server starts a shell in the container of the website, as the Unix user
+        of the website, with the limits of the website. The browser and the agent connect to the
+        terminal relay of the panel. Connect at once with a WebSocket to
+        `wss://<panel domain><path>?ticket=<ticket>`: the ticket is good for one connection and
+        for 60 seconds. When both sides are connected, the relay sends the text message
+        `{"type":"paired"}`. Then a binary message is keys (to the shell) or output (from the
+        shell), and the text message `{"type":"resize","cols":100,"rows":30}` changes the size of
+        the terminal. When the shell ends, the agent sends `{"type":"exit","code":0}` and closes
+        the connection. The reason of each close is a text for the user.
+
+
+        The agent finds each command line in the output of the terminal and adds it to the command
+        log. When the panel does not get the commands, the agent closes the terminal. At the end,
+        the agent sends the recording of the output. A website can have 2 open terminals. A
+        terminal closes after 30 minutes with no input, and after 12 hours.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cols, rows]
+              properties:
+                cols: { type: integer, minimum: 10, maximum: 1000 }
+                rows: { type: integer, minimum: 2, maximum: 500 }
+      responses:
+        '202':
+          description: The session, the job that opens the shell, and the WebSocket of the browser.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { $ref: '#/components/schemas/TerminalSession' }
+                  job: { $ref: '#/components/schemas/Job' }
+                  path: { type: string, example: /api/terminal/01m82jppdpt215s2n6f4p03hwd/browser }
+                  ticket: { type: string, description: The ticket of the browser for the terminal relay. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, its customer is suspended, or 2 terminals of the website are open.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/terminal-sessions/{sessionId}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: sessionId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Commands]
+      summary: Get one session of the web terminal
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { $ref: '#/components/schemas/TerminalSession' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{websiteId}/terminal-sessions/{sessionId}/recording:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: sessionId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Commands]
+      summary: Download the recording of a session of the web terminal
+      description: >-
+        The output of the terminal with the time of each part, in the asciicast v2 format, at most
+        1 MiB. The recording has no keys: a password that the shell does not show is not in it.
+      responses:
+        '200':
+          description: The recording.
+          content:
+            application/x-asciicast:
+              schema: { type: string }
+        '404': { description: The session does not exist, or it has no recording. }
 
   /v1/websites/{websiteId}/deploy:
     parameters:
@@ -6036,6 +6146,61 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /agent/v1/terminal-sessions/{id}/commands:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Agent]
+      summary: Add commands of the web terminal to the command log
+      description: The agent sends the commands of an open session every 2 seconds.
+      security:
+        - agentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [commands]
+              properties:
+                commands: { type: array, maxItems: 1000, items: { $ref: '#/components/schemas/TerminalCommand' } }
+      responses:
+        '200': { description: Recorded. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { description: No session of a website on the server of the agent has this ID. }
+        '409': { description: The session ended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /agent/v1/terminal-sessions/{id}/end:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Agent]
+      summary: Report the end of a session of the web terminal
+      description: A second report of the end of a session has no effect.
+      security:
+        - agentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, commands]
+              properties:
+                reason: { type: string, maxLength: 2000 }
+                exitCode: { type: [integer, 'null'], description: The exit code of the shell. Null when the shell did not end by itself. }
+                commands: { type: array, maxItems: 1000, items: { $ref: '#/components/schemas/TerminalCommand' }, description: The commands that the panel did not get yet. }
+                recording: { type: string, description: The output in the asciicast v2 format, at most 1 MiB. }
+                recordingCut: { type: boolean }
+                startedAt: { type: string, format: date-time }
+                endedAt: { type: string, format: date-time }
+      responses:
+        '200': { description: Recorded. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { description: No session of a website on the server of the agent has this ID. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /agent/v1/imports/{id}/archive:
     parameters:
       - { $ref: '#/components/parameters/Id' }
@@ -6808,9 +6973,10 @@ components:
       properties:
         id: { type: string }
         websiteId: { type: string }
-        source: { type: string, enum: [run], description: '"run" is the action "Run a command" of the panel, the API and the CLI.' }
+        source: { type: string, enum: [run, terminal], description: '"run" is the action "Run a command" of the panel, the API and the CLI. "terminal" is a command that a user typed in the web terminal: it has no exit code and no output.' }
+        sessionId: { type: [string, 'null'], description: The session of the web terminal of a command from the terminal. }
         command: { type: string }
-        state: { type: string, enum: [running, done, failed], description: '"done": the command ran and has an exit code. "failed": the command did not start.' }
+        state: { type: string, enum: [running, done, failed], description: '"done": the command ran. "failed": the command did not start.' }
         exitCode: { type: [integer, 'null'] }
         timedOut: { type: boolean, description: True when the agent stopped the command at its time limit. }
         timeoutSeconds: { type: [integer, 'null'] }
@@ -6820,6 +6986,29 @@ components:
         createdAt: { type: string, format: date-time }
         startedAt: { type: [string, 'null'], format: date-time }
         finishedAt: { type: [string, 'null'], format: date-time }
+    TerminalSession:
+      type: object
+      properties:
+        id: { type: string }
+        websiteId: { type: string }
+        state: { type: string, enum: [opening, open, ended, failed], description: '"opening": the agent connects. "failed": the terminal did not open.' }
+        actor: { type: string, description: The user who opened the terminal, as in the audit log. }
+        ip: { type: [string, 'null'], description: The address of the client. Null when the user must not see it. }
+        jobId: { type: [string, 'null'] }
+        endReason: { type: [string, 'null'], description: 'The text that the browser showed at the end, for example "The shell ended.".' }
+        exitCode: { type: [integer, 'null'] }
+        commandCount: { type: integer }
+        hasRecording: { type: boolean }
+        recordingCut: { type: boolean, description: True when the recording stopped at its maximum size. }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        endedAt: { type: [string, 'null'], format: date-time }
+    TerminalCommand:
+      type: object
+      required: [command, at]
+      properties:
+        command: { type: string, maxLength: 2000 }
+        at: { type: string, format: date-time }
     Deploy:
       type: object
       properties:
