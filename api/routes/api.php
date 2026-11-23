@@ -158,7 +158,8 @@ Route::prefix('v1')->group(function () {
             Route::patch('websites/{websiteId}/environment', [RuntimeController::class, 'environment']);
 
             // The file manager and the logs. The agent does each request as the Unix user of
-            // the website, and gives the answer at once.
+            // the website, and gives the answer at once. The agent keeps the access log of the
+            // edge proxy itself.
             Route::get('websites/{websiteId}/files', [FileController::class, 'index'])->middleware('throttle:site-tools');
             Route::delete('websites/{websiteId}/files', [FileController::class, 'destroy'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/files/content', [FileController::class, 'show'])->middleware('throttle:site-tools');
@@ -338,6 +339,8 @@ Route::prefix('v1')->group(function () {
             Route::post('mail-clusters/{id}/retry', [MailClusterController::class, 'retry']);
             Route::delete('servers/{id}', [ServerController::class, 'destroy']);
             Route::get('servers/{id}/usage', [UsageController::class, 'server']);
+            // The access log of the edge proxy for the requests that are not for a website.
+            Route::get('servers/{id}/access-log', [LogController::class, 'server'])->middleware('throttle:site-tools');
             Route::put('usage-alerts/settings', [UsageController::class, 'updateSettings']);
             // The mesh: the encrypted tunnels between the servers.
             Route::get('mesh', [MeshController::class, 'show']);
