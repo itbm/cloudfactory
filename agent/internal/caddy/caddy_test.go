@@ -308,7 +308,7 @@ func TestPanelRouteSetsTheEdgeHeaders(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 
-	if err := New(srv.URL).ApplyPanel(context.Background(), "panel.example.com", PanelInternal, 19080, 19081); err != nil {
+	if err := New(srv.URL).ApplyPanel(context.Background(), "panel.example.com", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(fake.routes)
@@ -319,6 +319,11 @@ func TestPanelRouteSetsTheEdgeHeaders(t *testing.T) {
 	}
 	if !strings.Contains(fake.policies, `"mode":"request"`) {
 		t.Errorf("policies = %s", fake.policies)
+	}
+	// The web terminal goes to the relay, before the route of the API.
+	relay := strings.Index(string(b), `{"handle":[{"handler":"reverse_proxy","stream_close_delay":"12h","upstreams":[{"dial":"169.254.77.1:19082"}]}],"match":[{"path":["/api/terminal/*"]}]}`)
+	if relay < 0 || relay > strings.Index(string(b), `"/api/*"`) {
+		t.Errorf("no route for the relay before the API: %s", b)
 	}
 }
 
@@ -347,7 +352,7 @@ func TestThePanelRouteIsFirst(t *testing.T) {
 	if err := c.Apply(ctx, Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"panel.example.com"}, Primary: "panel.example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ApplyPanel(ctx, "panel.example.com", PanelInternal, 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.example.com", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	if len(fake.routes) != 2 || fake.routes[0]["@id"] != "cf-panel" {

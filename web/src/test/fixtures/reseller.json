@@ -5783,6 +5783,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd0000000007/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd0000000007/deploy": {
         "status": 200,
         "body": {
@@ -6196,6 +6207,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd0000000009/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd0000000009/deploy": {
         "status": 200,
         "body": {
@@ -6416,6 +6438,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd0000000008/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd0000000008/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -6944,6 +6977,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd0000000006/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd0000000006/deploy": {
         "status": 200,
         "body": {
@@ -7388,6 +7432,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd000000000e/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd000000000e/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
