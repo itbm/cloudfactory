@@ -72,8 +72,8 @@ func (d *Deps) RootDial(ctx context.Context, name string) (net.Conn, error) {
 // allowAddress checks a TCP address from the worker. The worker can connect to:
 //
 //   - the port of a website, the HTTPS port of the edge proxy, the port of the SFTP
-//     container, the agent port of the panel and the management port of the mail server, on
-//     the private service address. The management API of the mail server also needs the
+//     container, the agent port and the terminal relay of the panel and the management port of
+//     the mail server, on the private service address. The management API of the mail server also needs the
 //     password of its administrator;
 //   - a Valkey database server on the address of its customer. The agent manages the users
 //     of Valkey through a connection. It manages MariaDB and PostgreSQL with a client in the
@@ -91,7 +91,7 @@ func (d *Deps) allowAddress(address string) error {
 	}
 	if host == quadlet.ServiceAddress {
 		website := d.State != nil && port >= d.State.FirstPort && port <= d.State.LastPort
-		if website || port == edgeHTTPSPort || port == d.sftpPort() || port == quadlet.PanelAgentPort || port == quadlet.MailAdminPort {
+		if website || port == edgeHTTPSPort || port == d.sftpPort() || port == quadlet.PanelAgentPort || port == quadlet.PanelTerminalPort || port == quadlet.MailAdminPort {
 			return nil
 		}
 		return fmt.Errorf("the worker cannot connect to port %d of the service address", port)

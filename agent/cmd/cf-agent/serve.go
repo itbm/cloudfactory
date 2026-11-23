@@ -585,6 +585,7 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
 	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256)
 	dialLocal(reporter, deps)
+	deps.TerminalPanel = reporter
 	deps.PanelDownload = reporter.Download
 
 	h := deps.Host
@@ -671,6 +672,8 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	slog.Info("cf-agent started", "version", version, "listen", cfg.Listen, "uid", os.Geteuid())
 	err = server.Serve(ctx, cfg.Listen, server.Handler(&server.Service{Deps: deps, Runner: runner, Status: collector}), server.TLSConfig(cert, cfg.PanelCertificateSHA256))
 	runner.Wait()
+	// The sessions of the web terminal end when ctx ends. They report their end to the panel.
+	deps.WaitTerminals(10 * time.Second)
 	return err
 }
 

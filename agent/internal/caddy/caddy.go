@@ -423,10 +423,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
 	return resp.StatusCode, b, nil
 }
 
-// ApplyPanel sets the route of the panel: /api/* goes to the API, and all other paths
-// go to the web UI. method is the certificate method of the panel domain: PanelInternal or
-// PanelLetsEncrypt.
-func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort, webPort int) error {
+// ApplyPanel sets the route of the panel: /api/terminal/* goes to the terminal relay, the other
+// paths of /api/* go to the API, and all other paths go to the web UI. method is the
+// certificate method of the panel domain: PanelInternal or PanelLetsEncrypt.
+func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort, webPort, terminalPort int) error {
 	// Set the certificate method before the route. With the route first, Caddy would start an
 	// ACME order for the domain with the default issuer.
 	if err := c.SetPanelCertificate(ctx, domain, method); err != nil {
@@ -456,6 +456,11 @@ func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort,
 			map[string]any{"handle": []any{map[string]any{"handler": "headers", "response": map[string]any{"set": map[string]any{
 				"Strict-Transport-Security": []string{"max-age=31536000"},
 			}}}}},
+			// The WebSocket connections of the web terminal. A change of the configuration
+			// closes them after the longest time of a session only.
+			map[string]any{"match": []any{map[string]any{"path": []string{"/api/terminal/*"}}}, "handle": []any{map[string]any{
+				"handler": "reverse_proxy", "upstreams": dial(terminalPort), "stream_close_delay": "12h",
+			}}},
 			map[string]any{"match": []any{map[string]any{"path": []string{"/api/*", "/up"}}}, "handle": []any{api}},
 			map[string]any{"handle": []any{map[string]any{"handler": "reverse_proxy", "upstreams": dial(webPort)}}},
 		}}},

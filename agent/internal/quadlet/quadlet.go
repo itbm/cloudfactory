@@ -771,6 +771,8 @@ type Panel struct {
 	AgentPort int
 	// DatabasePort is the port of the PostgreSQL database of the panel on ServiceAddress.
 	DatabasePort int
+	// TerminalPort is the port of the terminal relay on ServiceAddress (PanelTerminalPort).
+	TerminalPort int
 }
 
 // The ports of the panel on ServiceAddress.
@@ -779,6 +781,9 @@ const (
 	PanelWebPort      = 19081
 	PanelAgentPort    = 19443
 	PanelDatabasePort = 19432
+	// PanelTerminalPort is the port of the terminal relay (cf-terminal-relay). The edge proxy
+	// sends /api/terminal/* to it, and the agent on the panel server connects to it.
+	PanelTerminalPort = 19082
 )
 
 // EdgeLogPort is the port on ServiceAddress on which the worker of the agent receives the
@@ -803,7 +808,10 @@ func (p Panel) PanelDatabaseEnv() string { return p.DataDir + "/db.env" }
 const CosignPublicKey = "/etc/cloudfactory/cosign.pub"
 
 // PanelUnits gives the units of the panel: the database, the API, the queue worker, the
-// scheduler and the web UI. The scheduler checks the registry for new image tags (FR-1110).
+// scheduler, the terminal relay and the web UI. The scheduler checks the registry for new image
+// tags (FR-1110). The terminal relay (cf-terminal-relay, in the image of the API) connects the
+// browser to the agent of a server for the web terminal (FR-802). It has no database: it needs
+// only APP_KEY, for the tickets.
 // The API container publishes its ports only on ServiceAddress. Thus only the edge proxy and
 // the agent on the panel server can connect to them. The edge proxy uses the HTTP port. The
 // agent uses the HTTPS port, and the API identifies it by its client certificate.
@@ -908,6 +916,10 @@ func PanelUnits(p Panel) map[string]string {
 			append([]string{"ContainerName=cf-panel-queue", "Image=" + api, "Exec=php artisan queue:work --tries=5"}, env...)...),
 		"cf-panel-scheduler.container": unit("Cloudfactory panel scheduler", []string{database, "cf-panel-api.service"},
 			append([]string{"ContainerName=cf-panel-scheduler", "Image=" + api, "Exec=php artisan schedule:work"}, env...)...),
+		"cf-panel-terminal.container": unit("Cloudfactory panel terminal relay", nil,
+			"ContainerName=cf-panel-terminal", "Image="+api, "Exec=cf-terminal-relay --listen :8090",
+			fmt.Sprintf("PublishPort=%s:%d:8090", ServiceAddress, p.TerminalPort),
+			"EnvironmentFile="+p.DataDir+"/panel.env", "ReadOnly=true", "Tmpfs=/tmp"),
 		"cf-panel-web.container": unit("Cloudfactory panel web UI", nil,
 			"ContainerName=cf-panel-web", "Image="+p.Registry+"/panel-web:"+p.Version, fmt.Sprintf("PublishPort=%s:%d:8080", ServiceAddress, p.WebPort), "ReadOnly=true", "Tmpfs=/tmp"),
 	}

@@ -152,6 +152,52 @@ The product specification, section 6.4, gives the requirements.
   manager. The agent removes the control characters from each entry (finding G5-09), and the
   CLI removes them again before it writes to a terminal.
 
+## The web terminal
+
+- The shell of the web terminal runs in the gVisor container of the website as the website
+  user, the same as **Run a command**. It has the limits of the website. The root helper
+  starts it in a PTY with `runuser -u <user> -- podman exec -it`. The worker cannot start a
+  terminal as root or as a different user.
+- The panel records each terminal session: the user or the token, the IP address, the times,
+  the reason of the end and the exit code. The panel also records each session in the audit
+  log. The command log of the website keeps each command line of the session, with the user
+  and the IP address of the session. A customer cannot change or remove a session or its
+  commands.
+- The agent finds the command lines in the output of the terminal, not in the keys. Thus the
+  command log does not have a password that the shell does not show. These limits apply:
+  - The command log has the line that the terminal showed when the user pressed Enter. When
+    a program in the shell shows its own prompt, for example a database client, the command
+    log can also have the lines that the user typed there.
+  - A full-screen program, for example an editor, gives no commands. The recording has its
+    output.
+  - A user can hide a command from the command log, for example with a script that does not
+    show its input. The recording of the output and the time of the session stay.
+- The recording has the output of the terminal, to 1 MiB. It does not have the keys. The
+  output can contain secrets of the customer, for example when a command prints a
+  configuration file. Only the users who can see the website can read the recording.
+- When the panel does not get the commands for 2 minutes, the agent closes the terminal. Thus
+  a user cannot continue to type commands that the command log does not keep.
+- When the connection closes, the agent sends `SIGHUP` to the shell, because `podman exec`
+  does not stop the process in the container. A program that the user starts with `nohup`
+  can continue to run, the same as in the container of the website.
+- The terminal relay (`cf-panel-terminal`) is a separate container on the panel server. It has
+  no capabilities and a read-only root file system. It reads only `APP_KEY`, and it has no
+  connection to the database. It copies the messages between the browser and the agent and
+  does not keep them.
+- Each side connects to the relay with a ticket. A ticket is the HMAC of the role, the
+  session and the time limit, with a key that the API and the relay make from `APP_KEY`. A
+  ticket is good for one connection. The browser ticket is in the address of the WebSocket,
+  because a browser cannot add a header to a WebSocket. It is good for 60 seconds, so a copy
+  of it in a log cannot open a terminal later. The agent ticket is in a header, and it is good
+  for 5 minutes. The database of the panel does not keep the agent ticket.
+- The agent connects to the relay address that the panel gives in the job, with the TLS
+  settings of its connection to the panel. The agent on the panel server connects to the
+  relay port on the private service address through the root helper. The agent refuses a
+  relay address with a path, a user name or a query, and an `http` address that is not the
+  relay port on the private service address.
+- A website can have 2 open terminals. The shell closes after 30 minutes with no input, and a
+  session closes after 12 hours. The API accepts 30 new terminals each minute from one user.
+
 ## Databases
 
 - Each customer has its own database servers on a server. A database server is one
@@ -483,7 +529,7 @@ helper does only the work of three lists:
 
 | List | What the worker can ask for |
 | --- | --- |
-| Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as the Unix user of a database server or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
+| Commands | A program as the Unix user of a website (`runuser -u <user>`), also in a PTY for the web terminal. A command of a fixed form as the Unix user of a database server or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
 | Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota`, `site.resize` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
 | Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. One of these ports is the management API of the mail server. |
 
@@ -520,7 +566,8 @@ These rules apply to the three lists:
   who can stop the worker again and again cannot make the service go back to an agent that
   is one root process.
 - The root helper connects the worker to the port of a website, to the HTTPS port of the edge
-  proxy, to the SFTP port and to the agent port of the panel on the private service address.
+  proxy, to the SFTP port, to the agent port of the panel and to the terminal relay of the
+  panel on the private service address.
   It also connects the worker to a Valkey database server. It refuses the database of the
   panel and all other addresses. Thus the firewall has no rule for the user `cf-agent`.
 - The root helper writes to the log of the service each command and each connection that it
