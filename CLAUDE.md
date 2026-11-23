@@ -38,6 +38,8 @@ the files must prevent conflicts. The rules are in
 
 - Put one item on each line of a list, and put a new item in alphabetical order or next to the
   related item. Do not add it at the end of the list.
+- Tests check the alphabetical order of the agent methods in `agent.proto` and `server.go`, of
+  `AgentAction` and of the fixture paths. Put a new method or action in its alphabetical place.
 - Do not write comments that name each item of a list.
 - Keep the blank line between the items of `docs/status.md`. Change only the item of your
   feature.

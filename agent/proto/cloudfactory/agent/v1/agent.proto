@@ -14,131 +14,132 @@ package cloudfactory.agent.v1;
 option go_package = "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1;agentv1";
 
 service AgentService {
-  rpc CreateWebsite(WebsiteRequest) returns (JobAccepted);
-  rpc DeleteWebsite(DeleteWebsiteRequest) returns (JobAccepted);
-  rpc SetWebsitePower(SetWebsitePowerRequest) returns (JobAccepted);
-  rpc SetLimits(SetLimitsRequest) returns (JobAccepted);
-  rpc SetRuntime(WebsiteRequest) returns (JobAccepted);
+  // The methods that make a job, in alphabetical order. Keep the order: then two pull requests
+  // that add methods do not conflict (docs/development.md#parallel-pull-requests).
+  rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
   rpc AddDomain(DomainRequest) returns (JobAccepted);
-  rpc RemoveDomain(DomainRequest) returns (JobAccepted);
-  rpc CreateDatabase(CreateDatabaseRequest) returns (JobAccepted);
-  rpc DeleteDatabase(DeleteDatabaseRequest) returns (JobAccepted);
-  rpc SetDatabaseUser(SetDatabaseUserRequest) returns (JobAccepted);
-  rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
   rpc Backup(BackupRequest) returns (JobAccepted);
-  rpc Restore(RestoreRequest) returns (JobAccepted);
+  // Makes a backup of all folders and messages of one mailbox in the restic repository of
+  // this server.
+  rpc BackupMailbox(BackupMailboxRequest) returns (JobAccepted);
+  rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
+  rpc CreateDatabase(CreateDatabaseRequest) returns (JobAccepted);
+  rpc CreateWebsite(WebsiteRequest) returns (JobAccepted);
+  rpc DeleteDatabase(DeleteDatabaseRequest) returns (JobAccepted);
+  rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
+  rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
+  rpc DeleteDnsZones(DeleteDnsZonesRequest) returns (JobAccepted);
+  rpc DeleteImport(DeleteImportRequest) returns (JobAccepted);
+  rpc DeleteMailAlias(MailAddressRequest) returns (JobAccepted);
+  rpc DeleteMailDomain(MailDomainRequest) returns (JobAccepted);
+  rpc DeleteMailbox(MailAddressRequest) returns (JobAccepted);
+  rpc DeleteWebsite(DeleteWebsiteRequest) returns (JobAccepted);
+  rpc Deploy(DeployRequest) returns (JobAccepted);
   // Account export (docs/account-export.md): the agent sends the files and the database dumps
   // of a website to the panel, as parts of an export. Each part goes to
   // /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
   rpc ExportWebsite(ExportWebsiteRequest) returns (JobAccepted);
+  rpc ExtractArchive(ExtractArchiveRequest) returns (JobAccepted);
+  // The import of an account from a different hosting panel, for example cPanel or
+  // DirectAdmin (docs/imports.md): FetchImport, ImportFiles, ImportDatabase, ImportMail and
+  // DeleteImport. The worker of the agent keeps the backup archive in its own directory and
+  // reads it as a stream. It never extracts the archive as root: the Unix user of a website
+  // writes the files, and the database clients and the mail server get the content of the
+  // dumps and of the messages.
+  rpc FetchImport(FetchImportRequest) returns (JobAccepted);
+  rpc ImportDatabase(ImportDatabaseRequest) returns (JobAccepted);
+  rpc ImportFiles(ImportFilesRequest) returns (JobAccepted);
+  rpc ImportMail(ImportMailRequest) returns (JobAccepted);
+  rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
-  rpc Reboot(HostRequest) returns (JobAccepted);
-  rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
-  rpc PruneBackups(PruneBackupsRequest) returns (JobAccepted);
-  rpc SetSftp(SetSftpRequest) returns (JobAccepted);
-  rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
-  rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
-  // Sets the panel domains of the resellers (white label). Only the panel server has them.
-  rpc SetPanelBrands(SetPanelBrandsRequest) returns (JobAccepted);
-  rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
-  rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
-  rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
-  rpc PrepareMailNode(PrepareMailNodeRequest) returns (JobAccepted);
-  rpc SetMailNode(SetMailNodeRequest) returns (JobAccepted);
-  rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
-  rpc DeleteMailDomain(MailDomainRequest) returns (JobAccepted);
-  rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
-  rpc DeleteMailbox(MailAddressRequest) returns (JobAccepted);
-  rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
-  rpc DeleteMailAlias(MailAddressRequest) returns (JobAccepted);
-  // Makes a backup of all folders and messages of one mailbox in the restic repository of
-  // this server.
-  rpc BackupMailbox(BackupMailboxRequest) returns (JobAccepted);
-  // Adds the messages of a mailbox backup that the mailbox does not have.
-  rpc RestoreMailbox(RestoreMailboxRequest) returns (JobAccepted);
-  rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
-  rpc DeleteDnsZones(DeleteDnsZonesRequest) returns (JobAccepted);
-  rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
-  rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
-  // Runs one command now in the container of a website (the panel action "Run a command"). The
-  // command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
-  // website, the same as a cron job. The job succeeds when the command ran, also when its exit
-  // code is not 0. The result has the exit code and the end of the output.
-  rpc RunCommand(RunCommandRequest) returns (JobAccepted);
+  // The archives of the file manager. The agent does each job as the Unix user of the
+  // website, in the directory of the website, as the methods of the file manager below.
+  rpc MakeArchive(MakeArchiveRequest) returns (JobAccepted);
   // Opens a shell in the container of a website for the web terminal of the panel. The agent
   // connects to the terminal relay of the panel, and the relay connects the agent to the
   // browser. The shell runs as the Unix user of the website, in the gVisor sandbox. The job
   // succeeds when the shell started. The agent then sends the commands of the session and its
   // end to the panel (/api/agent/v1/terminal-sessions/...).
   rpc OpenTerminal(OpenTerminalRequest) returns (JobAccepted);
-  rpc Deploy(DeployRequest) returns (JobAccepted);
-  rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
-  rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
-  rpc SetMesh(SetMeshRequest) returns (JobAccepted);
-  rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
-  rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
+  rpc PrepareMailNode(PrepareMailNodeRequest) returns (JobAccepted);
+  rpc PruneBackups(PruneBackupsRequest) returns (JobAccepted);
+  rpc Reboot(HostRequest) returns (JobAccepted);
   rpc ReceiveDatabaseServer(ReceiveDatabaseServerRequest) returns (JobAccepted);
-  rpc SendWebsite(SendWebsiteRequest) returns (JobAccepted);
   rpc ReceiveWebsite(ReceiveWebsiteRequest) returns (JobAccepted);
-  // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
-  // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
-  // each pack only with a signature of its publisher, and loads the runtimes of the packs.
-  rpc SetPacks(SetPacksRequest) returns (JobAccepted);
-  // Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
-  // the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
-  // value with the website and changes only the edge route. The container does not restart.
-  rpc SetWebsiteSecurity(SetWebsiteSecurityRequest) returns (JobAccepted);
+  rpc RemoveDomain(DomainRequest) returns (JobAccepted);
+  rpc Restore(RestoreRequest) returns (JobAccepted);
+  // Adds the messages of a mailbox backup that the mailbox does not have.
+  rpc RestoreMailbox(RestoreMailboxRequest) returns (JobAccepted);
+  rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
+  // Runs one command now in the container of a website (the panel action "Run a command"). The
+  // command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
+  // website, the same as a cron job. The job succeeds when the command ran, also when its exit
+  // code is not 0. The result has the exit code and the end of the output.
+  rpc RunCommand(RunCommandRequest) returns (JobAccepted);
+  rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
+  // Scans the files of a website for malware with ClamAV. The job first updates the
+  // signatures of the server. The result has the files that ClamAV found.
+  rpc ScanWebsite(ScanWebsiteRequest) returns (JobAccepted);
+  rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
+  rpc SendWebsite(SendWebsiteRequest) returns (JobAccepted);
   // Sets the certificates from the panel on the edge proxy of the server: the certificates
   // that a customer uploaded, and the certificates that the panel got from an ACME CA with
   // DNS validation. The list is complete. A certificate that the edge proxy has and that is not
   // in the list goes. Each host of a certificate then uses that certificate, and the edge proxy
   // does not get a certificate for the host itself.
   rpc SetCertificates(SetCertificatesRequest) returns (JobAccepted);
-  // The import of an account from a different hosting panel, for example cPanel or
-  // DirectAdmin (docs/imports.md). The worker of the agent keeps the backup archive in its own
-  // directory and reads it as a stream. It never extracts the archive as root: the Unix user
-  // of a website writes the files, and the database clients and the mail server get the
-  // content of the dumps and of the messages.
-  rpc FetchImport(FetchImportRequest) returns (JobAccepted);
-  rpc ImportFiles(ImportFilesRequest) returns (JobAccepted);
-  rpc ImportDatabase(ImportDatabaseRequest) returns (JobAccepted);
-  rpc ImportMail(ImportMailRequest) returns (JobAccepted);
-  rpc DeleteImport(DeleteImportRequest) returns (JobAccepted);
-  // The archives of the file manager. The agent does each job as the Unix user of the
-  // website, in the directory of the website, as the methods of the file manager below.
-  rpc MakeArchive(MakeArchiveRequest) returns (JobAccepted);
-  rpc ExtractArchive(ExtractArchiveRequest) returns (JobAccepted);
-  // Scans the files of a website for malware with ClamAV. The job first updates the
-  // signatures of the server. The result has the files that ClamAV found.
-  rpc ScanWebsite(ScanWebsiteRequest) returns (JobAccepted);
+  rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
+  rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
+  rpc SetDatabaseUser(SetDatabaseUserRequest) returns (JobAccepted);
+  rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
+  rpc SetLimits(SetLimitsRequest) returns (JobAccepted);
+  rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
+  rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
+  rpc SetMailNode(SetMailNodeRequest) returns (JobAccepted);
+  rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
+  rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
+  rpc SetMesh(SetMeshRequest) returns (JobAccepted);
+  // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
+  // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
+  // each pack only with a signature of its publisher, and loads the runtimes of the packs.
+  rpc SetPacks(SetPacksRequest) returns (JobAccepted);
+  // Sets the panel domains of the resellers (white label). Only the panel server has them.
+  rpc SetPanelBrands(SetPanelBrandsRequest) returns (JobAccepted);
+  rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
+  rpc SetRuntime(WebsiteRequest) returns (JobAccepted);
+  rpc SetSftp(SetSftpRequest) returns (JobAccepted);
+  rpc SetWebsitePower(SetWebsitePowerRequest) returns (JobAccepted);
+  // Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
+  // the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
+  // value with the website and changes only the edge route. The container does not restart.
+  rpc SetWebsiteSecurity(SetWebsiteSecurityRequest) returns (JobAccepted);
+  rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
 
-  // Returns the actual state of the server at once. This method does not make a job.
-  rpc GetStatus(GetStatusRequest) returns (HostStatus);
-
-  // The file manager and the logs of a website. These methods do not make a job: they give
-  // the result at once. The agent does each of them as the Unix user of the website, in the
-  // directory of the website.
-  rpc ListFiles(FileRequest) returns (FileList);
-  rpc ReadFile(FileRequest) returns (FileContent);
-  rpc WriteFile(WriteFileRequest) returns (FileEntry);
-  rpc MakeDirectory(FileRequest) returns (FileEntry);
-  rpc MoveFile(MoveFileRequest) returns (FileEntry);
-  rpc DeleteFile(FileRequest) returns (FileDeleted);
-  rpc SetFileMode(SetFileModeRequest) returns (FileModeSet);
-  rpc GetLogs(GetLogsRequest) returns (Logs);
-  // The last requests of a website that the firewall of the edge proxy blocked or detected.
-  // This method does not make a job.
-  rpc GetFirewallEvents(GetFirewallEventsRequest) returns (FirewallEvents);
-
-  // The autoresponder of a mailbox. These methods do not make a job: they give the result at
-  // once. The mail server keeps the autoresponder (JMAP VacationResponse), and the webmail
-  // changes the same autoresponder. The job_id of the request is not used.
-  rpc GetAutoresponder(MailAddressRequest) returns (Autoresponder);
-  rpc SetAutoresponder(SetAutoresponderRequest) returns (Autoresponder);
+  // The methods that do not make a job: they give the result at once. The agent does the
+  // methods of the file manager and of the logs of a website as the Unix user of the website,
+  // in the directory of the website. In alphabetical order.
   // Gives the last commit of the branch of each Git source, for the deploys on a schedule
   // (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
   // container of each website, as for the step "Get the code" of a deploy.
   rpc CheckBranches(CheckBranchesRequest) returns (BranchHeads);
+  rpc DeleteFile(FileRequest) returns (FileDeleted);
+  // The autoresponder of a mailbox. The mail server keeps the autoresponder (JMAP
+  // VacationResponse), and the webmail changes the same autoresponder. The job_id of the
+  // request is not used.
+  rpc GetAutoresponder(MailAddressRequest) returns (Autoresponder);
+  // The last requests of a website that the firewall of the edge proxy blocked or detected.
+  // This method does not make a job.
+  rpc GetFirewallEvents(GetFirewallEventsRequest) returns (FirewallEvents);
+  rpc GetLogs(GetLogsRequest) returns (Logs);
+  // Returns the actual state of the server.
+  rpc GetStatus(GetStatusRequest) returns (HostStatus);
+  rpc ListFiles(FileRequest) returns (FileList);
+  rpc MakeDirectory(FileRequest) returns (FileEntry);
+  rpc MoveFile(MoveFileRequest) returns (FileEntry);
+  rpc ReadFile(FileRequest) returns (FileContent);
+  rpc SetAutoresponder(SetAutoresponderRequest) returns (Autoresponder);
+  rpc SetFileMode(SetFileModeRequest) returns (FileModeSet);
+  rpc WriteFile(WriteFileRequest) returns (FileEntry);
 }
 
 message JobAccepted {
