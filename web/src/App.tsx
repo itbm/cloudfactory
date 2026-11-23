@@ -32,6 +32,7 @@ import { PacksPage } from "./pages/PacksPage";
 import { PluginsPage } from "./pages/PluginsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
+import { SsoPage } from "./pages/SsoPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
 import { UptimePage } from "./pages/UptimePage";
 import { WebsiteDetailPage } from "./pages/WebsiteDetailPage";
@@ -85,6 +86,7 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/sso" element={<SsoPage />} />
         <Route element={<RequireSignIn><Layout /></RequireSignIn>}>
           <Route element={<RoleGuard />}>
             <Route index element={<Home />} />

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -52,6 +53,18 @@ class User extends Authenticatable
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /** FR-103: the passkeys of the user. */
+    public function passkeys(): HasMany
+    {
+        return $this->hasMany(Passkey::class);
+    }
+
+    /** Single sign-on: the accounts of identity providers that the user connected. */
+    public function identities(): HasMany
+    {
+        return $this->hasMany(UserIdentity::class);
     }
 
     /** The user of a plugin. Nobody signs in as this user. Only the token of the plugin uses it. */

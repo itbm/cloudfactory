@@ -182,7 +182,7 @@ enum NotificationEvent: string
             self::ServerOffline => "Hello {{name}},\n\nThe server {{server}} did not report to the panel since {{lastSeen}}. The panel keeps its jobs until it reports again.\n\nMake sure that the server is on and that the agent service runs:\n{{panelUrl}}/servers",
             self::UptimeDown => "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
             self::UptimeUp => "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
-            self::PasswordReset => "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
+            self::PasswordReset => "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app or remove your passkeys.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
         };
     }
 }
