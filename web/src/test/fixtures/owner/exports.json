@@ -1,0 +1,74 @@
+{
+    "request": "GET /exports",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m78a2rr0jga0080000000001",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "customerName": "Acme Ltd",
+                "state": "ready",
+                "files": true,
+                "databases": true,
+                "parts": {
+                    "complete": 13,
+                    "total": 13
+                },
+                "receivedBytes": 7134,
+                "sizeBytes": 66048,
+                "warnings": [
+                    {
+                        "item": "websites/api.acme.example.com/databases/apiacme_97c4_queue",
+                        "message": "The export does not have the data of Valkey databases."
+                    },
+                    {
+                        "item": "websites/shop.acme.example.com/databases/shopacme_9e69_cache",
+                        "message": "The export does not have the data of Valkey databases."
+                    },
+                    {
+                        "item": "mail",
+                        "message": "The export does not have the messages of the mailboxes or their passwords."
+                    }
+                ],
+                "error": null,
+                "createdBy": "Olu Owner",
+                "createdAt": "2026-11-12T16:40:00+00:00",
+                "finishedAt": "2026-11-12T16:43:00+00:00",
+                "expiresAt": "2026-11-19T16:43:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jga0080000000002",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "customerName": "Acme Ltd",
+                "state": "failed",
+                "files": true,
+                "databases": true,
+                "parts": {
+                    "complete": 0,
+                    "total": 0
+                },
+                "receivedBytes": 0,
+                "sizeBytes": null,
+                "warnings": [
+                    {
+                        "item": "websites/api.acme.example.com/databases/apiacme_97c4_queue",
+                        "message": "The export does not have the data of Valkey databases."
+                    },
+                    {
+                        "item": "websites/shop.acme.example.com/databases/shopacme_9e69_cache",
+                        "message": "The export does not have the data of Valkey databases."
+                    },
+                    {
+                        "item": "mail",
+                        "message": "The export does not have the messages of the mailboxes or their passwords."
+                    }
+                ],
+                "error": "Export shop.acme.example.com failed: database acme_shop: mariadb-dump: Got error: 2013: \"Lost connection to server during query\" when dumping table `orders` at row: 18234",
+                "createdBy": "Olu Owner",
+                "createdAt": "2026-11-09T09:12:00+00:00",
+                "finishedAt": "2026-11-09T09:18:00+00:00",
+                "expiresAt": "2026-11-16T09:18:00+00:00"
+            }
+        ]
+    }
+}

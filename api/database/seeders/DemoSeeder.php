@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Demo\DemoAcme;
+use App\Demo\DemoExport;
 use App\Demo\DemoImport;
 use App\Demo\DemoMailDns;
 use App\Demo\DemoUptimeProbe;
@@ -12,6 +13,7 @@ use App\Enums\DomainKind;
 use App\Enums\JobState;
 use App\Enums\NotificationEvent;
 use App\Enums\Role;
+use App\Models\AccountExport;
 use App\Models\AgentJob;
 use App\Models\AuditEntry;
 use App\Models\Certificate;
@@ -58,6 +60,7 @@ use App\Services\Certificates\Certificates;
 use App\Services\Certificates\Pem;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
+use App\Services\Exports\Description as ExportDescription;
 use App\Services\Imports\Description;
 use App\Services\Networks;
 use App\Services\Notifications\Notifier;
@@ -152,6 +155,8 @@ class DemoSeeder extends Seeder
         $this->commandLog();
         $this->malwareScans();
         $this->mail();
+        // After the mail: the description of an export has the email addresses.
+        $this->exports();
         $this->jobsAndRollout();
         $this->imports();
         $this->settingsAndAudit();
@@ -678,6 +683,20 @@ class DemoSeeder extends Seeder
             MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => 'alias', 'destinations' => ["$box@northwind.example.com"], 'status' => MailDomain::ACTIVE]);
         }
         MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => 'partners', 'kind' => 'forwarder', 'destinations' => ['alliances@partner.example.net', 'deals@reseller.example.org'], 'status' => MailDomain::ACTIVE]);
+
+        // FR-603: each mailbox that is 90% full or more has an alert, as after a mail report.
+        foreach (Mailbox::with('domain')->orderBy('local_part')->get() as $i => $mailbox) {
+            $percent = round($mailbox->used_bytes / $mailbox->quota_bytes * 100, 1);
+            if ($percent < Mailbox::FULL_WARNING_PERCENT) {
+                continue;
+            }
+            $level = $percent >= Mailbox::FULL_CRITICAL_PERCENT ? UsageAlert::CRITICAL : UsageAlert::WARNING;
+            UsageAlert::create([
+                'subject_type' => UsageAlert::MAILBOX, 'subject_id' => $mailbox->id, 'customer_id' => $mailbox->customer_id, 'server_id' => $mailbox->domain->server_id,
+                'resource' => 'storage', 'level' => $level, 'used' => $mailbox->used_bytes, 'limit' => $mailbox->quota_bytes, 'percent' => $percent,
+                'notified_level' => $level, 'opened_at' => now()->subHours(3 + $i % 20),
+            ]);
+        }
     }
 
     private function websites(): void
@@ -1106,6 +1125,25 @@ class DemoSeeder extends Seeder
                 $this->snapshot($website, 'manual', $size, $databases, now()->subHours(5));
             }
         }
+    }
+
+    /**
+     * Account exports: Acme Ltd has one that is ready and one that failed. Northwind Agency
+     * exported the account of its customer Harbour Books.
+     */
+    private function exports(): void
+    {
+        $owner = User::where('email', 'owner@example.com')->first();
+        DemoExport::seed($this->customers['acme'], $owner, now()->subDays(2)->setTime(16, 40));
+        $failed = AccountExport::create([
+            'customer_id' => $this->customers['acme']->id, 'user_id' => $owner?->id, 'state' => AccountExport::FAILED, 'files' => true, 'databases' => true,
+            'description' => ExportDescription::of($this->customers['acme'], true, true),
+            'error' => 'Export shop.acme.example.com failed: database acme_shop: mariadb-dump: Got error: 2013: "Lost connection to server during query" when dumping table `orders` at row: 18234',
+            'finished_at' => now()->subDays(5)->setTime(9, 18), 'expires_at' => now()->subDays(5)->setTime(9, 18)->addDays(7),
+        ]);
+        $failed->created_at = now()->subDays(5)->setTime(9, 12);
+        $failed->save();
+        DemoExport::seed($this->customers['books'], User::where('email', 'reseller@example.com')->first(), now()->subDay()->setTime(11, 5));
     }
 
     /** @param  ?string  $serverId  The server of a part with only databases. Null is a backup of the website. */

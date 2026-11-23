@@ -34,7 +34,7 @@
             {
                 "event": "usage.alert",
                 "label": "Usage alerts",
-                "description": "A website or the account uses almost all of a limit of its plan.",
+                "description": "A website, a database server or a mailbox uses almost all of its limit.",
                 "email": true,
                 "required": false
             },

@@ -29,6 +29,7 @@ type List = { data: Record<string, unknown>[] };
 const apiDomain = (name: string, over: Record<string, unknown> = {}) => ({ ...domain(name), dnsCheckedAt: domain(name).dnsCheckedAt ?? null, ...over });
 
 const tab = (name: RegExp) => fireEvent.click(screen.getByRole("button", { name }));
+const banner = () => screen.getAllByRole("status").find((s) => s.classList.contains("alert"))!;
 const boxes = () => screen.getAllByRole("row").filter((r) => r.querySelector(".mailbox-name")).map((r) => r.querySelector("strong")!.textContent);
 
 describe("the email page", () => {
@@ -304,6 +305,42 @@ describe("the email page", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(api.changes.at(-1)).toMatchObject({ method: "PATCH", body: { publicKey: null } });
     expect(row("info@acme.example.com").textContent).not.toContain("Encrypted");
+  });
+
+  it("tells about a mailbox that is 90% full", async () => {
+    await open("owner");
+    // FR-603: sales@ uses 95% of its storage. The other mailboxes of Acme use less than 90%.
+    const status = banner();
+    expect(status.textContent).toContain("sales@acme.example.com is 95% full.");
+    expect(status.textContent).toContain("the mail server refuses new mail");
+    expect(status.className).toContain("alert-warning");
+    expect(within(status).queryByRole("button")).toBeNull();
+    expect(row("sales@acme.example.com").textContent).toContain("95% full");
+    expect(row("info@acme.example.com").textContent).not.toContain("% full");
+  });
+
+  it("shows only the mailboxes that are almost full", async () => {
+    await open("administrator");
+    expect(banner().textContent).toContain("8 mailboxes are 90% full or more.");
+    const only = screen.getByRole("button", { name: "Show only these mailboxes" });
+    expect(only.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(only);
+    expect(boxes()).toHaveLength(8);
+    expect(boxes()).toContain("sales@acme.example.com");
+    for (const name of boxes()) expect(row(name!).textContent).toMatch(/\d+% full/);
+    // The domain filter and the full filter work together.
+    fireEvent.change(screen.getByRole("combobox", { name: "Mail domain" }), { target: { value: domain("cornerbakery.example.org").id } });
+    expect(screen.getByText("No mailbox of this domain is almost full.")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Mail domain" }), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Show all mailboxes" }));
+    expect(boxes()).toHaveLength(25);
+  });
+
+  it("opens the mailbox of a usage alert", async () => {
+    await signedIn("owner");
+    render(<MemoryRouter initialEntries={["/email?mailbox=sales%40acme.example.com"]}><EmailPage /></MemoryRouter>);
+    expect((screen.getByRole("searchbox", { name: "Search mailboxes and aliases" }) as HTMLInputElement).value).toBe("sales@acme.example.com");
+    expect(boxes()).toEqual(["sales@acme.example.com"]);
   });
 
   it("does not remove a mail domain that has mailboxes", async () => {

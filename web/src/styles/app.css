@@ -718,6 +718,42 @@ a.cell-title:hover { text-decoration: underline; }
 .file-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .file-path button { min-height: 36px; }
 .editor { width: 100%; min-height: 50vh; }
+/* The file manager: the selection, the permissions and the messages about archive jobs. */
+.file-notices { display: grid; gap: 8px; margin-bottom: 12px; }
+.file-notices .alert + .alert { margin-top: 0; }
+.file-notice { align-items: flex-start; gap: 12px; }
+.file-notice > svg { flex: none; margin-top: 2px; animation: spin 1.2s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .file-notice > svg { animation: none; } }
+.file-notice-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.file-notice-text > * + * { margin-top: 8px; }
+.file-notice summary { cursor: pointer; font-size: 14px; }
+.file-notice > .btn-icon { flex: none; margin: -8px -8px -8px 0; }
+.selection-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 8px; padding: 8px 12px; border: 1px solid var(--primary); border-radius: var(--radius-sm);
+  background: var(--primary-soft); font-size: 14px; font-weight: 600;
+}
+.file-table .select-cell { width: 44px; padding-right: 0; }
+.file-table .select-cell input { width: 18px; height: 18px; accent-color: var(--primary); vertical-align: middle; }
+.file-table tbody tr.selected { background: var(--primary-soft); }
+.file-table td code { font-size: 13px; }
+.permissions { border: 0; padding: 0; margin: 0 0 12px; }
+.permissions legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.permissions-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 32px; }
+.permissions-body .field { margin-top: 8px; max-width: 220px; }
+.permission-grid { width: auto; }
+.permission-grid th, .permission-grid td { padding: 6px 14px; border-top: 0; text-align: center; }
+.permission-grid tbody th { text-align: left; color: var(--text); font-weight: 500; font-size: 14px; }
+.permission-grid tbody tr:hover { background: none; }
+.permission-grid tbody tr:last-child th { border-bottom: 0; }
+.permission-grid input { width: 20px; height: 20px; accent-color: var(--primary); }
+.mode-input { width: 8ch; }
+@media (max-width: 640px) {
+  /* The check box is at the top left of the card, before the name. */
+  .table-cards .file-table td.select-cell { position: absolute; top: 14px; left: 16px; z-index: 1; padding: 0; }
+  .table-cards .file-table td.select-cell + td[data-label] { padding-left: 24px; padding-right: 44px; padding-bottom: 6px; }
+  .table-cards .file-table td.select-cell + td[data-label]::before { content: none; }
+}
 
 .log-view {
   margin: 0; padding: 14px 16px; max-height: 480px; overflow: auto;

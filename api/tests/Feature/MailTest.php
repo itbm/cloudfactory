@@ -12,7 +12,10 @@ use App\Models\MailAlias;
 use App\Models\Mailbox;
 use App\Models\MailCluster;
 use App\Models\MailDomain;
+use App\Models\MailServer;
+use App\Models\NotificationDelivery;
 use App\Models\Server;
+use App\Models\UsageAlert;
 use App\Services\AgentClient;
 use App\Services\JobOutcome;
 use App\Services\Mail;
@@ -635,6 +638,53 @@ class MailTest extends TestCase
         $this->asLocalAgent('cfa_token')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0', 'mail' => ['state' => 'stopped']])->assertOk();
         $this->assertSame('stopped', $this->host->fresh()->mail_status);
         $this->assertSame('running', $elsewhere->fresh()->mail_status);
+    }
+
+    public function test_a_mailbox_that_is_90_percent_full_opens_an_alert_and_an_email(): void
+    {
+        $this->hosting();
+        MailServer::create(['host' => 'smtp.example.com', 'port' => 587, 'encryption' => 'starttls', 'from_address' => 'panel@example.com']);
+        $owner = $this->user(Role::Owner, $this->customer);
+        $this->actingWith($this->user());
+        $domain = $this->domain();
+        $info = $this->mailbox($domain);
+        $sales = $this->mailbox($domain, 'sales');
+        $this->host->update(['agent_token_hash' => hash('sha256', 'cfa_token'), 'local' => true, 'certificate_fingerprint' => self::LOCAL_FINGERPRINT]);
+        $report = fn (array $used) => $this->asLocalAgent('cfa_token')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0', 'mail' => ['state' => 'running',
+            'mailboxes' => array_map(fn ($address, $bytes) => ['address' => $address, 'usedBytes' => $bytes], array_keys($used), $used)]])->assertOk();
+
+        // 89% is not 90%.
+        $report(['info@acme.example' => (int) (0.89 * self::GB), 'sales@acme.example' => 0]);
+        $this->assertSame(0, UsageAlert::count());
+        $report(['info@acme.example' => (int) (0.91 * self::GB), 'sales@acme.example' => 0]);
+        $alert = UsageAlert::sole();
+        $this->assertSame([UsageAlert::MAILBOX, $info->id, 'storage', UsageAlert::WARNING, $this->customer->id, $this->host->id], [$alert->subject_type, $alert->subject_id, $alert->resource, $alert->level, $alert->customer_id, $alert->server_id]);
+        $delivery = NotificationDelivery::where(['event' => 'usage.alert', 'recipient' => $owner->email])->sole();
+        $this->assertStringContainsString('91% of its Mailbox storage limit', $delivery->subject);
+        $this->assertStringContainsString('For: mailbox info@acme.example', $delivery->body);
+
+        // The owner sees the alert with the address of the mailbox.
+        $this->actingWith($owner);
+        $this->getJson('/api/v1/usage-alerts')->assertOk()->assertJsonPath('data.0.subjectType', 'mailbox')->assertJsonPath('data.0.subjectName', 'info@acme.example')
+            ->assertJsonPath('data.0.usedText', '931.8 MB')->assertJsonPath('data.0.limitText', '1 GB');
+        $this->getJson('/api/v1/usage-alerts?subjectType=mailbox')->assertOk()->assertJsonCount(1, 'data');
+
+        // 98%: critical, with one more email. Then the owner removes old mail.
+        $report(['info@acme.example' => (int) (0.985 * self::GB), 'sales@acme.example' => 0]);
+        $this->assertSame(UsageAlert::CRITICAL, $alert->fresh()->level);
+        $this->assertSame(2, NotificationDelivery::where(['event' => 'usage.alert', 'recipient' => $owner->email])->count());
+        $report(['info@acme.example' => (int) (0.86 * self::GB), 'sales@acme.example' => 0]);
+        $this->assertTrue($alert->fresh()->isOpen());
+        $report(['info@acme.example' => (int) (0.80 * self::GB), 'sales@acme.example' => 0]);
+        $this->assertFalse($alert->fresh()->isOpen());
+
+        // The alert of a mailbox that the owner removes closes at the next report.
+        $report(['info@acme.example' => 0, 'sales@acme.example' => (int) (0.95 * self::GB)]);
+        $alert = UsageAlert::whereNull('resolved_at')->sole();
+        $this->assertSame($sales->id, $alert->subject_id);
+        $sales->delete();
+        $report(['info@acme.example' => 0]);
+        $this->assertFalse($alert->fresh()->isOpen());
     }
 
     public function test_a_token_needs_the_mail_scope(): void

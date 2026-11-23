@@ -39,6 +39,10 @@ Usage:
   cf websites delete WEBSITE
   cf websites start|stop|restart|staging WEBSITE      staging shows the passwords of the new database users once.
   cf websites retry WEBSITE                            Make a website again after the first job failed.
+  cf websites move WEBSITE --server SERVER
+                                                       Move a website to a different server. Only an administrator. It keeps
+                                                       its domains, its databases and its network name. It does not operate
+                                                       while its files move through the tunnel between the two servers.
   cf domains add WEBSITE DOMAIN --kind redirect|alias  A new domain needs a DNS TXT record. The command shows it.
   cf domains verify WEBSITE DOMAIN                     Check the TXT record. Then the edge proxy serves the domain.
   cf domains remove WEBSITE DOMAIN
@@ -63,6 +67,13 @@ Usage:
   cf files mkdir WEBSITE PATH
   cf files move WEBSITE PATH NEW_PATH
   cf files delete WEBSITE PATH                         A directory goes with all that it contains.
+  cf files chmod WEBSITE PATH MODE [--recursive --file-mode MODE]
+                                                       MODE has 3 octal digits, for example 644. With --recursive, MODE is
+                                                       for the directories and --file-mode for the files. Links do not change.
+  cf files archive WEBSITE NEW_ARCHIVE PATH...         Make a .zip, .tar.gz or .tar archive of the files and directories.
+  cf files extract WEBSITE ARCHIVE [--to DIR] [--overwrite]
+                                                       Extract a .zip, .tar, .tar.gz or .tar.bz2 archive. The default DIR is the
+                                                       directory of the archive. Files that exist do not change without --overwrite.
   cf logs WEBSITE [--lines N] [--type access|error]    The last lines of the output of the container.
   cf cron list WEBSITE
   cf cron add WEBSITE --schedule "M H DOM MON DOW" --command COMMAND [--off]
@@ -250,6 +261,10 @@ Usage:
   cf backups policy set [--daily N] [--weekly N] [--monthly N] [--time HH:MM] [--target REPOSITORY]
                         [--credentials-from-env | --remove-credentials]
                        The credentials come from AWS_ACCESS_KEY_ID, B2_ACCOUNT_ID and the other restic variables.
+  cf exports list [--customer ID]
+  cf exports create [--customer ID] [--no-files] [--no-databases]   Export an account: settings, files, databases and DNS zones.
+  cf exports get|delete EXPORT
+  cf exports download EXPORT [--output FILE]   Download the archive. Run it again to continue a download that stopped.
   cf jobs list [--website WEBSITE] [--limit N | --all]
   cf jobs get|wait JOB
   cf servers list
@@ -534,6 +549,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.mailServer(ctx, sub, rest)
 	case "backups", "backup":
 		return a.backups(ctx, sub, rest)
+	case "exports", "export":
+		return a.exports(ctx, sub, rest)
 	case "jobs", "job":
 		return a.jobs(ctx, sub, rest)
 	case "servers", "server":
@@ -901,7 +918,7 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		fs := flag.NewFlagSet("list", flag.ContinueOnError)
-		status := fs.String("status", "", "starting, running, stopping, stopped or failed")
+		status := fs.String("status", "", "starting, running, stopping, stopped, failed or moving")
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
@@ -922,6 +939,9 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 			return a.printJSON(w)
 		}
 		fmt.Fprintf(a.out, "Name:     %s\nID:       %s\nStatus:   %s\nRuntime:  %s\nUser:     %s\n", w.Name, w.ID, w.Status, w.Runtime.Image, w.UnixUser)
+		if w.MovingToServerID != "" {
+			fmt.Fprintf(a.out, "Moves to: server %s\n", w.MovingToServerID)
+		}
 		// A different website in a network with this website connects to this name.
 		if w.Kind != "" && w.Kind != "public" {
 			fmt.Fprintf(a.out, "Kind:     %s\n", w.Kind)
@@ -976,7 +996,7 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 		return a.change(ctx, http.MethodPost, "/websites", body)
 	case "set":
 		return a.websiteSet(ctx, args)
-	case "delete", "start", "stop", "restart", "staging", "retry":
+	case "delete", "start", "stop", "restart", "staging", "retry", "move":
 		if err := need(args, 1, "a website"); err != nil {
 			return err
 		}
@@ -991,6 +1011,8 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 			return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/staging", nil)
 		case "retry":
 			return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/retry", nil)
+		case "move":
+			return a.moveWebsite(ctx, w, args[1:])
 		}
 		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/power", map[string]string{"action": sub})
 	}

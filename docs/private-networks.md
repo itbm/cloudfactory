@@ -104,6 +104,22 @@ its name, its databases, its users, its passwords and its network name.
 
 If the move fails, the database server stays on its server and operates there.
 
+## When your provider moves a website
+
+Your provider can move a website to a different server. The website keeps its domains, its
+databases, its SFTP keys, its cron jobs and its network name.
+
+- The status of the website is **Moving** during the move. The website does not operate
+  during this time, and you cannot change it.
+- After the move, the website connects to a database server on a different server with the
+  network name. An app that uses the engine name, for example `mariadb.internal`, can lose the
+  connection. Change it to the network name.
+- The SFTP host is the host of the new server. The page **Access** of the website shows it.
+- For a domain in a different DNS service, change the A and AAAA records to the addresses of
+  the new server.
+
+If the move fails, the website stays on its server and operates there.
+
 ## With the CLI
 
 ```sh
