@@ -35,8 +35,11 @@ class Events
      */
     public const NAMED = [
         'Created website' => 'website.created',
+        // A preview of a pull request is a website of the plan too.
+        'Made preview' => 'website.created',
         'Changed website' => 'website.changed',
         'Removed website' => 'website.removed',
+        'Removed preview' => 'website.removed',
         'Added domain' => 'domain.added',
         'Verified domain' => 'domain.verified',
         'Removed domain' => 'domain.removed',

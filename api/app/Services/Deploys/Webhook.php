@@ -58,6 +58,10 @@ final class Webhook
     public static function read(Request $request): WebhookEvent
     {
         [$provider, $event] = self::provider($request);
+        // A pull request event of GitHub, GitLab, Gitea, Forgejo, Gogs or Bitbucket.
+        if (PullRequest::provider($request) !== null) {
+            return new WebhookEvent($provider, WebhookEvent::PULL_REQUEST, $event);
+        }
         $kind = match ($provider) {
             'github' => ['push' => WebhookEvent::PUSH, 'ping' => WebhookEvent::PING][$event] ?? WebhookEvent::OTHER,
             // GitLab sends "Push Hook" also for the test of a webhook.

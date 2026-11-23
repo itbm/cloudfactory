@@ -87,7 +87,8 @@ describe("the account page (audit item U1)", () => {
     expect(heading()).toBe("My account");
     const main = screen.getByRole("main");
     expect(main.textContent).toContain("Plan: Business");
-    expect(main.textContent).toContain("8 of 10");
+    // The preview of a pull request is a website of the plan too.
+    expect(main.textContent).toContain("9 of 10");
     expect(main.textContent).toContain("The operator of this panel");
     expect(within(main).getByText("owner@example.com")).toBeTruthy();
     expect(main.textContent).not.toContain("undefined");
@@ -223,9 +224,9 @@ describe("the UI items of the audit", () => {
   });
 
   it("says where the server does not apply the disk limit (U4)", async () => {
-    // 4 of the 5 websites of the owner are on web-1, which has no user quotas.
+    // 6 of the 9 websites of the owner are on web-1, which has no user quotas.
     await open("owner", "/");
-    expect(screen.getByRole("region", { name: "Disk" }).textContent).toContain("The limit is not applied for 5 of 8 websites");
+    expect(screen.getByRole("region", { name: "Disk" }).textContent).toContain("The limit is not applied for 6 of 9 websites");
     expect(screen.getByRole("region", { name: "Memory" }).textContent).not.toContain("not applied");
     cleanup();
     reset();

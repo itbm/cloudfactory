@@ -14,12 +14,18 @@ final readonly class WebhookEvent
     /** A test request, for example when a user adds the webhook on GitHub. */
     public const PING = 'ping';
 
+    /**
+     * A pull request event: the preview of the pull request changes (App\Services\Previews).
+     * The panel reads the pull request only when the website has previews (PullRequest::from).
+     */
+    public const PULL_REQUEST = 'pull_request';
+
     /** An event that the panel does not use, for example a push of a tag. */
     public const OTHER = 'other';
 
     /**
      * @param  string  $provider  github, gitlab, gitea (also Forgejo and Gogs), bitbucket or generic
-     * @param  string  $kind  PUSH, PING or OTHER
+     * @param  string  $kind  PUSH, PING, PULL_REQUEST or OTHER
      * @param  string  $event  the name of the event from the Git host, for example "push" or "Push Hook"
      * @param  array<string, string|null>  $heads  the branches that a push changed, with the ID of the new
      *                                             commit of each branch, or null when the request does
