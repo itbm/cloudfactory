@@ -6,18 +6,20 @@ the emails that they get.
 
 ## Events
 
-| Event                         | Key                    | Who can get it                     |
-| ----------------------------- | ---------------------- | ---------------------------------- |
-| Failed jobs                   | `job.failed`           | Administrators, resellers, owners  |
-| Failed backups                | `backup.failed`        | Administrators, resellers, owners  |
-| Certificates that expire soon | `certificate.expiring` | Administrators, resellers, owners  |
-| Account suspended             | `account.suspended`    | Resellers, owners (always on)      |
-| Suspension lifted             | `account.restored`     | Resellers, owners                  |
-| Sign-in from a new device     | `signin.new_device`    | All users (always on)              |
-| Usage alerts                  | `usage.alert`          | Administrators, resellers, owners  |
-| Servers that are offline      | `server.offline`       | Administrators                     |
-| Deploys that need attention   | `deploy.attention`     | Resellers, owners                  |
-| Password reset                | `password.reset`       | All users (always on)              |
+| Event                         | Key                    | Who can get it                                     |
+| ----------------------------- | ---------------------- | -------------------------------------------------- |
+| Failed jobs                   | `job.failed`           | Administrators, resellers, owners                  |
+| Failed backups                | `backup.failed`        | Administrators, resellers, owners                  |
+| Certificates that expire soon | `certificate.expiring` | Administrators, resellers, owners                  |
+| Account suspended             | `account.suspended`    | Resellers, owners (always on)                      |
+| Suspension lifted             | `account.restored`     | Resellers, owners                                  |
+| Sign-in from a new device     | `signin.new_device`    | All users (always on)                              |
+| Usage alerts                  | `usage.alert`          | Administrators, resellers, owners                  |
+| Servers that are offline      | `server.offline`       | Administrators                                     |
+| Deploys that need attention   | `deploy.attention`     | Resellers, owners                                  |
+| Websites that are down        | `uptime.down`          | Administrators (off by default), resellers, owners |
+| Websites that are up again    | `uptime.up`            | Administrators (off by default), resellers, owners |
+| Password reset                | `password.reset`       | All users (always on)                              |
 
 Who gets the email of an event:
 
@@ -41,6 +43,12 @@ Who gets the email of an event:
   reseller. A deploy ran the migration command, and then the website failed its health check.
   The panel did not go back to the previous release, because the previous release possibly
   does not operate with the changed database. You get one email for each release.
+- **Website down and up again:** the users of the customer of the website, the users of its
+  reseller, and the administrators. An uptime check of the website sends the email after the
+  number of failed requests in a row that the check has (2 by default). When the website
+  answers correctly again, the same users get an email with the length of the incident. The
+  emails are off by default for an administrator. Refer to
+  [Uptime checks](architecture.md#uptime-checks).
 - **Password reset:** the user, when somebody asks for a link to set a new password on the
   sign-in page. The template must have `{{resetUrl}}` in the text. **Sent emails** shows the
   email with a placeholder in the place of the link, and you cannot send it again. Refer to

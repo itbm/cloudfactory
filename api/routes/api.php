@@ -51,6 +51,7 @@ use App\Http\Controllers\Api\SftpController;
 use App\Http\Controllers\Api\SsoController;
 use App\Http\Controllers\Api\TerminalSessionController;
 use App\Http\Controllers\Api\TrustedKeyController;
+use App\Http\Controllers\Api\UptimeController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteCommandController;
@@ -168,6 +169,17 @@ Route::prefix('v1')->group(function () {
             Route::delete('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'destroy']);
             Route::post('websites/{websiteId}/cron-jobs/{cronJobId}/run', [CronJobController::class, 'run'])->middleware('throttle:30,1,post-websites-x-cron-jobs-x-run');
 
+            // Uptime checks: the panel requests an address of a website on a schedule, and sends
+            // an email when the website is down and when it is up again.
+            Route::get('uptime-checks', [UptimeController::class, 'all']);
+            Route::get('uptime-incidents', [UptimeController::class, 'incidents']);
+            Route::get('websites/{websiteId}/uptime-checks', [UptimeController::class, 'index']);
+            Route::post('websites/{websiteId}/uptime-checks', [UptimeController::class, 'store']);
+            Route::get('websites/{websiteId}/uptime-checks/{checkId}', [UptimeController::class, 'show']);
+            Route::patch('websites/{websiteId}/uptime-checks/{checkId}', [UptimeController::class, 'update']);
+            Route::delete('websites/{websiteId}/uptime-checks/{checkId}', [UptimeController::class, 'destroy']);
+            // Each request starts a request from the panel to the website.
+            Route::post('websites/{websiteId}/uptime-checks/{checkId}/run', [UptimeController::class, 'run'])->middleware('throttle:10,1,post-websites-x-uptime-checks-x-run');
             // Run a command in the container of the website, and the command log (FR-802).
             Route::get('websites/{websiteId}/commands', [WebsiteCommandController::class, 'index']);
             Route::post('websites/{websiteId}/commands', [WebsiteCommandController::class, 'store'])->middleware('throttle:30,1,post-websites-x-commands');
