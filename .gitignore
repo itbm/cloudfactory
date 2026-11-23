@@ -1,4 +1,6 @@
 cosign.key
 
-# The Go code of the agent protocol. "go generate" in agent/ makes it.
-/agent/gen/
+# The Go code of the agent protocol. "go generate" in agent/ makes it. Each package keeps its
+# doc.go, so that "go mod tidy" (Dependabot) finds the package.
+/agent/gen/**/*.go
+!/agent/gen/**/doc.go
