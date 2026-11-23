@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
+
+	"github.com/itbm/cloudfactory/agent/internal/execx"
 )
 
 // Client is the side of the worker. Each request opens one connection to the socket of the
@@ -209,3 +212,60 @@ func (c *Client) Dial(ctx context.Context, name string) (net.Conn, error) {
 	}
 	return conn, nil
 }
+
+// Terminal starts a command in a new pseudo-terminal of the helper. The context stops the
+// command when it ends.
+func (c *Client) Terminal(ctx context.Context, size execx.TerminalSize, output io.Writer, name string, args ...string) (Terminal, error) {
+	conn, stop, err := c.open(ctx, request{Kind: kindTerminal, Argv: append([]string{name}, args...), Size: size})
+	if err != nil {
+		return nil, err
+	}
+	t := &clientTerminal{conn: conn, done: make(chan struct{})}
+	go func() {
+		defer close(t.done)
+		defer stop()
+		defer conn.Close()
+		resp, err := c.finish(ctx, conn, output)
+		if err == nil {
+			err = resp.err()
+		}
+		t.code, t.err = resp.Exit, err
+	}()
+	return t, nil
+}
+
+// clientTerminal is a terminal of the helper on the side of the worker.
+type clientTerminal struct {
+	conn net.Conn
+	wmu  sync.Mutex
+	done chan struct{}
+	code int
+	err  error
+}
+
+func (t *clientTerminal) Write(p []byte) (int, error) {
+	t.wmu.Lock()
+	defer t.wmu.Unlock()
+	if err := writeMessage(t.conn, msgInput, p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (t *clientTerminal) Resize(size execx.TerminalSize) error {
+	b, err := json.Marshal(size)
+	if err != nil {
+		return err
+	}
+	t.wmu.Lock()
+	defer t.wmu.Unlock()
+	return writeMessage(t.conn, msgResize, b)
+}
+
+func (t *clientTerminal) Wait() (int, error) {
+	<-t.done
+	return t.code, t.err
+}
+
+// Close closes the connection. The helper then stops the command.
+func (t *clientTerminal) Close() error { return t.conn.Close() }

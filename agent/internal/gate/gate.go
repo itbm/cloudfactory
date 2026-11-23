@@ -36,15 +36,30 @@ type Gate interface {
 	// Dial opens a connection to a local socket or a local address of the list of the helper,
 	// for example the admin socket of the edge proxy.
 	Dial(ctx context.Context, name string) (net.Conn, error)
+	// Terminal starts a command that the policy accepts in a new pseudo-terminal of the
+	// helper, for the terminal of a website. output receives what the terminal shows.
+	Terminal(ctx context.Context, size execx.TerminalSize, output io.Writer, name string, args ...string) (Terminal, error)
+}
+
+// Terminal is a command in a pseudo-terminal of the root helper. Write sends keys.
+type Terminal interface {
+	io.Writer
+	// Resize changes the size of the terminal.
+	Resize(size execx.TerminalSize) error
+	// Wait waits for the end of the command and gives its exit code.
+	Wait() (int, error)
+	// Close stops the command.
+	Close() error
 }
 
 // The kinds of a request.
 const (
-	kindRun    = "run"
-	kindPipe   = "pipe"
-	kindStream = "stream"
-	kindCall   = "call"
-	kindDial   = "dial"
+	kindRun      = "run"
+	kindPipe     = "pipe"
+	kindStream   = "stream"
+	kindCall     = "call"
+	kindDial     = "dial"
+	kindTerminal = "terminal"
 )
 
 // request is the first message of a connection.
@@ -67,6 +82,11 @@ type request struct {
 	In json.RawMessage `json:"in,omitempty"`
 	// Name is the name of a socket (dial).
 	Name string `json:"name,omitempty"`
+	// Size is the first size of the terminal (terminal).
+	Size execx.TerminalSize `json:"size,omitzero"`
+
+	// resize receives the msgResize messages of the worker. It is not part of the message.
+	resize chan execx.TerminalSize
 }
 
 // response is the last message of the helper.
@@ -80,6 +100,8 @@ type response struct {
 	Err    string `json:"err,omitempty"`
 	// Codes are the names of the known errors that the error is (RegisterError).
 	Codes []string `json:"codes,omitempty"`
+	// Exit is the exit code of a command in a terminal (terminal).
+	Exit int `json:"exit,omitempty"`
 }
 
 // The types of a message. Each message is one type byte, the length of the content as 4
@@ -90,6 +112,8 @@ const (
 	msgInputEnd = 'E'
 	msgOutput   = 'O'
 	msgResponse = 'R'
+	// msgResize is a new size of a terminal: JSON with cols and rows.
+	msgResize = 'Z'
 )
 
 // maxMessage is the maximum size of one message. A request with a new agent binary is the

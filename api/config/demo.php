@@ -13,4 +13,9 @@ return [
 
     // The time for each step of a job, in milliseconds. The tests use 0.
     'step_ms' => (int) env('CF_DEMO_STEP_MS', 700),
+
+    // The demonstration has no terminal relay and no shell, so the web terminal does not open.
+    // With CF_DEMO_TERMINAL, the demo agent opens it: then a program of the developer must
+    // connect to the relay as the agent (docs/development.md).
+    'terminal' => (bool) env('CF_DEMO_TERMINAL', false),
 ];
