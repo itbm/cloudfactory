@@ -1,6 +1,6 @@
 import { useId, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { ChevronDown, ChevronRight, Lock, Search } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { AlertTriangle, ChevronDown, ChevronRight, Lock, Search } from "lucide-react";
 import { useAction, useStore } from "../api/hooks";
 import { contextCustomers, inContext } from "../api/selectors";
 import {
@@ -11,7 +11,7 @@ import type { MailAlias, MailDomain, MailRecord, Mailbox, State } from "../api/t
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, Meter, Modal, PageHeader, RowMenu, Status, TableWrap, Tabs } from "../components/ui";
 import { bytes, GB, MB } from "../lib/format";
-import { MAIL_STATUS } from "../lib/labels";
+import { MAILBOX_CRITICAL_PERCENT, MAILBOX_WARNING_PERCENT, MAIL_STATUS } from "../lib/labels";
 import { AutoresponderDialog } from "./Autoresponder";
 import { CopyField } from "./website/AccessTab";
 
@@ -22,7 +22,10 @@ const PURPOSE: Record<string, string> = {
   dmarc: "DMARC: what other servers do with mail that fails the checks",
 };
 
-const tone = (ratio: number) => (ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "warning" : undefined);
+/** FR-603: a mailbox that is 90% full has a warning, and at 98% the warning is critical. */
+const fullness = (m: Mailbox) => (m.quotaBytes > 0 ? m.usedBytes / m.quotaBytes : 0);
+const tone = (ratio: number) => (ratio * 100 >= MAILBOX_CRITICAL_PERCENT ? "danger" : ratio * 100 >= MAILBOX_WARNING_PERCENT ? "warning" : undefined);
+const almostFull = (m: Mailbox) => m.status === "active" && fullness(m) * 100 >= MAILBOX_WARNING_PERCENT;
 
 /** The mail domains of the selected account that can get a new mailbox or address. */
 const usable = (state: State) => state.mailDomains.filter((d) => inContext(state, d.customerId) && d.status === "active").sort((a, b) => a.name.localeCompare(b.name));
@@ -34,8 +37,8 @@ export const PAGE_SIZE = 25;
  * A list that the user can search and read page by page. A customer can have hundreds of
  * mailboxes: the page shows 25 rows, and the search finds an address in all of them.
  */
-function usePaged<T>(rows: T[], matches: (row: T, query: string) => boolean) {
-  const [query, setQueryText] = useState("");
+function usePaged<T>(rows: T[], matches: (row: T, query: string) => boolean, initial = "") {
+  const [query, setQueryText] = useState(initial);
   const [page, setPage] = useState(0);
   const q = query.trim().toLowerCase();
   const found = useMemo(() => (q ? rows.filter((r) => matches(r, q)) : rows), [rows, q]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -129,7 +132,10 @@ export function EmailPage() {
     return { aliases, forwarders };
   }, [boxes, addresses]);
   const hosts = state.servers.filter((s) => s.mail);
-  const [tab, setTab] = useState<Tab>(domains.length === 0 ? "domains" : "mailboxes");
+  // A link from a usage alert opens the mailboxes with the address in the search field.
+  const [params] = useSearchParams();
+  const wanted = params.get("mailbox") ?? "";
+  const [tab, setTab] = useState<Tab>(domains.length === 0 && wanted === "" ? "domains" : "mailboxes");
   const [domainId, setDomainId] = useState("");
   const filter = domains.some((d) => d.id === domainId) ? domainId : "";
   return (
@@ -152,7 +158,7 @@ export function EmailPage() {
             { id: "domains", label: `Domains (${domains.length})` },
           ]}
         />
-        {tab === "mailboxes" && <MailboxesCard boxes={boxes} aliases={aliases} domains={domains} domainId={filter} onDomain={setDomainId} />}
+        {tab === "mailboxes" && <MailboxesCard boxes={boxes} aliases={aliases} domains={domains} domainId={filter} onDomain={setDomainId} search={wanted} />}
         {tab === "forwarders" && <ForwardersCard forwarders={forwarders} domains={domains} domainId={filter} onDomain={setDomainId} />}
         {tab === "domains" && <DomainsCard domains={domains} onShowMailboxes={(id) => { setDomainId(id); setTab("mailboxes"); }} />}
       </main>
@@ -431,7 +437,7 @@ const KEY_WARNING: Record<string, string> = {
   unusable: "The key cannot be used now. New mail is not encrypted. Give a new key.",
 };
 
-function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes: Mailbox[]; aliases: Map<string, MailAlias[]>; domains: MailDomain[]; domainId: string; onDomain: (id: string) => void }) {
+function MailboxesCard({ boxes, aliases, domains, domainId, onDomain, search = "" }: { boxes: Mailbox[]; aliases: Map<string, MailAlias[]>; domains: MailDomain[]; domainId: string; onDomain: (id: string) => void; search?: string }) {
   const state = useStore();
   const customers = contextCustomers(state);
   const active = usable(state);
@@ -453,9 +459,12 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
   const reserved = own.reduce((n, m) => n + m.quotaBytes, 0);
   const showCustomer = customers.length > 1;
   const customer = (id: string) => state.customers.find((c) => c.id === id)?.name ?? "Removed customer";
-  const inDomain = useMemo(() => (domainId ? boxes.filter((m) => m.domainId === domainId) : boxes), [boxes, domainId]);
+  // FR-603: the mailboxes that are 90% full or more. "onlyFull" shows only these mailboxes.
+  const full = useMemo(() => boxes.filter(almostFull), [boxes]);
+  const [onlyFull, setOnlyFull] = useState(false);
+  const inDomain = useMemo(() => boxes.filter((m) => (!domainId || m.domainId === domainId) && (!onlyFull || almostFull(m))), [boxes, domainId, onlyFull]);
   // The search finds a mailbox by its address, and also by the address of one of its aliases.
-  const list = usePaged(inDomain, (m, q) => m.address.includes(q) || (aliases.get(m.address) ?? []).some((a) => a.address.includes(q)) || (showCustomer && customer(m.customerId).toLowerCase().includes(q)));
+  const list = usePaged(inDomain, (m, q) => m.address.includes(q) || (aliases.get(m.address) ?? []).some((a) => a.address.includes(q)) || (showCustomer && customer(m.customerId).toLowerCase().includes(q)), search);
   const toggle = (id: string) => setOpen((s) => { const next = new Set(s); if (!next.delete(id)) next.add(id); return next; });
   const encrypted = boxes.find((m) => m.id === encrypting);
   const reset = boxes.find((m) => m.id === resetting);
@@ -469,6 +478,17 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
           {active.length === 0 && <> You can make a mailbox when a mail domain is active.</>}
         </p>
         <FormError error={change.error ?? remove.error} />
+        {full.length > 0 && (
+          <div className={`alert ${full.some((m) => fullness(m) * 100 >= MAILBOX_CRITICAL_PERCENT) ? "alert-danger" : "alert-warning"} alert-stack`} role="status" style={{ marginBottom: 12 }}>
+            <p>
+              <strong>{full.length === 1 ? `${full[0].address} is ${Math.floor(fullness(full[0]) * 100)}% full.` : `${full.length} mailboxes are ${MAILBOX_WARNING_PERCENT}% full or more.`}</strong>{" "}
+              When a mailbox is full, the mail server refuses new mail for it. Remove old mail, or make the mailbox larger.
+            </p>
+            {full.length > 1 && (
+              <p><button type="button" className="btn btn-sm" aria-pressed={onlyFull} onClick={() => { setOnlyFull(!onlyFull); list.setPage(0); }}>{onlyFull ? "Show all mailboxes" : "Show only these mailboxes"}</button></p>
+            )}
+          </div>
+        )}
         <ListTools list={list} label="Search mailboxes and aliases" action={<button type="button" className="btn btn-primary" disabled={active.length === 0} onClick={() => setCreating(true)}>New mailbox</button>}>
           <DomainFilter domains={domains} value={domainId} onChange={(id) => { onDomain(id); list.setPage(0); }} />
         </ListTools>
@@ -481,7 +501,7 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
           <tbody>
             {list.shown.map((m) => {
               const status = MAIL_STATUS[m.status];
-              const ratio = m.quotaBytes > 0 ? m.usedBytes / m.quotaBytes : 0;
+              const ratio = fullness(m);
               const own = aliases.get(m.address) ?? [];
               // A search that found an alias shows the aliases of that mailbox.
               const expanded = open.has(m.id) || (list.q !== "" && own.some((a) => a.address.includes(list.q)));
@@ -502,6 +522,11 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
                   <td className="nowrap">
                     <Meter inline value={ratio} label={`Storage: ${bytes(m.usedBytes)} of ${bytes(m.quotaBytes)}`} tone={tone(ratio)} />
                     {bytes(m.usedBytes)} of {bytes(m.quotaBytes)}
+                    {almostFull(m) && (
+                      <span className={`cell-sub ${tone(ratio) === "danger" ? "text-danger" : "text-warning"}`}>
+                        <AlertTriangle size={12} aria-hidden="true" /> {Math.floor(ratio * 100)}% full
+                      </span>
+                    )}
                   </td>
                   <td><Status tone={status.tone}>{status.label}</Status>{m.status === "failed" && <span className="cell-sub">The server could not make the mailbox. Remove it and make it again.</span>}</td>
                   <td className="cell-actions">
@@ -522,7 +547,7 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
               );
             })}
             {boxes.length === 0 && <tr><td colSpan={4} className="muted">No mailboxes.</td></tr>}
-            {boxes.length > 0 && list.found.length === 0 && <tr><td colSpan={4} className="muted">{list.q ? <>No mailbox and no alias has “{list.query.trim()}” in its address.</> : "This domain has no mailboxes."}</td></tr>}
+            {boxes.length > 0 && list.found.length === 0 && <tr><td colSpan={4} className="muted">{list.q ? <>No mailbox and no alias has “{list.query.trim()}” in its address.</> : onlyFull ? "No mailbox of this domain is almost full." : "This domain has no mailboxes."}</td></tr>}
           </tbody>
         </table>
       </TableWrap>

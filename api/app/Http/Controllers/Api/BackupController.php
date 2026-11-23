@@ -222,9 +222,16 @@ class BackupController extends Controller
         // A snapshot with only databases is in the repository of a different server. The
         // agent of that server restores a database from it.
         $partOnly = $snapshot->part === Snapshot::DATABASES;
-        $server = $partOnly ? Server::findOrFail($snapshot->server_id) : $website->server;
+        // A snapshot from before the website moved is in the repository of its old server.
+        // The files of the website are on the new server now, so the agent of the old server
+        // restores only a database from it.
+        $moved = ! $partOnly && $snapshot->server_id !== null && $snapshot->server_id !== $website->server_id;
+        $server = $partOnly || $moved ? Server::findOrFail($snapshot->server_id) : $website->server;
         if ($partOnly && $data['scope'] !== 'database') {
             throw ValidationException::withMessages(['scope' => 'This backup has only databases. Select a database to restore.']);
+        }
+        if ($moved && $data['scope'] !== 'database') {
+            throw ValidationException::withMessages(['scope' => "This backup is from the server {$server->name}, from before the website moved. The panel can restore only a database from it."]);
         }
         if ($data['scope'] === 'database') {
             $request->validate(['item' => [Rule::in($snapshot->databases)]]);

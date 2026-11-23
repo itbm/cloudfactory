@@ -191,27 +191,37 @@ class CustomerController extends Controller
             ->pluck('id');
         $websites = Website::with('server')->whereIn('customer_id', $ids)->get();
         foreach ($websites as $website) {
-            if ($customer->suspended && in_array($website->status, [WebsiteStatus::Running, WebsiteStatus::Starting], true)) {
-                $website->update(['status' => WebsiteStatus::Stopping, 'stopped_by_suspension' => true]);
-                $this->jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'stop'], "Stop {$website->name} (suspended)", $website);
-            } elseif (! $customer->suspended && $website->stopped_by_suspension && $website->status === WebsiteStatus::Failed) {
-                // The panel could not make this website, so it has no container to start.
-                $website->update(['stopped_by_suspension' => false]);
-            } elseif (! $customer->suspended && $website->stopped_by_suspension) {
-                $website->update(['status' => WebsiteStatus::Starting, 'stopped_by_suspension' => false]);
-                $this->jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'start'], "Start {$website->name} (suspension ended)", $website);
+            // A website that moves to a different server gets the suspension when the move is
+            // complete (JobOutcome).
+            if ($website->status !== WebsiteStatus::Moving) {
+                self::applySuspensionTo($this->jobs, $website, $customer->suspended);
             }
-            // The result of the job records the new SFTP state of the website (JobOutcome). The
-            // keys stay in the panel, so that the owner does not add them again.
-            $sftp = ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'authorizedKeys' => $website->sftp_keys ?? []];
-            if ($customer->suspended && $website->sftp_enabled) {
-                $website->update(['sftp_closed_by_suspension' => true]);
-                $this->jobs->dispatch($website->server, AgentAction::SetSftp, ['enabled' => false] + $sftp, "Turn off SFTP access of {$website->name} (suspended)", $website);
-            } elseif (! $customer->suspended && $website->sftp_closed_by_suspension) {
-                $website->update(['sftp_closed_by_suspension' => false]);
-                if (($website->sftp_keys ?? []) !== [] && $website->status !== WebsiteStatus::Failed) {
-                    $this->jobs->dispatch($website->server, AgentAction::SetSftp, ['enabled' => true] + $sftp, "Turn on SFTP access of {$website->name} (suspension ended)", $website);
-                }
+        }
+    }
+
+    /** Stops or starts one website, and turns its SFTP access off or on, for a suspension. */
+    public static function applySuspensionTo(JobDispatcher $jobs, Website $website, bool $suspended): void
+    {
+        if ($suspended && in_array($website->status, [WebsiteStatus::Running, WebsiteStatus::Starting], true)) {
+            $website->update(['status' => WebsiteStatus::Stopping, 'stopped_by_suspension' => true]);
+            $jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'stop'], "Stop {$website->name} (suspended)", $website);
+        } elseif (! $suspended && $website->stopped_by_suspension && $website->status === WebsiteStatus::Failed) {
+            // The panel could not make this website, so it has no container to start.
+            $website->update(['stopped_by_suspension' => false]);
+        } elseif (! $suspended && $website->stopped_by_suspension) {
+            $website->update(['status' => WebsiteStatus::Starting, 'stopped_by_suspension' => false]);
+            $jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'start'], "Start {$website->name} (suspension ended)", $website);
+        }
+        // The result of the job records the new SFTP state of the website (JobOutcome). The
+        // keys stay in the panel, so that the owner does not add them again.
+        $sftp = ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'authorizedKeys' => $website->sftp_keys ?? []];
+        if ($suspended && $website->sftp_enabled) {
+            $website->update(['sftp_closed_by_suspension' => true]);
+            $jobs->dispatch($website->server, AgentAction::SetSftp, ['enabled' => false] + $sftp, "Turn off SFTP access of {$website->name} (suspended)", $website);
+        } elseif (! $suspended && $website->sftp_closed_by_suspension) {
+            $website->update(['sftp_closed_by_suspension' => false]);
+            if (($website->sftp_keys ?? []) !== [] && $website->status !== WebsiteStatus::Failed) {
+                $jobs->dispatch($website->server, AgentAction::SetSftp, ['enabled' => true] + $sftp, "Turn on SFTP access of {$website->name} (suspension ended)", $website);
             }
         }
     }

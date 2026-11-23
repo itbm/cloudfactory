@@ -249,6 +249,17 @@ var ruleEnvironmentValue = rule{
 // The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, "%", "$" or backslash.
 func EnvironmentValue(s string) error { return ruleEnvironmentValue.check(s) }
 
+var ruleFileMode = rule{
+	what:    "file mode",
+	pattern: regexp.MustCompile(`^0?[0-7]{3}$`),
+	echo:    true,
+}
+
+// FileMode checks a value with the rule "fileMode" of schema/input-rules.json.
+//
+// The permission bits of a file or a directory for the file manager, as an octal number, for example "0644" or "755". The bits setuid, setgid and sticky are not permitted.
+func FileMode(s string) error { return ruleFileMode.check(s) }
+
 var ruleFilePath = rule{
 	what:      "path",
 	pattern:   regexp.MustCompile(`^(/|(/[^/\x00-\x1f\x7f]+)+)$`),
@@ -643,6 +654,7 @@ func init() {
 	rules["envName"] = &ruleEnvName
 	rules["envValue"] = &ruleEnvValue
 	rules["environmentValue"] = &ruleEnvironmentValue
+	rules["fileMode"] = &ruleFileMode
 	rules["filePath"] = &ruleFilePath
 	rules["gitBranch"] = &ruleGitBranch
 	rules["gitRepository"] = &ruleGitRepository
@@ -694,6 +706,9 @@ var reservedPackDirs = []string{"tmp", "proc", "sys", "dev", "run", "cf"}
 
 // The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.
 var reservedRuntimeNames = []string{"frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database", "mariadb", "postgresql", "valkey"}
+
+// MaxArchivePaths: The largest number of files and directories that the file manager puts in one new archive.
+const MaxArchivePaths = 2000
 
 // MaxBuildCommands: The largest number of build commands of a deploy.
 const MaxBuildCommands = 10

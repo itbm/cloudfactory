@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
+    'moving_to_server_id',
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
     'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command', 'install_command', 'environment',
@@ -134,6 +135,12 @@ class Website extends Model
     public function server(): BelongsTo
     {
         return $this->belongsTo(Server::class);
+    }
+
+    /** The server that receives the website, while the status is "moving". */
+    public function movingTo(): BelongsTo
+    {
+        return $this->belongsTo(Server::class, 'moving_to_server_id');
     }
 
     public function plan(): BelongsTo

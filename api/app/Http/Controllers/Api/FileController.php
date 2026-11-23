@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\JobResource;
 use App\Models\Website;
 use App\Services\AgentCallException;
 use App\Services\AgentClient;
 use App\Services\Audit;
+use App\Services\JobDispatcher;
 use App\Services\MalwareScans;
 use App\Validation\Input;
+use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -20,6 +24,9 @@ use Illuminate\Validation\ValidationException;
  *
  * A path starts with "/", which is the directory of the website. The container of the website
  * has that directory at /app.
+ *
+ * An archive can take a long time, so the agent makes and extracts an archive in a job. The
+ * job keeps the summary of the agent (AgentAction::keepsResult).
  */
 class FileController extends Controller
 {
@@ -28,7 +35,12 @@ class FileController extends Controller
     /** The largest file that the file manager writes. The agent has the same limit (sitefiles.MaxWrite). */
     public const MAX_WRITE_BYTES = 5 * 1024 * 1024;
 
-    public function __construct(private AgentClient $agent) {}
+    /** The names of the archives that the agent makes. It extracts these and ".tar.bz2" and ".tbz2". */
+    public const NEW_ARCHIVE = '/\.(zip|tar\.gz|tgz|tar)$/i';
+
+    public const ARCHIVE = '/\.(zip|tar\.gz|tgz|tar|tar\.bz2|tbz2)$/i';
+
+    public function __construct(private AgentClient $agent, private JobDispatcher $jobs) {}
 
     public function index(Request $request, string $websiteId): JsonResponse
     {
@@ -119,6 +131,94 @@ class FileController extends Controller
         MalwareScans::fileRemoved($website, $path);
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * Changes the permission bits of a file or a directory. With "recursive", "mode" is the
+     * mode of the directory and of each directory in it, and "fileMode" is the mode of each
+     * file in it. The agent does not change a link.
+     */
+    public function permissions(Request $request, string $websiteId): JsonResponse
+    {
+        $website = $this->website($request, $websiteId, write: true);
+        $path = $this->path($request, 'path');
+        $data = $request->validate([
+            'mode' => ['required', 'string', Input::rule('fileMode')],
+            'recursive' => ['sometimes', 'boolean'],
+            'fileMode' => ['required_if_accepted:recursive', 'nullable', 'string', Input::rule('fileMode')],
+        ]);
+        $recursive = (bool) ($data['recursive'] ?? false);
+        $mode = self::fourDigits($data['mode']);
+        $fileMode = $recursive ? self::fourDigits((string) $data['fileMode']) : '';
+        $answer = $this->call($website, 'SetFileMode', ['path' => $path, 'mode' => $mode, 'recursive' => $recursive, 'fileMode' => $fileMode]);
+        Audit::record($request, 'Changed permissions', "{$website->name}: {$path} to {$mode}".($recursive ? " (folders), {$fileMode} (files)" : ''), $website->customer_id);
+
+        return response()->json([
+            'file' => self::entry(($answer['file'] ?? []) + ['name' => basename($path)], dirname($path)),
+            'changed' => (int) ($answer['changed'] ?? 0),
+        ]);
+    }
+
+    /**
+     * Puts files and folders in a new archive. Each path goes in the archive with its name, at
+     * the top level. The agent does not replace a file.
+     */
+    public function archive(Request $request, string $websiteId): JsonResponse
+    {
+        $website = $this->website($request, $websiteId, write: true);
+        $data = $request->validate([
+            'paths' => ['required', 'array', 'min:1', 'max:'.InputRules::MAX_ARCHIVE_PATHS],
+            'paths.*' => ['required', 'string', 'distinct', Input::rule('filePath')],
+            'path' => ['required', 'string', Input::rule('filePath'), 'regex:'.self::NEW_ARCHIVE],
+        ], ['path.regex' => 'The name of the archive must end with .zip, .tar.gz, .tgz or .tar.']);
+        $paths = array_values($data['paths']);
+        $names = array_map('basename', $paths);
+        if (count($paths) > 1 && in_array('/', $paths, true)) {
+            throw ValidationException::withMessages(['paths' => 'The directory of the website has all other files. Select it alone.']);
+        }
+        if (count(array_unique($names)) !== count($names)) {
+            throw ValidationException::withMessages(['paths' => 'Two of the selected paths have the same name. Select paths in one folder.']);
+        }
+        $job = $this->jobs->dispatch($website->server, AgentAction::MakeArchive, [
+            'websiteId' => $website->id,
+            'paths' => $paths,
+            'path' => $data['path'],
+        ], 'Make archive', $website, $data['path']);
+        Audit::record($request, 'Made archive', "{$website->name}: {$data['path']}", $website->customer_id);
+
+        return response()->json(['job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * Extracts an archive into a folder. The default folder is the folder of the archive. The
+     * agent makes the folder when it does not exist. A file that exists stays, unless
+     * "overwrite" is true.
+     */
+    public function extract(Request $request, string $websiteId): JsonResponse
+    {
+        $website = $this->website($request, $websiteId, write: true);
+        $data = $request->validate([
+            'path' => ['required', 'string', Input::rule('filePath'), 'regex:'.self::ARCHIVE],
+            'to' => ['sometimes', 'string', Input::rule('filePath')],
+            'overwrite' => ['sometimes', 'boolean'],
+        ], ['path.regex' => 'The file manager extracts .zip, .tar, .tar.gz, .tgz, .tar.bz2 and .tbz2 archives.']);
+        $to = $data['to'] ?? dirname($data['path']);
+        $overwrite = (bool) ($data['overwrite'] ?? false);
+        $job = $this->jobs->dispatch($website->server, AgentAction::ExtractArchive, [
+            'websiteId' => $website->id,
+            'path' => $data['path'],
+            'to' => $to,
+            'overwrite' => $overwrite,
+        ], 'Extract archive', $website, $data['path']);
+        Audit::record($request, 'Extracted archive', "{$website->name}: {$data['path']} to {$to}".($overwrite ? ' (replace files)' : ''), $website->customer_id);
+
+        return response()->json(['job' => new JobResource($job)], 202);
+    }
+
+    /** A mode with 4 digits, for example "0644" for "644". */
+    private static function fourDigits(string $mode): string
+    {
+        return str_pad($mode, 4, '0', STR_PAD_LEFT);
     }
 
     /**
