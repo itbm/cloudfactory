@@ -147,20 +147,161 @@ class SiteToolsTest extends TestCase
         $this->getJson("/api/v1/websites/{$website->id}/files")->assertJsonValidationErrors('website');
     }
 
-    public function test_logs_give_the_lines_of_one_stream(): void
+    public function test_a_change_of_permissions_goes_to_the_agent(): void
     {
         $website = $this->site();
-        $this->actingWith($this->user());
-        Http::fake([self::AGENT.'GetLogs' => Http::response(['lines' => [
-            ['at' => '2026-11-14T10:00:00Z', 'stream' => 'access', 'text' => '{"status":200}'],
-            ['at' => '2026-11-14T10:00:01Z', 'stream' => 'error', 'text' => 'PHP Warning'],
-            ['at' => '2026-11-14T10:00:02Z', 'stream' => 'access'],
-        ]])]);
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        Http::fake([self::AGENT.'SetFileMode' => Http::sequence()
+            ->push(['file' => ['name' => 'deploy.sh', 'type' => 'file', 'mode' => '0750'], 'changed' => '1'])
+            ->push(['file' => ['name' => 'public', 'type' => 'directory', 'mode' => '0755'], 'changed' => '214'])
+            ->push(['code' => 'invalid_argument', 'message' => 'a link has no permissions of its own; change the permissions of its target'], 400)]);
 
-        $this->getJson("/api/v1/websites/{$website->id}/logs?lines=50")->assertOk()->assertJsonCount(3, 'lines')->assertJsonPath('lines.2.text', '');
-        Http::assertSent(fn ($r) => $r['lines'] === 50 && $r['websiteId'] === $website->id);
-        $this->getJson("/api/v1/websites/{$website->id}/logs?stream=error")->assertOk()->assertJsonCount(1, 'lines')->assertJsonPath('lines.0.text', 'PHP Warning');
-        $this->getJson("/api/v1/websites/{$website->id}/logs?lines=5000")->assertJsonValidationErrors('lines');
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/deploy.sh', 'mode' => '750'])->assertOk()
+            ->assertJsonPath('file.path', '/deploy.sh')->assertJsonPath('file.mode', '0750')->assertJsonPath('changed', 1);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/SetFileMode') && $r['mode'] === '0750' && $r['recursive'] === false && $r['fileMode'] === '');
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/public', 'mode' => '0755', 'recursive' => true, 'fileMode' => '644'])->assertOk()
+            ->assertJsonPath('changed', 214);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/SetFileMode') && $r['path'] === '/public' && $r['recursive'] === true && $r['fileMode'] === '0644');
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Changed permissions', 'target' => 'acme.example: /public to 0755 (folders), 0644 (files)']);
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/public/link', 'mode' => '0644'])->assertStatus(422)
+            ->assertJsonPath('message', 'A link has no permissions of its own; change the permissions of its target');
+
+        foreach (['4755', '0800', 'rwx', '', '00644'] as $mode) {
+            $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/a', 'mode' => $mode])->assertJsonValidationErrors('mode');
+        }
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/public', 'mode' => '0755', 'recursive' => true])->assertJsonValidationErrors('fileMode');
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/../a', 'mode' => '0644'])->assertJsonValidationErrors('path');
+        Http::assertSentCount(3);
+    }
+
+    public function test_an_archive_and_an_extract_are_jobs_with_a_summary(): void
+    {
+        $website = $this->site();
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        Http::fake([self::AGENT.'*' => Http::response(['jobId' => 'x'])]);
+        $base = "/api/v1/websites/{$website->id}/files";
+
+        $id = $this->postJson("{$base}/archives", ['paths' => ['/public', '/composer.json'], 'path' => '/site.tar.gz'])->assertAccepted()
+            ->assertJsonPath('job.action', 'MakeArchive')->assertJsonPath('job.ref', '/site.tar.gz')->assertJsonPath('job.steps', ['Make the archive'])
+            ->assertJsonPath('job.result', null)->json('job.id');
+        $job = AgentJob::findOrFail($id);
+        $this->assertSame(['websiteId' => $website->id, 'paths' => ['/public', '/composer.json'], 'path' => '/site.tar.gz'], $job->payload);
+        $this->assertSame($website->id, $job->website_id);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Made archive', 'target' => 'acme.example: /site.tar.gz']);
+
+        // The panel keeps the known fields of the summary only.
+        $this->finish($job, JobState::Succeeded, ['files' => 120, 'directories' => 14, 'links' => 1, 'sizeBytes' => 48213, 'skipped' => 1, 'skippedNames' => ['/public/fifo', 7], 'other' => 'x']);
+        $this->getJson("/api/v1/jobs/{$id}")->assertOk()->assertJsonPath('data.result', [
+            'files' => 120, 'directories' => 14, 'links' => 1, 'sizeBytes' => 48213, 'kept' => 0, 'skipped' => 1, 'skippedNames' => ['/public/fifo'],
+        ]);
+
+        // The default destination of an extract is the folder of the archive.
+        $id = $this->postJson("{$base}/extract", ['path' => '/backups/site.zip'])->assertAccepted()->assertJsonPath('job.action', 'ExtractArchive')->json('job.id');
+        $this->assertSame(['websiteId' => $website->id, 'path' => '/backups/site.zip', 'to' => '/backups', 'overwrite' => false], AgentJob::findOrFail($id)->payload);
+        $id = $this->postJson("{$base}/extract", ['path' => '/site.TAR.BZ2', 'to' => '/public', 'overwrite' => true])->assertAccepted()->json('job.id');
+        $this->assertSame(['websiteId' => $website->id, 'path' => '/site.TAR.BZ2', 'to' => '/public', 'overwrite' => true], AgentJob::findOrFail($id)->payload);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Extracted archive', 'target' => 'acme.example: /site.TAR.BZ2 to /public (replace files)']);
+        // A failed job has no summary. Other actions keep no result.
+        $this->finish(AgentJob::findOrFail($id), JobState::Failed, [], 'the archive is not complete');
+        $this->assertNull(AgentJob::findOrFail($id)->result);
+        $cron = $this->postJson("/api/v1/websites/{$website->id}/cron-jobs", ['schedule' => '* * * * *', 'command' => 'true'])->json('job.id');
+        $this->finish(AgentJob::findOrFail($cron), JobState::Succeeded, ['files' => 1]);
+        $this->assertNull(AgentJob::findOrFail($cron)->result);
+
+        foreach ([
+            [['paths' => ['/public'], 'path' => '/site.rar'], 'path'],
+            [['paths' => ['/public'], 'path' => '/site.tar.bz2'], 'path'],
+            [['paths' => [], 'path' => '/site.zip'], 'paths'],
+            [['paths' => ['/../x'], 'path' => '/site.zip'], 'paths.0'],
+            [['paths' => ['/a/css', '/b/css'], 'path' => '/site.zip'], 'paths'],
+            [['paths' => ['/', '/public'], 'path' => '/site.zip'], 'paths'],
+            [['paths' => ['/a', '/a'], 'path' => '/site.zip'], 'paths.0'],
+            [['paths' => array_fill(0, 2001, '/a'), 'path' => '/site.zip'], 'paths'],
+        ] as [$body, $error]) {
+            $this->postJson("{$base}/archives", $body)->assertJsonValidationErrors($error);
+        }
+        $this->postJson("{$base}/extract", ['path' => '/site.rar'])->assertJsonValidationErrors('path');
+        $this->postJson("{$base}/extract", ['path' => '/site.zip', 'to' => '/a/../b'])->assertJsonValidationErrors('to');
+
+        // A suspended customer cannot change files.
+        $website->customer->update(['suspended' => true]);
+        $this->postJson("{$base}/archives", ['paths' => ['/public'], 'path' => '/site.zip'])->assertStatus(409);
+        $this->postJson("{$base}/extract", ['path' => '/site.zip'])->assertStatus(409);
+        $this->putJson("{$base}/permissions", ['path' => '/a', 'mode' => '0644'])->assertStatus(409);
+        $this->assertSame(3, AgentJob::whereIn('action', [AgentAction::MakeArchive, AgentAction::ExtractArchive])->count());
+    }
+
+    public function test_a_log_search_goes_to_the_agent_with_its_filters(): void
+    {
+        $website = $this->site();
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        Http::fake([self::AGENT.'SearchLogs' => Http::response([
+            'entries' => [
+                ['at' => '2026-11-14T10:00:02.5Z', 'source' => 'access', 'access' => ['client' => '203.0.113.7', 'method' => 'POST', 'host' => 'acme.example', 'uri' => '/wp-login.php', 'proto' => 'HTTP/2.0', 'status' => 404, 'sizeBytes' => '5120', 'durationSeconds' => 0.0123]],
+                ['at' => '2026-11-14T10:00:01Z', 'source' => 'error', 'text' => 'PHP Warning'],
+                ['at' => '2026-11-14T10:00:00Z', 'source' => 'output'],
+            ],
+            'next' => 'eyJhIjp7fX0',
+            'summary' => ['access' => '1', 'error' => '1', 'output' => '1', 'statuses' => ['4xx' => '1'], 'topPaths' => [['value' => '/wp-login.php', 'count' => '1']], 'topClients' => [['value' => '203.0.113.7', 'count' => '1']], 'sizeBytes' => '5120', 'oldest' => '2026-11-13T08:00:00Z'],
+        ])]);
+
+        $query = http_build_query(['sources' => 'access, error', 'q' => 'wp-login -"bot"', 'status' => '404,5xx', 'method' => 'post,get', 'client' => '203.0.113.0/24',
+            'from' => '2026-11-14T09:00:00+01:00', 'to' => '2026-11-14T10:30:00Z', 'cursor' => 'eyJhIjp7fX0', 'limit' => 20, 'summary' => 1]);
+        $this->getJson("/api/v1/websites/{$website->id}/logs?{$query}")->assertOk()
+            ->assertJsonCount(3, 'entries')->assertJsonPath('next', 'eyJhIjp7fX0')
+            ->assertJsonPath('entries.0.access.sizeBytes', 5120)->assertJsonPath('entries.0.access.durationMs', 12.3)->assertJsonPath('entries.0.access.userAgent', '')
+            ->assertJsonPath('entries.1.access', null)->assertJsonPath('entries.1.text', 'PHP Warning')->assertJsonPath('entries.2.text', '')
+            ->assertJsonPath('summary.total', 3)->assertJsonPath('summary.statuses', ['1xx' => 0, '2xx' => 0, '3xx' => 0, '4xx' => 1, '5xx' => 0])
+            ->assertJsonPath('summary.topPaths.0', ['value' => '/wp-login.php', 'count' => 1])->assertJsonPath('summary.sizeBytes', 5120)->assertJsonPath('summary.oldest', '2026-11-13T08:00:00Z');
+        Http::assertSent(fn ($r) => $r['websiteId'] === $website->id && $r['sources'] === ['access', 'error'] && $r['text'] === 'wp-login -"bot"'
+            && $r['statuses'] === ['404', '5xx'] && $r['methods'] === ['POST', 'GET'] && $r['client'] === '203.0.113.0/24'
+            && $r['from'] === '2026-11-14T08:00:00.000000Z' && $r['to'] === '2026-11-14T10:30:00.000000Z' && $r['cursor'] === 'eyJhIjp7fX0' && $r['limit'] === 20 && $r['summary'] === true);
+
+        // With no filter, the agent gets only the website and the limit. The answer has no summary.
+        $this->getJson("/api/v1/websites/{$website->id}/logs")->assertOk()->assertJsonPath('summary', null);
+        Http::assertSent(fn ($r) => $r->data() === ['websiteId' => $website->id, 'limit' => 100]);
+    }
+
+    public function test_a_log_search_refuses_a_filter_that_is_not_valid(): void
+    {
+        $website = $this->site();
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        Http::fake([self::AGENT.'SearchLogs' => Http::response([])]);
+        $base = "/api/v1/websites/{$website->id}/logs";
+
+        foreach ([
+            'sources' => ['access,mail', 'access,output,error,access'],
+            'status' => ['600', '4x', implode(',', range(200, 210))],
+            'method' => ['G3T', 'GET,'],
+            'client' => ['203.0.113.300', '203.0.113.0/33', '2001:db8::/129', '203.0.113.0/024', 'example.com'],
+            'limit' => ['0', '1001'],
+            'cursor' => ['a+b', str_repeat('a', 513)],
+            'q' => ["a\u{7}b", str_repeat('a', 201)],
+        ] as $key => $values) {
+            foreach ($values as $value) {
+                $this->getJson($base.'?'.http_build_query([$key => $value]))->assertJsonValidationErrors($key);
+            }
+        }
+        $this->getJson($base.'?'.http_build_query(['from' => '2026-11-14T10:00:00Z', 'to' => '2026-11-14T09:00:00Z']))->assertJsonValidationErrors('to');
+        $this->getJson($base.'?'.http_build_query(['client' => '2001:db8::/48', 'status' => '2xx,404']))->assertOk();
+        Http::assertSentCount(1);
+    }
+
+    public function test_only_an_administrator_reads_the_access_log_of_a_server(): void
+    {
+        $website = $this->site();
+        Http::fake([self::AGENT.'SearchLogs' => Http::response(['entries' => [
+            ['at' => '2026-11-14T10:00:00Z', 'source' => 'access', 'access' => ['client' => '192.0.2.1', 'method' => 'GET', 'host' => 'panel.example', 'uri' => '/', 'status' => 200]],
+        ]])]);
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        $this->getJson("/api/v1/servers/{$website->server_id}/access-log")->assertForbidden();
+
+        $this->actingWith($this->user());
+        $this->getJson("/api/v1/servers/{$website->server_id}/access-log?q=panel")->assertOk()->assertJsonPath('entries.0.access.host', 'panel.example');
+        // The server log has only the access log, with no website.
+        Http::assertSent(fn ($r) => ! isset($r['websiteId']) && $r['text'] === 'panel');
+        $this->getJson("/api/v1/servers/{$website->server_id}/access-log?sources=output")->assertJsonValidationErrors('sources');
+        $this->getJson('/api/v1/servers/01aaaaaaaaaaaaaaaaaaaaaaaa/access-log')->assertNotFound();
     }
 
     public function test_each_change_of_a_cron_job_sends_all_cron_jobs_to_the_agent(): void

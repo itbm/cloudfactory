@@ -40,7 +40,8 @@ import type {
   FileList,
   HostUpdatePolicy,
   Job,
-  LogLine,
+  LogQuery,
+  LogSearchResult,
   Mesh,
   Pack,
   PackManifest,
@@ -88,14 +89,51 @@ type Listener = () => void;
 
 /** The state before the first load from the API: no data, and signed out. */
 export function emptyState(): State {
+  // One field on each line, in alphabetical order, so that two pull requests that add fields do
+  // not conflict.
   return {
-    session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
-    contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], databaseEngines: BUILT_IN_ENGINES, dnsZones: [], certificates: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], exports: [], plans: [], customers: [], users: [],
+    activity: [],
+    alertSettings: { warningPercent: 80, criticalPercent: 95 },
+    audit: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
-    tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
-    panelDomain: "",
+    certificates: [],
+    contexts: [],
+    customers: [],
+    databaseEngines: BUILT_IN_ENGINES,
+    databaseServers: [],
+    databaseUsers: [],
+    databases: [],
+    dnsAccounts: [],
+    dnsProviders: [],
+    dnsZones: [],
+    exports: [],
+    images: [],
+    jobs: [],
+    joinCaSha256: undefined,
+    joinToken: "",
+    mailAliases: [],
+    mailClusters: [],
+    mailDomains: [],
+    mailboxes: [],
+    nameServers: [],
+    networks: [],
+    notifications: [],
     panelCertificate: { domain: "", method: null, state: "pending", letsEncryptAvailable: false, serversWithoutCa: [] },
+    panelDomain: "",
+    plans: [],
+    pluginActions: [],
+    pluginPages: [],
+    remoteDatabaseServers: {},
+    rollout: undefined,
+    securityNotices: [],
+    servers: [],
+    session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
+    snapshots: [],
+    tokens: [],
+    totpEnabled: false,
+    usageAlerts: [],
+    users: [],
+    websites: [],
   };
 }
 
@@ -545,6 +583,27 @@ export function moveFile(websiteId: string, from: string, to: string): Promise<F
 }
 
 /** Removes a file, or a directory with all that is in it. */
+/** Changes the permission bits. With "recursive", "mode" is for the folders and "fileMode" for the files. */
+export function setFileMode(websiteId: string, path: string, mode: string, options: { recursive?: boolean; fileMode?: string } = {}): Promise<{ file: FileEntry; changed: number }> {
+  const body = options.recursive ? { path, mode, recursive: true, fileMode: options.fileMode } : { path, mode };
+  return call(() => live.request<{ file: FileEntry; changed: number }>("PUT", `${filesOf(websiteId)}/permissions`, body));
+}
+
+/**
+ * Starts the job that makes an archive. The promise resolves when the API accepts the job. The
+ * promise "done" resolves when the agent has finished it.
+ */
+export async function makeArchive(websiteId: string, paths: string[], path: string): Promise<{ done: Promise<Job> }> {
+  const r = await call(() => live.request<JobAnswer>("POST", `${filesOf(websiteId)}/archives`, { paths, path }));
+  return { done: track(r.job) };
+}
+
+/** Starts the job that extracts an archive, as makeArchive. */
+export async function extractArchive(websiteId: string, path: string, to: string, overwrite: boolean): Promise<{ done: Promise<Job> }> {
+  const r = await call(() => live.request<JobAnswer>("POST", `${filesOf(websiteId)}/extract`, { path, to, overwrite }));
+  return { done: track(r.job) };
+}
+
 export function deleteFile(websiteId: string, path: string): Promise<void> {
   return call(() => live.request<void>("DELETE", `${filesOf(websiteId)}?path=${q(path)}`));
 }
@@ -570,9 +629,28 @@ export async function setAlertSettings(settings: UsageAlertSettings): Promise<vo
   await refresh();
 }
 
-/** The last lines of the output of the website container. */
-export function readLogs(websiteId: string, stream: "all" | "access" | "error" = "all", lines = 200): Promise<LogLine[]> {
-  return call(() => live.request<{ lines: LogLine[] }>("GET", `/websites/${websiteId}/logs?lines=${lines}${stream === "all" ? "" : `&stream=${stream}`}`)).then((r) => r.lines);
+/**
+ * Searches the logs of a website, or the access log of a server for the requests that are not
+ * for a website (administrators only). The newest entry comes first. To read older entries,
+ * search again with the cursor "next" of the answer.
+ */
+export function searchLogs(target: { websiteId: string } | { serverId: string }, query: LogQuery): Promise<LogSearchResult> {
+  const params = new URLSearchParams();
+  const list = (key: string, values?: string[]) => { if (values?.length) params.set(key, values.join(",")); };
+  list("sources", query.sources);
+  if (query.q?.trim()) params.set("q", query.q.trim());
+  list("status", query.status);
+  list("method", query.method);
+  if (query.client?.trim()) params.set("client", query.client.trim());
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  if (query.cursor) params.set("cursor", query.cursor);
+  if (query.limit) params.set("limit", String(query.limit));
+  if (query.summary) params.set("summary", "1");
+  // The ID can come from the address of the page (finding W1-13).
+  const base = "websiteId" in target ? `/websites/${q(target.websiteId)}/logs` : `/servers/${q(target.serverId)}/access-log`;
+  const search = params.toString();
+  return call(() => live.request<LogSearchResult>("GET", search ? `${base}?${search}` : base));
 }
 
 export function listCronJobs(websiteId: string): Promise<CronJob[]> {

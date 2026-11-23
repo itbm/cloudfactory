@@ -16,6 +16,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -229,7 +230,7 @@ func (d *Deps) runInContainer(ctx context.Context, site *Site, command string, l
 	default:
 		run.Output = out
 	}
-	run.Output = lastLines(cleanText(run.Output), keep)
+	run.Output = lastLines(sitelogs.Clean(run.Output), keep)
 	return run
 }
 

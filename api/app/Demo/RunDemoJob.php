@@ -70,7 +70,7 @@ class RunDemoJob implements ShouldQueue
             }
             $outcome->progress($job, $index + 1);
         }
-        $outcome->finish($job, JobState::Succeeded, null, self::result($job));
+        $outcome->finish($job, JobState::Succeeded, null, self::result($job) + self::filesResult($job));
         self::afterSuccess($job);
     }
 
@@ -227,6 +227,24 @@ class RunDemoJob implements ShouldQueue
                 'state' => 'valid',
                 'expiresAt' => now()->addDays(90)->toIso8601String(),
             ]],
+            default => [],
+        };
+    }
+
+    /**
+     * The archive jobs change the sample files of the website (DemoSite) and give the summary
+     * of a real agent.
+     *
+     * @return array<string, mixed>
+     */
+    private static function filesResult(AgentJob $job): array
+    {
+        $p = $job->payload;
+        $website = $job->website_id ? Website::find($job->website_id) : null;
+
+        return match (true) {
+            $website && $job->action === AgentAction::MakeArchive => DemoSite::makeArchive($website, array_values((array) ($p['paths'] ?? [])), (string) ($p['path'] ?? '')),
+            $website && $job->action === AgentAction::ExtractArchive => DemoSite::extract($website, (string) ($p['path'] ?? ''), (string) ($p['to'] ?? '/'), (bool) ($p['overwrite'] ?? false)),
             default => [],
         };
     }

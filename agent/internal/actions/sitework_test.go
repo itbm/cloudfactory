@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 )
 
 // The tests of the file manager, the logs, the cron jobs and the deploys. Each command goes
@@ -89,35 +91,192 @@ func TestFilesRefuseBadRequests(t *testing.T) {
 	}
 }
 
-func TestLogsReadTheLogFileOfTheWebsite(t *testing.T) {
+// An archive is a job. It runs the file manager as the website user with a low CPU
+// priority, and gives the summary as the result.
+func TestArchiveJobsRunAsTheWebsiteUser(t *testing.T) {
 	d, f, _ := withSite(t)
+	answer, _ := json.Marshal(sitefiles.Response{Summary: &sitefiles.Summary{Files: 12, Directories: 3, Kept: 2, SkippedNames: []string{"/out/../x"}, Skipped: 1}})
+	f.Rules = append(f.Rules, execx.Rule{Prefix: asSite + "nice -n 10 /usr/local/bin/cf-agent site-files ", Output: string(answer)})
+
+	job, err := d.ExtractArchive(&agentv1.ExtractArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.zip", To: "/out", Overwrite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Key != "files:"+websiteID || !job.Long || len(job.Steps) != 1 || job.Steps[0].Name != "Extract the archive" {
+		t.Errorf("job = %+v", job)
+	}
+	if err := runSteps(t, job, nil); err != nil {
+		t.Fatal(err)
+	}
+	call, input := called(f, asSite)
+	if call != asSite+"nice -n 10 /usr/local/bin/cf-agent site-files "+d.Host.AppDir("acme_x7k2") || !strings.Contains(input, `"op":"extract","path":"/site.zip","to":"/out"`) || !strings.Contains(input, `"overwrite":true`) {
+		t.Errorf("call = %q, input = %q", call, input)
+	}
+	if r := job.Result(); r["files"] != 12 || r["kept"] != 2 || r["skipped"] != 1 || len(r["skippedNames"].([]string)) != 1 {
+		t.Errorf("result = %v", r)
+	}
+
+	f.Calls, f.Inputs = nil, nil
+	job, err = d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.tar.gz", Paths: []string{"/public", "/composer.json"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runSteps(t, job, nil); err != nil || job.Steps[0].Name != "Make the archive" {
+		t.Fatal(err)
+	}
+	if _, input := called(f, asSite); !strings.Contains(input, `"op":"archive","path":"/site.tar.gz"`) || !strings.Contains(input, `"paths":["/public","/composer.json"]`) {
+		t.Errorf("input = %q", input)
+	}
+
+	// An error of the file manager fails the job with its text.
+	f.Rules = append([]execx.Rule{{Prefix: asSite, Output: `{"code":"exists","error":"a file or a directory with this name exists already"}`}}, f.Rules...)
+	if err := runSteps(t, job, nil); err == nil || err.Error() != "a file or a directory with this name exists already" {
+		t.Errorf("error = %v", err)
+	}
+}
+
+func TestArchiveJobsRefuseBadRequests(t *testing.T) {
+	d, f, _ := withSite(t)
+	for _, c := range []struct {
+		name string
+		job  func() (any, error)
+	}{
+		{"path with ..", func() (any, error) {
+			return d.ExtractArchive(&agentv1.ExtractArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/../other/site.zip", To: "/"})
+		}},
+		{"bad destination", func() (any, error) {
+			return d.ExtractArchive(&agentv1.ExtractArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.zip", To: "out"})
+		}},
+		{"no paths", func() (any, error) {
+			return d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.zip"})
+		}},
+		{"bad path", func() (any, error) {
+			return d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.zip", Paths: []string{"/a/"}})
+		}},
+		{"bad website", func() (any, error) {
+			return d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: "../x", Path: "/site.zip", Paths: []string{"/a"}})
+		}},
+	} {
+		if _, err := c.job(); err == nil {
+			t.Errorf("%s: no error", c.name)
+		}
+	}
+	// A website that the agent does not know fails in the step.
+	job, err := d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: jobID2, Path: "/site.zip", Paths: []string{"/a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runSteps(t, job, nil); !errors.Is(err, ErrUnknownWebsite) {
+		t.Errorf("unknown website = %v", err)
+	}
+	if len(f.Calls) != 0 {
+		t.Errorf("the agent ran commands: %v", f.Calls)
+	}
+}
+
+func TestSearchLogsMergesTheAccessLogAndTheContainers(t *testing.T) {
+	d, f, _ := deps(t)
+	d.AccessLogs = &sitelogs.Store{Dir: filepath.Join(t.TempDir(), "logs")}
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website(siteImage)})); err != nil {
+		t.Fatal(err)
+	}
+	f.Calls, f.Inputs = nil, nil
+	at := func(s int) time.Time { return time.Date(2026, 11, 14, 10, 0, s, 0, time.UTC) }
+	// The website got the directory of its access log when the agent made its route.
+	for _, a := range []sitelogs.Access{
+		{At: at(1), Client: "203.0.113.7", Method: "GET", Host: "acme.example", URI: "/", Proto: "HTTP/2.0", Status: 200, Size: 512, Duration: 0.02, UserAgent: "Mozilla/5.0"},
+		{At: at(4), Client: "203.0.113.8", Method: "POST", Host: "acme.example", URI: "/cart", Status: 500},
+	} {
+		if err := d.AccessLogs.Append(websiteID, a.Line()); err != nil {
+			t.Fatal(err)
+		}
+	}
 	log := d.Host.Home("acme_x7k2") + "/website.log"
-	f.Rules = append(f.Rules, execx.Rule{Prefix: asSite + "tail -n 50 " + log, Output: strings.Join([]string{
-		`2026-11-14T10:00:00.123456789Z stdout F {"status":200,"uri":"/"}`,
-		`2026-11-14T10:00:01.5+00:00 stderr F PHP Warning: something`,
-		`not a log line`,
-		`2026-11-14T10:00:02Z stdout P`,
-		``,
-	}, "\n")})
-	lines, err := d.Logs(context.Background(), websiteID, 50)
-	if err != nil || len(lines) != 3 {
-		t.Fatalf("lines = %v, %v", lines, err)
+	container, _ := json.Marshal(map[string]any{"entries": []sitelogs.Entry{
+		{At: at(5), Source: sitelogs.SourceError, Text: "PHP Fatal error", Pos: sitelogs.Position{Inode: 9, Offset: 40}},
+		{At: at(2), Source: sitelogs.SourceOutput, Text: "started", Pos: sitelogs.Position{Inode: 9, Offset: 0}},
+	}, "summary": sitelogs.Summary{Output: 1, Error: 1, Oldest: at(0)}})
+	f.Rules = append(f.Rules, execx.Rule{Prefix: asSite + "/usr/local/bin/cf-agent log-search " + log, Output: string(container)})
+
+	res, err := d.SearchLogs(context.Background(), &agentv1.SearchLogsRequest{WebsiteId: websiteID, Limit: 2, Summary: true})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if lines[0].Stream != "access" || lines[0].Text != `{"status":200,"uri":"/"}` || lines[0].At != "2026-11-14T10:00:00.123456789Z" {
-		t.Errorf("line 0 = %+v", lines[0])
+	var got []string
+	for _, e := range res.GetEntries() {
+		got = append(got, e.GetSource()+" "+e.GetAt())
 	}
-	if lines[1].Stream != "error" || lines[1].Text != "PHP Warning: something" || lines[2].Text != "" {
-		t.Errorf("lines = %+v %+v", lines[1], lines[2])
+	want := []string{"error 2026-11-14T10:00:05Z", "access 2026-11-14T10:00:04Z"}
+	if strings.Join(got, ", ") != strings.Join(want, ", ") || res.GetNext() == "" {
+		t.Fatalf("entries = %v, next %q", got, res.GetNext())
 	}
-	// The unit of the website sends the output of the container to the log file.
+	if a := res.GetEntries()[1].GetAccess(); a.GetStatus() != 500 || a.GetMethod() != "POST" || a.GetUri() != "/cart" || res.GetEntries()[0].GetText() != "PHP Fatal error" {
+		t.Errorf("entries = %v", res.GetEntries())
+	}
+	sum := res.GetSummary()
+	if sum.GetAccess() != 2 || sum.GetError() != 1 || sum.GetOutput() != 1 || sum.GetStatuses()["5xx"] != 1 || sum.GetSizeBytes() != 512 || sum.GetOldest() != "2026-11-14T10:00:00Z" {
+		t.Errorf("summary = %v", sum)
+	}
+	// The worker reads the log of the containers as the website user, with the search on the
+	// standard input. The unit of the website sends the output of the container to that file.
+	call, input := called(f, asSite)
+	if call != asSite+"/usr/local/bin/cf-agent log-search "+log || !strings.Contains(input, `"query":{"sources":["access","output","error"],"limit":2,"summary":true}`) {
+		t.Errorf("call = %q, input = %q", call, input)
+	}
 	unit := quadletUnit(t, d)
 	if !strings.Contains(unit, "LogDriver=k8s-file\n") || !strings.Contains(unit, "--log-opt=path="+log+" --log-opt=max-size=10mb") {
 		t.Errorf("unit = %s", unit)
 	}
-	// No log file gives no lines and no error.
-	f.Rules = []execx.Rule{{Prefix: asSite + "tail", Err: errors.New("exit status 1")}}
-	if lines, err := d.Logs(context.Background(), websiteID, 0); err != nil || len(lines) != 0 {
-		t.Errorf("no log file = %v, %v", lines, err)
+
+	// The next page: the access log continues before its last entry, and the search of the
+	// containers gets the position of its last entry.
+	f.Calls, f.Inputs = nil, nil
+	f.Rules = []execx.Rule{{Prefix: asSite, Output: `{"entries":[{"at":"2026-11-14T10:00:02Z","source":"output","text":"started","pos":{"i":9}}]}`}}
+	res, err = d.SearchLogs(context.Background(), &agentv1.SearchLogsRequest{WebsiteId: websiteID, Limit: 3, Cursor: res.GetNext()})
+	if err != nil || len(res.GetEntries()) != 2 || res.GetEntries()[0].GetText() != "started" || res.GetEntries()[1].GetAccess().GetUri() != "/" || res.GetNext() != "" {
+		t.Fatalf("page 2 = %v, %v", res, err)
+	}
+	if _, input := called(f, asSite); !strings.Contains(input, `"position":{"i":9,"o":40}`) {
+		t.Errorf("input = %q", input)
+	}
+
+	// A filter of the access log does not read the log of the containers.
+	f.Calls = nil
+	res, err = d.SearchLogs(context.Background(), &agentv1.SearchLogsRequest{WebsiteId: websiteID, Sources: []string{"access"}, Statuses: []string{"2xx"}})
+	if err != nil || len(res.GetEntries()) != 1 || len(f.Calls) != 0 {
+		t.Errorf("access only = %v, %v, calls %v", res, err, f.Calls)
+	}
+
+	// The errors of a search.
+	var fe *FileError
+	if _, err := d.SearchLogs(context.Background(), &agentv1.SearchLogsRequest{WebsiteId: websiteID, Statuses: []string{"600"}}); !errors.As(err, &fe) || fe.Code != sitefiles.CodeInvalid {
+		t.Errorf("bad status = %v", err)
+	}
+	if _, err := d.SearchLogs(context.Background(), &agentv1.SearchLogsRequest{WebsiteId: jobID2}); !errors.Is(err, ErrUnknownWebsite) {
+		t.Errorf("unknown website = %v", err)
+	}
+	f.Rules = []execx.Rule{{Prefix: asSite, Output: `{"error":"the log file cannot be read"}`}}
+	if _, err := d.SearchLogs(context.Background(), &agentv1.SearchLogsRequest{WebsiteId: websiteID}); err == nil || !strings.Contains(err.Error(), "cannot be read") {
+		t.Errorf("error of the search = %v", err)
+	}
+
+	// With no website, the search is in the access log of the routes that are not for a
+	// website. It reads no file of a website.
+	if err := d.AccessLogs.Append(sitelogs.ServerLog, sitelogs.Access{At: at(3), Host: "panel.example", URI: "/api/v1/me", Status: 200}.Line()); err != nil {
+		t.Fatal(err)
+	}
+	f.Calls = nil
+	res, err = d.SearchLogs(context.Background(), &agentv1.SearchLogsRequest{Sources: []string{"error"}})
+	if err != nil || len(res.GetEntries()) != 1 || res.GetEntries()[0].GetAccess().GetHost() != "panel.example" || len(f.Calls) != 0 {
+		t.Errorf("server log = %v, %v, calls %v", res, err, f.Calls)
+	}
+
+	// The removal of the website removes its access log.
+	if err := run(t)(d.DeleteWebsite(&agentv1.DeleteWebsiteRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2"})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(d.AccessLogs.Dir, websiteID)); !os.IsNotExist(err) {
+		t.Errorf("access log after the removal: %v", err)
 	}
 }
 

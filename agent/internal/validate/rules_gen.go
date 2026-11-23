@@ -225,6 +225,17 @@ var ruleEnvironmentValue = rule{
 // The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, "%", "$" or backslash.
 func EnvironmentValue(s string) error { return ruleEnvironmentValue.check(s) }
 
+var ruleFileMode = rule{
+	what:    "file mode",
+	pattern: regexp.MustCompile(`^0?[0-7]{3}$`),
+	echo:    true,
+}
+
+// FileMode checks a value with the rule "fileMode" of schema/input-rules.json.
+//
+// The permission bits of a file or a directory for the file manager, as an octal number, for example "0644" or "755". The bits setuid, setgid and sticky are not permitted.
+func FileMode(s string) error { return ruleFileMode.check(s) }
+
 var ruleFilePath = rule{
 	what:      "path",
 	pattern:   regexp.MustCompile(`^(/|(/[^/\x00-\x1f\x7f]+)+)$`),
@@ -262,6 +273,28 @@ var ruleGitRepository = rule{
 //
 // The address of a Git repository: HTTPS with no user name and no password, SSH as a URL, or the short SSH form "git@host:path". It cannot start with "-", and it cannot name a file or a helper program.
 func GitRepository(s string) error { return ruleGitRepository.check(s) }
+
+var ruleHTTPMethod = rule{
+	what:    "HTTP method",
+	pattern: regexp.MustCompile(`^[A-Z]{1,16}$`),
+	echo:    true,
+}
+
+// HTTPMethod checks a value with the rule "httpMethod" of schema/input-rules.json.
+//
+// An HTTP method in upper case, for example "POST".
+func HTTPMethod(s string) error { return ruleHTTPMethod.check(s) }
+
+var ruleHTTPStatus = rule{
+	what:    "HTTP status",
+	pattern: regexp.MustCompile(`^[1-5]([0-9][0-9]|xx)$`),
+	echo:    true,
+}
+
+// HTTPStatus checks a value with the rule "httpStatus" of schema/input-rules.json.
+//
+// An HTTP status code from 100 to 599, for example "404", or a class of status codes, for example "5xx".
+func HTTPStatus(s string) error { return ruleHTTPStatus.check(s) }
 
 var ruleID = rule{
 	what:    "ID",
@@ -356,6 +389,29 @@ var ruleIPv6 = rule{
 //
 // An IPv6 address in lower case, for the value of an AAAA record. It has only hexadecimal groups and colons: no IPv4 part and no zone.
 func IPv6(s string) error { return ruleIPv6.check(s) }
+
+var ruleLogCursor = rule{
+	what:      "log cursor",
+	pattern:   regexp.MustCompile(`^[A-Za-z0-9_-]+$`),
+	maxLength: 512,
+}
+
+// LogCursor checks a value with the rule "logCursor" of schema/input-rules.json.
+//
+// The value "next" of a search in the logs, which the agent makes. The search then gives the older entries.
+func LogCursor(s string) error { return ruleLogCursor.check(s) }
+
+var ruleLogSearch = rule{
+	what:      "search text of the logs",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
+	maxLength: 200,
+	echo:      true,
+}
+
+// LogSearch checks a value with the rule "logSearch" of schema/input-rules.json.
+//
+// The words of a search in the logs of a website. It is on one line and has no control characters. A word that starts with "-" must not be in an entry, and words in double quotation marks are one word.
+func LogSearch(s string) error { return ruleLogSearch.check(s) }
 
 var ruleMailAddress = rule{
 	what:      "mail address",
@@ -617,9 +673,12 @@ func init() {
 	rules["envName"] = &ruleEnvName
 	rules["envValue"] = &ruleEnvValue
 	rules["environmentValue"] = &ruleEnvironmentValue
+	rules["fileMode"] = &ruleFileMode
 	rules["filePath"] = &ruleFilePath
 	rules["gitBranch"] = &ruleGitBranch
 	rules["gitRepository"] = &ruleGitRepository
+	rules["httpMethod"] = &ruleHTTPMethod
+	rules["httpStatus"] = &ruleHTTPStatus
 	rules["id"] = &ruleID
 	rules["image"] = &ruleImage
 	rules["imageReference"] = &ruleImageReference
@@ -628,6 +687,8 @@ func init() {
 	rules["iniValue"] = &ruleIniValue
 	rules["ipv4"] = &ruleIPv4
 	rules["ipv6"] = &ruleIPv6
+	rules["logCursor"] = &ruleLogCursor
+	rules["logSearch"] = &ruleLogSearch
 	rules["mailAddress"] = &ruleMailAddress
 	rules["mailLocalPart"] = &ruleMailLocalPart
 	rules["mailPasswordHash"] = &ruleMailPasswordHash
@@ -668,6 +729,9 @@ var reservedPackDirs = []string{"tmp", "proc", "sys", "dev", "run", "cf"}
 
 // The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.
 var reservedRuntimeNames = []string{"frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database", "mariadb", "postgresql", "valkey"}
+
+// MaxArchivePaths: The largest number of files and directories that the file manager puts in one new archive.
+const MaxArchivePaths = 2000
 
 // MaxBuildCommands: The largest number of build commands of a deploy.
 const MaxBuildCommands = 10
@@ -722,6 +786,12 @@ const MaxFirewallSkipPaths = 20
 
 // MaxIpRules: The largest number of IP addresses and ranges in the allow list or in the block list of a website.
 const MaxIpRules = 200
+
+// MaxLogEntries: The largest number of entries in one page of a search in the logs.
+const MaxLogEntries = 1000
+
+// MaxLogFilters: The largest number of status codes or of methods in a search in the logs.
+const MaxLogFilters = 10
 
 // MinLowSignInLimit: The smallest sign-in limit of a website that is not 0.
 const MinLowSignInLimit = 3

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 type siteCall struct {
@@ -55,8 +56,27 @@ func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 			w.Write([]byte(`{"file":{"name":"x","type":"directory"}}`))
 		case "DELETE /websites/W1/files":
 			w.WriteHeader(http.StatusNoContent)
+		case "PUT /websites/W1/files/permissions":
+			w.Write([]byte(`{"file":{"name":"public","path":"/public","type":"directory","mode":"0755"},"changed":3}`))
+		case "POST /websites/W1/files/archives", "POST /websites/W1/files/extract":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"job":{"id":"J2","title":"Archive job","state":"queued"}}`))
+		case "GET /jobs/J2":
+			w.Write([]byte(`{"data":{"id":"J2","title":"Archive job","state":"succeeded","steps":["One"],"step":1,"error":null,"result":{"files":4,"directories":2,"links":0,"sizeBytes":900,"kept":1,"skipped":1,"skippedNames":["../evil.php"]}}}`))
 		case "GET /websites/W1/logs":
-			w.Write([]byte(`{"lines":[{"at":"2026-11-14T10:00:00Z","stream":"access","text":"GET /"},{"at":"2026-11-14T10:00:01Z","stream":"error","text":"PHP Warning"}]}`))
+			// Two pages, the newest entry first. Only the first page has a summary.
+			if r.URL.Query().Get("cursor") == "c2" {
+				w.Write([]byte(`{"entries":[{"at":"2026-11-14T10:00:00Z","source":"error","text":"PHP Warning","access":null}],"next":null,"summary":null}`))
+				return
+			}
+			summary := "null"
+			if r.URL.Query().Get("summary") == "1" {
+				summary = `{"total":3,"sources":{"access":2,"output":0,"error":1},"statuses":{"1xx":0,"2xx":1,"3xx":0,"4xx":1,"5xx":0},"topPaths":[{"value":"/wp-login.php","count":2}],"topClients":[{"value":"203.0.113.7","count":2}],"sizeBytes":5120,"oldest":"2026-11-13T08:00:00Z"}`
+			}
+			w.Write([]byte(`{"entries":[` +
+				`{"at":"2026-11-14T10:00:02Z","source":"access","text":"","access":{"client":"203.0.113.7","method":"POST","host":"acme.example","uri":"/wp-login.php","proto":"HTTP/2.0","status":404,"sizeBytes":548,"durationMs":1.2,"userAgent":"zgrab","referer":""}},` +
+				`{"at":"2026-11-14T10:00:01Z","source":"access","text":"","access":{"client":"203.0.113.7","method":"GET","host":"acme.example","uri":"/","proto":"HTTP/2.0","status":200,"sizeBytes":4572,"durationMs":12.5,"userAgent":"curl/8.11.1","referer":""}}` +
+				`],"next":"c2","summary":` + summary + `}`))
 		case "GET /websites/W1/cron-jobs":
 			w.Write([]byte(`{"data":[{"id":"C1","schedule":"*/5 * * * *","command":"php artisan schedule:run","enabled":true,"lastRunAt":null,"lastResult":null}]}`))
 		case "POST /websites/W1/cron-jobs", "PATCH /websites/W1/cron-jobs/C1", "DELETE /websites/W1/cron-jobs/C1", "POST /websites/W1/cron-jobs/C1/run",
@@ -170,14 +190,135 @@ func TestFiles(t *testing.T) {
 	}
 }
 
+func TestFilePermissionsAndArchives(t *testing.T) {
+	srv, calls := sitePanel(t)
+	a, out := testApp(srv)
+	ctx := context.Background()
+
+	if err := a.dispatch(ctx, []string{"files", "chmod", "acme.example", "/deploy.sh", "750"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Method != "PUT" || c.Path != "/websites/W1/files/permissions" || c.Body["mode"] != "750" || c.Body["recursive"] != nil {
+		t.Errorf("chmod = %+v", c)
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"files", "chmod", "acme.example", "/public", "755", "--recursive", "--file-mode", "644"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Body["recursive"] != true || c.Body["fileMode"] != "644" || !strings.Contains(out.String(), "Changed the mode of 3 directories and files in /public.") {
+		t.Errorf("recursive chmod = %+v, out = %s", c, out)
+	}
+	for _, args := range [][]string{{"/public", "755", "--recursive"}, {"/public", "755", "--file-mode", "644"}, {"/public"}} {
+		if err := a.dispatch(ctx, append([]string{"files", "chmod", "acme.example"}, args...)); err == nil {
+			t.Errorf("chmod %v gave no error", args)
+		}
+	}
+
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"files", "archive", "acme.example", "/backup.zip", "public", "/composer.json"}); err != nil {
+		t.Fatal(err)
+	}
+	c := lastSite(calls)
+	if paths, _ := json.Marshal(c.Body["paths"]); c.Path != "/websites/W1/files/archives" || c.Body["path"] != "/backup.zip" || string(paths) != `["/public","/composer.json"]` {
+		t.Errorf("archive = %+v", c)
+	}
+	if !strings.Contains(out.String(), "Made /backup.zip: 4 files, 2 directories and 0 links, 900 bytes.") {
+		t.Errorf("out = %s", out)
+	}
+	if err := a.dispatch(ctx, []string{"files", "archive", "acme.example", "/backup.zip"}); err == nil {
+		t.Error("an archive with no paths gave no error")
+	}
+
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"files", "extract", "acme.example", "/backup.zip", "--to", "restore", "--overwrite"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Path != "/websites/W1/files/extract" || c.Body["path"] != "/backup.zip" || c.Body["to"] != "/restore" || c.Body["overwrite"] != true {
+		t.Errorf("extract = %+v", c)
+	}
+	for _, want := range []string{"Extracted /backup.zip: 4 files, 2 directories and 0 links.", "1 file exists already and did not change.", "Skipped 1 entry:", "  ../evil.php"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("out = %s; want %q", out, want)
+		}
+	}
+	if err := a.dispatch(ctx, []string{"files", "extract", "acme.example", "/backup.zip"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Body["to"] != nil || c.Body["overwrite"] != false {
+		t.Errorf("extract with no options = %+v", c)
+	}
+}
+
 func TestLogs(t *testing.T) {
 	srv, calls := sitePanel(t)
 	a, out := testApp(srv)
-	if err := a.dispatch(context.Background(), []string{"logs", "acme.example", "--lines", "50", "--type", "error"}); err != nil {
+	ctx := context.Background()
+	args := []string{"logs", "acme.example", "--search", "wp-login -bot", "--status", "4xx,200", "--method", "POST", "--client", "203.0.113.0/24",
+		"--since", "2026-11-14T09:00:00+01:00", "--until", "2026-11-14T10:30:00Z", "--source", "access,error", "--limit", "3", "--summary"}
+	if err := a.dispatch(ctx, args); err != nil {
 		t.Fatal(err)
 	}
-	if c := lastSite(calls); c.Query != "lines=50&stream=error" || !strings.Contains(out.String(), "2026-11-14T10:00:01Z error  PHP Warning") {
-		t.Errorf("call = %+v, out = %s", c, out)
+	var logCalls []siteCall
+	for _, c := range *calls {
+		if c.Path == "/websites/W1/logs" {
+			logCalls = append(logCalls, c)
+		}
+	}
+	first := "client=203.0.113.0%2F24&from=2026-11-14T08%3A00%3A00Z&limit=3&method=POST&q=wp-login+-bot&sources=access%2Cerror&status=4xx%2C200&summary=1&to=2026-11-14T10%3A30%3A00Z"
+	second := "client=203.0.113.0%2F24&cursor=c2&from=2026-11-14T08%3A00%3A00Z&limit=1&method=POST&q=wp-login+-bot&sources=access%2Cerror&status=4xx%2C200&to=2026-11-14T10%3A30%3A00Z"
+	if len(logCalls) != 2 || logCalls[0].Query != first || logCalls[1].Query != second {
+		t.Fatalf("calls = %+v", logCalls)
+	}
+	// The summary comes first, then the oldest entry first.
+	want := []string{
+		"Requests: 2 (2xx 1, 3xx 0, 4xx 1, 5xx 0), 5.0KB sent",
+		"Top paths: /wp-login.php (2)",
+		"The oldest entry is from 2026-11-13T08:00:00Z.",
+		"2026-11-14T10:00:00Z error  PHP Warning",
+		`2026-11-14T10:00:01Z access 200 GET acme.example/ 203.0.113.7 4.5KB 12.5ms "" "curl/8.11.1"`,
+		`2026-11-14T10:00:02Z access 404 POST acme.example/wp-login.php 203.0.113.7 548B 1.2ms "" "zgrab"`,
+	}
+	text := out.String()
+	last := -1
+	for _, w := range want {
+		i := strings.Index(text, w)
+		if i <= last {
+			t.Fatalf("the output does not have %q after the earlier lines:\n%s", w, text)
+		}
+		last = i
+	}
+	if strings.Contains(text, "There are older entries") {
+		t.Errorf("the search has no older entries:\n%s", text)
+	}
+
+	// With a smaller limit, the command reads one page and says that there are older entries.
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"logs", "acme.example", "--since", "2h", "--limit", "2"}); err != nil {
+		t.Fatal(err)
+	}
+	q := lastSite(calls).Query
+	if !strings.Contains(q, "from=") || strings.Contains(q, "summary") || !strings.Contains(out.String(), "There are older entries. Use --limit with a number larger than 2, or --until 2026-11-14T10:00:01Z.") {
+		t.Errorf("query = %s, out = %s", q, out)
+	}
+
+	for _, bad := range [][]string{{"--limit", "0"}, {"--limit", "10001"}, {"--since", "yesterday"}, {"--since", "-2h"}, {"--until", "0d"}, {"wp-login"}} {
+		if err := a.dispatch(ctx, append([]string{"logs", "acme.example"}, bad...)); err == nil {
+			t.Errorf("%v gave no error", bad)
+		}
+	}
+}
+
+func TestLogTime(t *testing.T) {
+	now := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	for in, want := range map[string]time.Time{
+		"15m":                  now.Add(-15 * time.Minute),
+		"2h":                   now.Add(-2 * time.Hour),
+		"7d":                   now.AddDate(0, 0, -7),
+		"2026-11-14T09:00:00Z": now.Add(-time.Hour),
+	} {
+		if got, err := logTime(in, now); err != nil || !got.Equal(want) {
+			t.Errorf("logTime(%q) = %v, %v; want %v", in, got, err, want)
+		}
 	}
 }
 
@@ -281,6 +422,33 @@ func TestDeploys(t *testing.T) {
 	}
 	if err := a.dispatch(ctx, []string{"deploys", "disconnect", "acme.example"}); err != nil || lastSite(calls).Method != "DELETE" {
 		t.Errorf("disconnect = %+v, %v", lastSite(calls), err)
+	}
+}
+
+func TestServerAccessLog(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path+"?"+r.URL.RawQuery)
+		switch r.URL.Path {
+		case "/api/v1/servers":
+			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1"}],"meta":{"last_page":1,"total":1}}`))
+		case "/api/v1/servers/S1/access-log":
+			w.Write([]byte(`{"entries":[{"at":"2026-11-14T10:00:00Z","source":"access","text":"","access":{"client":"192.0.2.1","method":"GET","host":"panel.example","uri":"/","proto":"HTTP/2.0","status":200,"sizeBytes":812,"durationMs":4.1,"userAgent":"","referer":""}}],"next":null,"summary":null}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	a, out := testApp(srv)
+	if err := a.dispatch(context.Background(), []string{"servers", "access-log", "web-1", "--status", "2xx"}); err != nil {
+		t.Fatal(err)
+	}
+	if paths[len(paths)-1] != "/api/v1/servers/S1/access-log?limit=100&status=2xx" || !strings.Contains(out.String(), "access 200 GET panel.example/ 192.0.2.1 812B 4.1ms") {
+		t.Errorf("paths = %v, out = %s", paths, out)
+	}
+	// The access log of a server has no sources.
+	if err := a.dispatch(context.Background(), []string{"servers", "access-log", "web-1", "--source", "output"}); err == nil {
+		t.Error("--source gave no error")
 	}
 }
 

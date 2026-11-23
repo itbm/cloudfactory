@@ -48,6 +48,15 @@
                 "modifiedAt": "2025-10-20T20:00:00Z",
                 "mode": "0640",
                 "target": null
+            },
+            {
+                "name": "site-2026-10.zip",
+                "path": "/site-2026-10.zip",
+                "type": "file",
+                "sizeBytes": 3240,
+                "modifiedAt": "2025-10-24T18:00:00Z",
+                "mode": "0640",
+                "target": null
             }
         ],
         "truncated": false

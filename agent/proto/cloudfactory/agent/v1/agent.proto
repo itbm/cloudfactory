@@ -14,116 +14,127 @@ package cloudfactory.agent.v1;
 option go_package = "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1;agentv1";
 
 service AgentService {
-  rpc CreateWebsite(WebsiteRequest) returns (JobAccepted);
-  rpc DeleteWebsite(DeleteWebsiteRequest) returns (JobAccepted);
-  rpc SetWebsitePower(SetWebsitePowerRequest) returns (JobAccepted);
-  rpc SetLimits(SetLimitsRequest) returns (JobAccepted);
-  rpc SetRuntime(WebsiteRequest) returns (JobAccepted);
+  // The methods that make a job, in alphabetical order. Keep the order: then two pull requests
+  // that add methods do not conflict (docs/development.md#parallel-pull-requests).
+  rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
   rpc AddDomain(DomainRequest) returns (JobAccepted);
-  rpc RemoveDomain(DomainRequest) returns (JobAccepted);
-  rpc CreateDatabase(CreateDatabaseRequest) returns (JobAccepted);
-  rpc DeleteDatabase(DeleteDatabaseRequest) returns (JobAccepted);
-  rpc SetDatabaseUser(SetDatabaseUserRequest) returns (JobAccepted);
-  rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
   rpc Backup(BackupRequest) returns (JobAccepted);
-  rpc Restore(RestoreRequest) returns (JobAccepted);
+  rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
+  rpc CreateDatabase(CreateDatabaseRequest) returns (JobAccepted);
+  rpc CreateWebsite(WebsiteRequest) returns (JobAccepted);
+  rpc DeleteDatabase(DeleteDatabaseRequest) returns (JobAccepted);
+  rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
+  rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
+  rpc DeleteDnsZones(DeleteDnsZonesRequest) returns (JobAccepted);
+  rpc DeleteImport(DeleteImportRequest) returns (JobAccepted);
+  rpc DeleteMailAlias(MailAddressRequest) returns (JobAccepted);
+  rpc DeleteMailDomain(MailDomainRequest) returns (JobAccepted);
+  rpc DeleteMailbox(MailAddressRequest) returns (JobAccepted);
+  rpc DeleteWebsite(DeleteWebsiteRequest) returns (JobAccepted);
+  rpc Deploy(DeployRequest) returns (JobAccepted);
   // Account export (docs/account-export.md): the agent sends the files and the database dumps
   // of a website to the panel, as parts of an export. Each part goes to
   // /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
   rpc ExportWebsite(ExportWebsiteRequest) returns (JobAccepted);
+  rpc ExtractArchive(ExtractArchiveRequest) returns (JobAccepted);
+  // The import of an account from a different hosting panel, for example cPanel or
+  // DirectAdmin (docs/imports.md): FetchImport, ImportFiles, ImportDatabase, ImportMail and
+  // DeleteImport. The worker of the agent keeps the backup archive in its own directory and
+  // reads it as a stream. It never extracts the archive as root: the Unix user of a website
+  // writes the files, and the database clients and the mail server get the content of the
+  // dumps and of the messages.
+  rpc FetchImport(FetchImportRequest) returns (JobAccepted);
+  rpc ImportDatabase(ImportDatabaseRequest) returns (JobAccepted);
+  rpc ImportFiles(ImportFilesRequest) returns (JobAccepted);
+  rpc ImportMail(ImportMailRequest) returns (JobAccepted);
+  rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
-  rpc Reboot(HostRequest) returns (JobAccepted);
-  rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
-  rpc PruneBackups(PruneBackupsRequest) returns (JobAccepted);
-  rpc SetSftp(SetSftpRequest) returns (JobAccepted);
-  rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
-  rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
-  // Sets the panel domains of the resellers (white label). Only the panel server has them.
-  rpc SetPanelBrands(SetPanelBrandsRequest) returns (JobAccepted);
-  rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
-  rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
-  rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
-  rpc PrepareMailNode(PrepareMailNodeRequest) returns (JobAccepted);
-  rpc SetMailNode(SetMailNodeRequest) returns (JobAccepted);
-  rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
-  rpc DeleteMailDomain(MailDomainRequest) returns (JobAccepted);
-  rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
-  rpc DeleteMailbox(MailAddressRequest) returns (JobAccepted);
-  rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
-  rpc DeleteMailAlias(MailAddressRequest) returns (JobAccepted);
-  rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
-  rpc DeleteDnsZones(DeleteDnsZonesRequest) returns (JobAccepted);
-  rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
-  rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
-  // Runs one command now in the container of a website (the panel action "Run a command"). The
-  // command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
-  // website, the same as a cron job. The job succeeds when the command ran, also when its exit
-  // code is not 0. The result has the exit code and the end of the output.
-  rpc RunCommand(RunCommandRequest) returns (JobAccepted);
+  // The archives of the file manager. The agent does each job as the Unix user of the
+  // website, in the directory of the website, as the methods of the file manager below.
+  rpc MakeArchive(MakeArchiveRequest) returns (JobAccepted);
   // Opens a shell in the container of a website for the web terminal of the panel. The agent
   // connects to the terminal relay of the panel, and the relay connects the agent to the
   // browser. The shell runs as the Unix user of the website, in the gVisor sandbox. The job
   // succeeds when the shell started. The agent then sends the commands of the session and its
   // end to the panel (/api/agent/v1/terminal-sessions/...).
   rpc OpenTerminal(OpenTerminalRequest) returns (JobAccepted);
-  rpc Deploy(DeployRequest) returns (JobAccepted);
-  rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
-  rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
-  rpc SetMesh(SetMeshRequest) returns (JobAccepted);
-  rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
-  rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
+  rpc PrepareMailNode(PrepareMailNodeRequest) returns (JobAccepted);
+  rpc PruneBackups(PruneBackupsRequest) returns (JobAccepted);
+  rpc Reboot(HostRequest) returns (JobAccepted);
   rpc ReceiveDatabaseServer(ReceiveDatabaseServerRequest) returns (JobAccepted);
-  rpc SendWebsite(SendWebsiteRequest) returns (JobAccepted);
   rpc ReceiveWebsite(ReceiveWebsiteRequest) returns (JobAccepted);
-  // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
-  // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
-  // each pack only with a signature of its publisher, and loads the runtimes of the packs.
-  rpc SetPacks(SetPacksRequest) returns (JobAccepted);
-  // Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
-  // the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
-  // value with the website and changes only the edge route. The container does not restart.
-  rpc SetWebsiteSecurity(SetWebsiteSecurityRequest) returns (JobAccepted);
+  rpc RemoveDomain(DomainRequest) returns (JobAccepted);
+  rpc Restore(RestoreRequest) returns (JobAccepted);
+  rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
+  // Runs one command now in the container of a website (the panel action "Run a command"). The
+  // command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
+  // website, the same as a cron job. The job succeeds when the command ran, also when its exit
+  // code is not 0. The result has the exit code and the end of the output.
+  rpc RunCommand(RunCommandRequest) returns (JobAccepted);
+  rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
+  // Scans the files of a website for malware with ClamAV. The job first updates the
+  // signatures of the server. The result has the files that ClamAV found.
+  rpc ScanWebsite(ScanWebsiteRequest) returns (JobAccepted);
+  rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
+  rpc SendWebsite(SendWebsiteRequest) returns (JobAccepted);
   // Sets the certificates from the panel on the edge proxy of the server: the certificates
   // that a customer uploaded, and the certificates that the panel got from an ACME CA with
   // DNS validation. The list is complete. A certificate that the edge proxy has and that is not
   // in the list goes. Each host of a certificate then uses that certificate, and the edge proxy
   // does not get a certificate for the host itself.
   rpc SetCertificates(SetCertificatesRequest) returns (JobAccepted);
-  // The import of an account from a different hosting panel, for example cPanel or
-  // DirectAdmin (docs/imports.md). The worker of the agent keeps the backup archive in its own
-  // directory and reads it as a stream. It never extracts the archive as root: the Unix user
-  // of a website writes the files, and the database clients and the mail server get the
-  // content of the dumps and of the messages.
-  rpc FetchImport(FetchImportRequest) returns (JobAccepted);
-  rpc ImportFiles(ImportFilesRequest) returns (JobAccepted);
-  rpc ImportDatabase(ImportDatabaseRequest) returns (JobAccepted);
-  rpc ImportMail(ImportMailRequest) returns (JobAccepted);
-  rpc DeleteImport(DeleteImportRequest) returns (JobAccepted);
-  // Scans the files of a website for malware with ClamAV. The job first updates the
-  // signatures of the server. The result has the files that ClamAV found.
-  rpc ScanWebsite(ScanWebsiteRequest) returns (JobAccepted);
+  rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
+  rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
+  rpc SetDatabaseUser(SetDatabaseUserRequest) returns (JobAccepted);
+  rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
+  rpc SetLimits(SetLimitsRequest) returns (JobAccepted);
+  rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
+  rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
+  rpc SetMailNode(SetMailNodeRequest) returns (JobAccepted);
+  rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
+  rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
+  rpc SetMesh(SetMeshRequest) returns (JobAccepted);
+  // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
+  // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
+  // each pack only with a signature of its publisher, and loads the runtimes of the packs.
+  rpc SetPacks(SetPacksRequest) returns (JobAccepted);
+  // Sets the panel domains of the resellers (white label). Only the panel server has them.
+  rpc SetPanelBrands(SetPanelBrandsRequest) returns (JobAccepted);
+  rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
+  rpc SetRuntime(WebsiteRequest) returns (JobAccepted);
+  rpc SetSftp(SetSftpRequest) returns (JobAccepted);
+  rpc SetWebsitePower(SetWebsitePowerRequest) returns (JobAccepted);
+  // Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
+  // the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
+  // value with the website and changes only the edge route. The container does not restart.
+  rpc SetWebsiteSecurity(SetWebsiteSecurityRequest) returns (JobAccepted);
+  rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
 
-  // Returns the actual state of the server at once. This method does not make a job.
-  rpc GetStatus(GetStatusRequest) returns (HostStatus);
-
-  // The file manager and the logs of a website. These methods do not make a job: they give
-  // the result at once. The agent does each of them as the Unix user of the website, in the
-  // directory of the website.
-  rpc ListFiles(FileRequest) returns (FileList);
-  rpc ReadFile(FileRequest) returns (FileContent);
-  rpc WriteFile(WriteFileRequest) returns (FileEntry);
-  rpc MakeDirectory(FileRequest) returns (FileEntry);
-  rpc MoveFile(MoveFileRequest) returns (FileEntry);
-  rpc DeleteFile(FileRequest) returns (FileDeleted);
-  rpc GetLogs(GetLogsRequest) returns (Logs);
-  // The last requests of a website that the firewall of the edge proxy blocked or detected.
-  // This method does not make a job.
-  rpc GetFirewallEvents(GetFirewallEventsRequest) returns (FirewallEvents);
-
+  // The methods that do not make a job: they give the result at once. The agent does the
+  // methods of the file manager and of the logs of a website as the Unix user of the website,
+  // in the directory of the website. In alphabetical order.
   // Gives the last commit of the branch of each Git source, for the deploys on a schedule
   // (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
   // container of each website, as for the step "Get the code" of a deploy.
   rpc CheckBranches(CheckBranchesRequest) returns (BranchHeads);
+  rpc DeleteFile(FileRequest) returns (FileDeleted);
+  // The last requests of a website that the firewall of the edge proxy blocked or detected.
+  // This method does not make a job.
+  rpc GetFirewallEvents(GetFirewallEventsRequest) returns (FirewallEvents);
+  // Returns the actual state of the server.
+  rpc GetStatus(GetStatusRequest) returns (HostStatus);
+  rpc ListFiles(FileRequest) returns (FileList);
+  rpc MakeDirectory(FileRequest) returns (FileEntry);
+  rpc MoveFile(MoveFileRequest) returns (FileEntry);
+  rpc ReadFile(FileRequest) returns (FileContent);
+  // Searches the logs of a website: the access log of the edge proxy, and the output and the
+  // errors of the containers of the website. The agent reads the log of the containers as the
+  // Unix user of the website. With no website, it searches the access log of the edge proxy
+  // for the requests that are not for a website: the panel, the webmail and the mail host.
+  // This method does not make a job.
+  rpc SearchLogs(SearchLogsRequest) returns (LogSearchResult);
+  rpc SetFileMode(SetFileModeRequest) returns (FileModeSet);
+  rpc WriteFile(WriteFileRequest) returns (FileEntry);
 }
 
 message JobAccepted {
@@ -1126,6 +1137,55 @@ message MoveFileRequest {
 
 message FileDeleted {}
 
+// Changes the permission bits of a file or a directory. The agent does not change a link.
+message SetFileModeRequest {
+  string website_id = 1;
+  string path = 2;
+  // The permission bits: 3 octal digits, for example "0644" or "755". The bits setuid,
+  // setgid and sticky are not permitted. The owner of a directory must keep the read and the
+  // search permission.
+  string mode = 3;
+  // True also changes each file and each directory in the directory. mode is then the mode
+  // of the directory and of each directory in it.
+  bool recursive = 4;
+  // With recursive: the mode of each file in the directory.
+  string file_mode = 5;
+}
+
+message FileModeSet {
+  FileEntry file = 1;
+  // The number of files and directories that the agent changed.
+  int64 changed = 2;
+}
+
+// Puts files and directories of a website in a new archive in the files of the website. The
+// job result has the fields of sitefiles.Summary: files, directories, links, sizeBytes,
+// skipped and skippedNames.
+message MakeArchiveRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The files and the directories for the archive. Each one goes in the archive with its
+  // name, at the top level. "/" alone puts all files of the website in the archive.
+  repeated string paths = 3;
+  // The path of the new archive. The end of the name gives the format: ".zip", ".tar.gz",
+  // ".tgz" or ".tar". The agent does not replace a file.
+  string path = 4;
+}
+
+// Extracts an archive of a website into a directory of the website. The job result has the
+// fields of sitefiles.Summary: files, directories, links, sizeBytes, kept, skipped and
+// skippedNames.
+message ExtractArchiveRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The path of the archive: ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2" or ".tbz2".
+  string path = 3;
+  // The directory for the files of the archive. The agent makes it when it does not exist.
+  string to = 4;
+  // True replaces the files and the links that exist. False keeps them.
+  bool overwrite = 5;
+}
+
 message BranchCheck {
   // The website of the Git source. The agent takes the Unix user, the image and the limits
   // of the website from its state, so that the check uses the image that the website runs.
@@ -1154,22 +1214,92 @@ message BranchHeads {
   repeated BranchHead heads = 1;
 }
 
-message GetLogsRequest {
+message SearchLogsRequest {
+  // The website, or "" for the access log of the routes that are not for a website.
   string website_id = 1;
-  // The maximum number of lines of each stream. 0 means 200.
-  int32 lines = 2;
-}
-
-message LogLine {
-  // RFC 3339.
-  string at = 1;
-  // "access" (standard output of the container) or "error" (standard error).
-  string stream = 2;
+  // "access" (the access log of the edge proxy), "output" (the standard output of the
+  // containers) and "error" (their standard error). No source means all sources.
+  repeated string sources = 2;
+  // The words that each entry must have, in upper or lower case. A word that starts with "-"
+  // must not be in the entry. Words in double quotation marks are one word.
   string text = 3;
+  // The access log only: status codes ("404") or classes of status codes ("5xx").
+  repeated string statuses = 4;
+  // The access log only: HTTP methods, for example "POST".
+  repeated string methods = 5;
+  // The access log only: the address of a client or a network, for example "203.0.113.0/24".
+  string client = 6;
+  // RFC 3339. The entries at this time or later.
+  string from = 7;
+  // RFC 3339. The entries before this time.
+  string to = 8;
+  // The value "next" of an earlier result. The search then gives the older entries.
+  string cursor = 9;
+  // The largest number of entries. 0 means 100.
+  int32 limit = 10;
+  // True to count all entries that agree with the search (LogSummary). The count ignores the
+  // cursor.
+  bool summary = 11;
 }
 
-message Logs {
-  repeated LogLine lines = 1;
+// A request in the access log of the edge proxy.
+message AccessEntry {
+  // The address of the client.
+  string client = 1;
+  string method = 2;
+  string host = 3;
+  // The path and the query.
+  string uri = 4;
+  // For example "HTTP/2.0".
+  string proto = 5;
+  int32 status = 6;
+  // The size of the body of the answer.
+  int64 size_bytes = 7;
+  double duration_seconds = 8;
+  string user_agent = 9;
+  string referer = 10;
+}
+
+message LogEntry {
+  // RFC 3339 with nanoseconds, in UTC.
+  string at = 1;
+  // "access", "output" or "error".
+  string source = 2;
+  // The line of a container. An entry of the access log has no text.
+  string text = 3;
+  AccessEntry access = 4;
+}
+
+message LogCount {
+  string value = 1;
+  int64 count = 2;
+}
+
+// The count of all entries that agree with a search.
+message LogSummary {
+  // The number of entries of each source.
+  int64 access = 1;
+  int64 output = 2;
+  int64 error = 3;
+  // The access log: the number of requests in each class of status codes, for example "5xx".
+  map<string, int64> statuses = 4;
+  // The access log: the paths and the clients with the most requests, at most 5 of each.
+  repeated LogCount top_paths = 5;
+  repeated LogCount top_clients = 6;
+  // The access log: the sum of the sizes of the answers.
+  int64 size_bytes = 7;
+  // RFC 3339. The time of the oldest entry that the server keeps, in the sources of the
+  // search. "" when the sources have no entries.
+  string oldest = 8;
+}
+
+message LogSearchResult {
+  // The newest entry first.
+  repeated LogEntry entries = 1;
+  // The cursor for the older entries, or "" when there are no more.
+  string next = 2;
+  // Only when the request asked for it.
+  LogSummary summary = 3;
 }
 
 message GetFirewallEventsRequest {

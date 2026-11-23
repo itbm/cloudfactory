@@ -1521,38 +1521,141 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '503': { description: The panel cannot connect to the server of the website. }
 
-  /v1/websites/{websiteId}/logs:
+  /v1/websites/{websiteId}/files/permissions:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
-    get:
-      tags: [Websites]
-      summary: Read the last log lines of a website
+    put:
+      tags: [Files]
+      summary: Change the permissions of a file or a directory of a website
       description: >-
-        The output of the container of the website, oldest line first. The stream `access` is
-        the standard output, which has the access log of the runtime images as JSON. The stream
-        `error` is the standard error, which has the errors of the web server and of PHP. The
-        server keeps the last 10 MB. A website gets its log file at its first start with an
-        agent that has this method: restart an older website one time.
-      parameters:
-        - { name: lines, in: query, schema: { type: integer, minimum: 1, maximum: 2000, default: 200 }, description: The number of lines that the agent reads from the end of the log. }
-        - { name: stream, in: query, schema: { type: string, enum: [access, error] }, description: Only the lines of this stream. }
+        Sets the permission bits. A mode has 3 octal digits, with a `0` before them or not, for
+        example `644` or `0755`. The bits setuid, setgid and sticky are not permitted. The owner
+        of a directory must keep the read and the search permission (for example `0755` or
+        `0700`). A symbolic link has no permissions of its own (422). With `recursive`, `mode`
+        is the mode of the directory and of each directory in it, and `fileMode` is the mode of
+        each file in it. The agent does not change a link and does not go through one. All
+        files of a website have the Unix user of the website as owner, so the group and the
+        other permissions do not give access to other websites.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, mode]
+              properties:
+                path: { type: string, example: /public }
+                mode: { type: string, example: '0755' }
+                recursive: { type: boolean, default: false }
+                fileMode: { type: string, example: '0644', description: Necessary with `recursive`. }
       responses:
         '200':
-          description: The log lines.
+          description: The file or the directory with its new mode.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  lines:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        at: { type: string, format: date-time }
-                        stream: { type: string, enum: [access, error] }
-                        text: { type: string }
+                  file: { $ref: '#/components/schemas/FileEntry' }
+                  changed: { type: integer, description: The number of files and directories that the agent changed. }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/archives:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Make an archive of files and directories of a website
+      description: >-
+        Makes a job. The agent puts each path in the new archive with its name, at the top level.
+        The path `/` alone puts all files of the website in the archive. The end of the name of
+        the archive gives the format: `.zip`, `.tar.gz`, `.tgz` or `.tar`. The archive has the
+        links, but the agent does not go through a link. The agent does not replace a file: the
+        job fails when the archive exists. The job result has the summary of the archive
+        (`ArchiveSummary`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paths, path]
+              properties:
+                paths: { type: array, minItems: 1, maxItems: 2000, items: { type: string }, example: [/public, /composer.json] }
+                path: { type: string, example: /site.zip, description: The path of the new archive. }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/files/extract:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Extract an archive of a website
+      description: >-
+        Makes a job. The agent extracts `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2` and
+        `.tbz2` archives. It writes only in the destination directory, and makes it when it does
+        not exist. A file that exists stays, unless `overwrite` is true. The agent skips each
+        entry with a name that goes out of the destination, each device and each FIFO. It does
+        not use the owners in the archive, and it removes the bits setuid, setgid and sticky.
+        The limits are 1,000,000 entries and 64 GiB of files, and the disk limit of the website.
+        An archive with a password is not possible. The job result has the summary of the
+        extract (`ArchiveSummary`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, example: /site.zip }
+                to: { type: string, example: /public, description: The destination directory. The default is the directory of the archive. }
+                overwrite: { type: boolean, default: false, description: True replaces the files and the links that exist. }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/logs:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Websites]
+      summary: Search the logs of a website
+      description: >-
+        One search covers three sources: `access`, the access log of the edge proxy for the
+        domains of the website, and `output` and `error`, the standard output and the standard
+        error of the containers of the website. The newest entry comes first. The agent keeps
+        the access log of each website for 30 days, at most 64 MB, and the containers keep
+        their last 10 MB of output. The edge proxy removes the cookies and the `Authorization`
+        header from the access log. A filter of the access log (`status`, `method` or
+        `client`) gives no lines of the containers. To read older entries, send the same
+        search again with `cursor` set to `next`.
+      parameters:
+        - { name: sources, in: query, schema: { type: string, example: 'access,error' }, description: 'The sources, with commas between them: access, output and error. The default is all sources.' }
+        - { $ref: '#/components/parameters/LogText' }
+        - { $ref: '#/components/parameters/LogStatus' }
+        - { $ref: '#/components/parameters/LogMethod' }
+        - { $ref: '#/components/parameters/LogClient' }
+        - { $ref: '#/components/parameters/LogFrom' }
+        - { $ref: '#/components/parameters/LogTo' }
+        - { $ref: '#/components/parameters/LogCursor' }
+        - { $ref: '#/components/parameters/LogLimit' }
+        - { $ref: '#/components/parameters/LogSummary' }
+      responses:
+        '200':
+          description: The entries that agree with the search.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LogSearchResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The website failed, or it has no server. }
         '422': { $ref: '#/components/responses/Invalid' }
         '503': { description: The panel cannot connect to the server of the website. }
 
@@ -1742,14 +1845,16 @@ paths:
         An alert opens when a resource of a website, a server or a database server reaches the
         warning percent of its limit, and becomes critical at the critical percent. It closes
         when the use goes 5 points below the warning percent. CPU and memory use the average of
-        the last 30 minutes. An administrator sees all alerts, also those of the servers. A
-        reseller sees the alerts of its customers, and an owner the alerts of their websites
-        and database servers. The panel does not stop a website at its limit because of an
+        the last 30 minutes. FR-603: a mailbox alert opens when a mailbox is 90% full, and
+        becomes critical at 98%. These two values do not change with the settings. An
+        administrator sees all alerts, also those of the servers. A reseller sees the alerts of
+        its customers, and an owner the alerts of their websites, database servers and
+        mailboxes. The panel does not stop a website at its limit because of an
         alert. The panel fires the Laravel events `UsageAlertRaised` and `UsageAlertResolved`
         for delivery, for example by email.
       parameters:
         - { name: state, in: query, schema: { type: string, enum: [open, resolved, all], default: open } }
-        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server] } }
+        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server, mailbox] } }
         - { name: subjectId, in: query, schema: { type: string } }
       responses:
         '200':
@@ -4845,6 +4950,38 @@ paths:
               schema: { $ref: '#/components/schemas/UsageHistory' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/servers/{id}/access-log:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Servers]
+      summary: Search the access log of a server
+      description: >-
+        The access log of the edge proxy for the requests that are not for a website: the
+        panel, the webmail, the host name of the mail server and the host names that have no
+        website. Only for administrators. The search and the answer are the same as for the
+        logs of a website, with only the source `access`.
+      parameters:
+        - { $ref: '#/components/parameters/LogText' }
+        - { $ref: '#/components/parameters/LogStatus' }
+        - { $ref: '#/components/parameters/LogMethod' }
+        - { $ref: '#/components/parameters/LogClient' }
+        - { $ref: '#/components/parameters/LogFrom' }
+        - { $ref: '#/components/parameters/LogTo' }
+        - { $ref: '#/components/parameters/LogCursor' }
+        - { $ref: '#/components/parameters/LogLimit' }
+        - { $ref: '#/components/parameters/LogSummary' }
+      responses:
+        '200':
+          description: The entries that agree with the search.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LogSearchResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server. }
+
   /v1/usage-alerts/settings:
     put:
       tags: [Usage]
@@ -6817,6 +6954,53 @@ components:
       name: range
       in: query
       schema: { type: string, enum: ['24h', '7d', '30d', '90d', '1y'], default: '24h' }
+    LogText:
+      name: q
+      in: query
+      schema: { type: string, maxLength: 200, example: 'wp-login -"bot"' }
+      description: >-
+        The words that each entry must have, in any case. A phrase in double quotes is one
+        word. A word that starts with "-" must not be in the entry.
+    LogStatus:
+      name: status
+      in: query
+      schema: { type: string, example: '404,5xx' }
+      description: At most 10 status codes or classes of the access log, with commas between them.
+    LogMethod:
+      name: method
+      in: query
+      schema: { type: string, example: 'POST' }
+      description: At most 10 request methods of the access log, with commas between them.
+    LogClient:
+      name: client
+      in: query
+      schema: { type: string, example: '203.0.113.0/24' }
+      description: The IP address of the client, or a network that has the address.
+    LogFrom:
+      name: from
+      in: query
+      schema: { type: string, format: date-time }
+      description: Only the entries at this time or later.
+    LogTo:
+      name: to
+      in: query
+      schema: { type: string, format: date-time }
+      description: Only the entries before this time. It must be after `from`.
+    LogCursor:
+      name: cursor
+      in: query
+      schema: { type: string, maxLength: 512 }
+      description: The `next` value of the earlier page of the same search.
+    LogLimit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      description: The largest number of entries in the answer.
+    LogSummary:
+      name: summary
+      in: query
+      schema: { type: boolean, default: false }
+      description: Also count all the entries that agree with the search, on all pages.
 
   responses:
     DatabaseUserJob:
@@ -7348,6 +7532,69 @@ components:
           description: >-
             The traffic of a website in a calendar month. 0 or none means no limit. The panel
             shows alerts near the limit. It does not stop the website.
+    LogSearchResult:
+      type: object
+      required: [entries, next, summary]
+      properties:
+        entries:
+          type: array
+          description: The newest entry first.
+          items: { $ref: '#/components/schemas/LogEntry' }
+        next: { type: [string, 'null'], description: The cursor of the next page of older entries, or null at the last page. }
+        summary:
+          description: Only when the search asked for it.
+          oneOf: [{ $ref: '#/components/schemas/LogSummary' }, { type: 'null' }]
+    LogEntry:
+      type: object
+      required: [at, source, text, access]
+      properties:
+        at: { type: string, format: date-time }
+        source: { type: string, enum: [access, output, error] }
+        text: { type: string, description: 'The line of a container, with no control characters. A longer line ends with "…". Empty for an entry of the access log.' }
+        access:
+          description: The request, for an entry of the access log.
+          oneOf: [{ $ref: '#/components/schemas/AccessEntry' }, { type: 'null' }]
+    AccessEntry:
+      type: object
+      properties:
+        client: { type: string, description: The IP address of the client. }
+        method: { type: string }
+        host: { type: string }
+        uri: { type: string, description: The path and the query of the request. }
+        proto: { type: string, example: HTTP/2.0 }
+        status: { type: integer }
+        sizeBytes: { type: integer, description: The size of the body of the response. }
+        durationMs: { type: number, description: The time to the end of the response. }
+        userAgent: { type: string }
+        referer: { type: string }
+    LogSummary:
+      type: object
+      properties:
+        total: { type: integer }
+        sources:
+          type: object
+          properties:
+            access: { type: integer }
+            output: { type: integer }
+            error: { type: integer }
+        statuses:
+          type: object
+          description: The number of requests in each class of status codes.
+          properties:
+            1xx: { type: integer }
+            2xx: { type: integer }
+            3xx: { type: integer }
+            4xx: { type: integer }
+            5xx: { type: integer }
+        topPaths: { type: array, description: The 5 paths with the most requests., items: { $ref: '#/components/schemas/LogCount' } }
+        topClients: { type: array, description: The 5 clients with the most requests., items: { $ref: '#/components/schemas/LogCount' } }
+        sizeBytes: { type: integer, description: The size of all the responses. }
+        oldest: { type: [string, 'null'], format: date-time, description: The time of the oldest entry that the server keeps. }
+    LogCount:
+      type: object
+      properties:
+        value: { type: string }
+        count: { type: integer }
     UsageHistory:
       type: object
       properties:
@@ -7383,12 +7630,12 @@ components:
       type: object
       properties:
         id: { type: string }
-        subjectType: { type: string, enum: [website, server, database_server] }
+        subjectType: { type: string, enum: [website, server, database_server, mailbox] }
         subjectId: { type: string }
-        subjectName: { type: [string, 'null'], description: Null when the subject was removed. }
+        subjectName: { type: [string, 'null'], description: 'Null when the subject was removed. The name of a mailbox is its address.' }
         customerId: { type: [string, 'null'], description: Null for a server. }
         serverId: { type: [string, 'null'] }
-        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes] }
+        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes, storage], description: '"storage" is the size of a mailbox.' }
         level: { type: string, enum: [warning, critical] }
         used: { type: number }
         limit: { type: number }
@@ -7702,6 +7949,16 @@ components:
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
+    ArchiveSummary:
+      type: object
+      properties:
+        files: { type: integer, description: The files in the new archive, or the files that the extract wrote. }
+        directories: { type: integer }
+        links: { type: integer }
+        sizeBytes: { type: integer, description: The size of the new archive, or the size of the files that the extract wrote. }
+        kept: { type: integer, description: The files that the extract did not replace, because they exist. }
+        skipped: { type: integer, description: 'The entries that the agent did not use: names that go out of the destination, devices, FIFOs, and names that are a directory in one place and a file in the other.' }
+        skippedNames: { type: array, items: { type: string }, description: The first 20 skipped entries. }
     WebsiteSecurity:
       type: object
       description: The protection of a website in the edge proxy.
@@ -7838,6 +8095,11 @@ components:
         steps: { type: array, items: { type: string } }
         step: { type: integer, description: The number of steps that are complete. }
         error: { type: [string, 'null'], description: An administrator gets the full error of the agent. Other users get a short text. }
+        result:
+          description: The summary of a job that succeeded, for the actions `MakeArchive` and `ExtractArchive`. Null for all other jobs.
+          oneOf:
+            - { $ref: '#/components/schemas/ArchiveSummary' }
+            - { type: 'null' }
         websiteId: { type: [string, 'null'] }
         databaseServerId: { type: [string, 'null'], description: The database server of the job. A user sees the jobs of the websites and of the database servers of its customers. }
         dnsZoneId: { type: [string, 'null'], description: The DNS zone of the job. A user sees the jobs of the DNS zones of its customers. }

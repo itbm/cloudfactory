@@ -247,6 +247,23 @@ export interface Job {
   databaseServerId?: string;
   /** The DNS zone that the job sends to a DNS server. */
   dnsZoneId?: string;
+  /** The summary of an archive job that succeeded (MakeArchive and ExtractArchive). */
+  result?: ArchiveSummary;
+}
+
+/** The summary of the agent for a new archive or for an extract. */
+export interface ArchiveSummary {
+  files: number;
+  directories: number;
+  links: number;
+  /** The size of the new archive, or the size of the files that the extract wrote. */
+  sizeBytes: number;
+  /** The files that the extract did not replace, because they exist. */
+  kept: number;
+  /** The entries that the agent did not use, for example names that go out of the folder. */
+  skipped: number;
+  /** The first 20 skipped entries. */
+  skippedNames: string[];
 }
 
 export interface ActivityItem {
@@ -1216,10 +1233,71 @@ export interface FileContent {
   content: string;
 }
 
-export interface LogLine {
+/** The sources of the logs: the access log of the edge proxy, and the output and the errors of the containers. */
+export type LogSource = "access" | "output" | "error";
+
+/** A request in the access log of the edge proxy. */
+export interface AccessEntry {
+  client: string;
+  method: string;
+  host: string;
+  /** The path and the query. */
+  uri: string;
+  proto: string;
+  status: number;
+  sizeBytes: number;
+  durationMs: number;
+  userAgent: string;
+  referer: string;
+}
+
+export interface LogEntry {
   at: string;
-  stream: "access" | "error";
+  source: LogSource;
+  /** The line of a container. Empty for a request. */
   text: string;
+  access: AccessEntry | null;
+}
+
+export interface LogCount {
+  value: string;
+  count: number;
+}
+
+/** The counts of all the entries that agree with a search, on all pages. */
+export interface LogSummary {
+  total: number;
+  sources: Record<LogSource, number>;
+  statuses: Record<"1xx" | "2xx" | "3xx" | "4xx" | "5xx", number>;
+  topPaths: LogCount[];
+  topClients: LogCount[];
+  sizeBytes: number;
+  /** The time of the oldest entry that the server keeps. */
+  oldest: string | null;
+}
+
+export interface LogSearchResult {
+  /** The newest entry first. */
+  entries: LogEntry[];
+  /** The cursor of the next page of older entries. */
+  next: string | null;
+  summary: LogSummary | null;
+}
+
+/** A search of the logs. An empty value is no filter. */
+export interface LogQuery {
+  sources?: LogSource[];
+  q?: string;
+  /** Status codes or classes, for example "404" or "5xx". */
+  status?: string[];
+  method?: string[];
+  /** An IP address or a network, for example "203.0.113.0/24". */
+  client?: string;
+  from?: string;
+  to?: string;
+  cursor?: string;
+  limit?: number;
+  summary?: boolean;
 }
 
 export type FirewallMode = "off" | "detect" | "block";
@@ -1614,8 +1692,9 @@ export interface PluginPageSession {
 // Usage history and usage alerts. The panel reads the history when the user opens a graph.
 
 export type UsageRange = "24h" | "7d" | "30d" | "90d" | "1y";
-export type UsageSubject = "website" | "server" | "database_server";
-export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes";
+export type UsageSubject = "website" | "server" | "database_server" | "mailbox";
+/** "storage" is the size of a mailbox (FR-603). */
+export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes" | "storage";
 
 /** One point of a graph. A value is null when no report is in the point. */
 export interface UsagePoint {

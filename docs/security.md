@@ -82,6 +82,21 @@ The product specification, section 6.4, gives the requirements.
 - The file manager opens the directory of the website as a root directory (`os.Root` in
   Go). The kernel refuses a path that goes out of it, also through a symbolic link. The API
   and the agent check each path with the same rule (`filePath` in `schema/input-rules.json`).
+- An extract writes in an `os.Root` of the destination directory. An entry with `..` or an
+  absolute name, or a link that goes out of the destination, thus cannot change a file out
+  of that directory (zip slip). The agent skips these entries and shows their names in the
+  summary of the job.
+- An extract does not use the owner or the group of an entry. It removes the bits setuid,
+  setgid and sticky, and the write permission for the group and the others. It does not make
+  devices, FIFOs or sockets. It refuses an encrypted zip entry.
+- An extract stops at 1,000,000 entries or at 64 GiB of file content, also for a small
+  archive with a very large content. The disk limit of the website applies too.
+- A new archive does not go through a symbolic link: it keeps the link as a link. It does
+  not put the owner of a file in the archive.
+- A change of permissions does not change a symbolic link and does not go through a link,
+  also when it is recursive. The bits setuid, setgid and sticky are not possible. All files
+  belong to the website user, and the other websites have other Unix users. Thus the group
+  and other permissions do not give another website access to the files.
 - A cron command runs in the gVisor container of the website. A build runs in a second
   gVisor container with all capabilities dropped, a read-only root file system and the
   limits of a website. The firewall rules for the website user apply to both.
@@ -139,6 +154,18 @@ The product specification, section 6.4, gives the requirements.
 - The panel records each change of a file, a cron job and a Git source, and each command
   that a user runs, in the audit log.
   It does not record the content of a file.
+- The access log of the edge proxy goes to the agent on `169.254.77.1:19514`. The firewall
+  lets only root and the user `cf-edge` connect to the private service address, so a website
+  cannot send entries. The agent, not the website, sets the website ID of each route, so a
+  request cannot put an entry in the log of a different website.
+- The access log has the client addresses, the URIs with their queries, the user agents and
+  the referrers of the visitors. It does not have the cookies, the `Authorization` header or
+  the other headers. The agent keeps it for 30 days at most. A user reads only the logs of
+  the websites that the user can see. Only an administrator reads the server log, which has
+  the requests to the panel and the webmail.
+- The search of the container log runs as the website user, with the same limits as the file
+  manager. The agent removes the control characters from each entry (finding G5-09), and the
+  CLI removes them again before it writes to a terminal.
 
 ## The web terminal
 

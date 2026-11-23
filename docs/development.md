@@ -110,8 +110,11 @@ HTTP status 200 and a page with its name. A check with `fail` in its path gets n
 check that expects a different status or a text that is not on the page fails.
 
 In the demonstration mode, the file manager shows a small set of sample files for each
-website, and keeps your changes in the cache. The logs are sample lines. **Run a command** gives a sample output for some usual commands,
-for example `php -v`, `php artisan migrate` and `composer install`.
+website, and keeps your changes in the cache. The sample files include the archive
+`/site-2026-10.zip`, which you can extract. An archive that you make has the selected files.
+The logs are sample entries for the last two days. The search and its filters work on these
+entries. **Run a command** gives a sample output for some usual commands, for example `php -v`,
+`php artisan migrate` and `composer install`.
 
 The demo mode does not ask the public DNS. For a DNS zone with a name that starts with
 `elsewhere.`, it answers that the domain uses the name servers of a registrar. For each other
@@ -404,6 +407,10 @@ not change is between them. Obey these rules:
   one file for each request.
 - Put one item on each line of a list. Put a new item in alphabetical order, or after the
   item that is nearest to it in subject. Do not add all new items at the end of a list.
+- Tests check the alphabetical order of the lists that each feature changes: the methods of
+  the agent service in `agent.proto` and in `agent/internal/server/server.go`
+  (`TestMethodOrder`), the cases and the steps of `AgentAction` (`AgentActionOrderTest`), and the
+  paths of `api/app/Demo/Fixtures.php` (`DemoTest`).
 - Do not write a comment that names each item of a list. Each new item then changes the
   comment.
 - In a document, separate the items with a blank line. A Markdown table has no blank lines

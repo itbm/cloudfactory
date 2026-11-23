@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
-import type { CronJob, Deploy, WebsiteCommand } from "../api/types";
+import type { CronJob, Deploy, LogEntry, LogSearchResult, WebsiteCommand } from "../api/types";
 import { toBase64 } from "../features/FileManager";
 import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelApi";
 
@@ -25,6 +25,12 @@ async function openPublic() {
   await screen.findAllByText("composer.json");
   fireEvent.click(screen.getByRole("button", { name: /^Folder\s*public$/ }));
   await screen.findAllByText("index.php");
+}
+
+/** Opens the menu of a row of the file list, and selects an item. */
+function menu(name: string, item: string) {
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${name}` }));
+  fireEvent.click(screen.getByRole("menuitem", { name: item }));
 }
 
 describe("the file manager", () => {
@@ -61,10 +67,97 @@ describe("the file manager", () => {
   it("removes a file after a confirmation", async () => {
     const { api, id } = await open("shop.acme.example.com", "files");
     await openPublic();
-    fireEvent.click(screen.getByRole("button", { name: /^Remove\s*index\.php$/ }));
+    menu("index.php", "Remove");
     api.on(`DELETE /websites/${id}/files?path=%2Fpublic%2Findex.php`, () => [204, null]);
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(api.changes.at(-1)?.method).toBe("DELETE"));
+  });
+
+  it("shows the permissions and changes them with the check boxes", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await openPublic();
+    expect(screen.getAllByText("0640").length).toBe(2);
+    menu("index.php", "Permissions");
+    const dialog = within(screen.getByRole("dialog"));
+    const octal = dialog.getByLabelText("Octal value (file)") as HTMLInputElement;
+    expect(octal.value).toBe("0640");
+    fireEvent.click(dialog.getByLabelText("Others: read (file)"));
+    expect(octal.value).toBe("0644");
+    expect(dialog.getByText("rw-r--r--")).toBeTruthy();
+    fireEvent.change(octal, { target: { value: "64" } });
+    expect(dialog.getByText("Enter 3 octal digits, for example 644 or 0755.")).toBeTruthy();
+    expect((dialog.getByRole("button", { name: "Change" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(octal, { target: { value: "600" } });
+    api.on(`PUT /websites/${id}/files/permissions`, () => ({ file: { name: "index.php", path: "/public/index.php", type: "file", sizeBytes: 103, modifiedAt: "2026-11-14T10:00:00Z", mode: "0600" }, changed: 1 }));
+    fireEvent.click(dialog.getByRole("button", { name: "Change" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toEqual({ method: "PUT", path: `/websites/${id}/files/permissions`, body: { path: "/public/index.php", mode: "600" } });
+  });
+
+  it("changes the permissions of a folder and of all files in it", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await openPublic();
+    menu("css", "Permissions");
+    const dialog = within(screen.getByRole("dialog"));
+    // A folder must keep Read and Open for the owner.
+    fireEvent.click(dialog.getByLabelText("Owner: open (folders)"));
+    expect(dialog.getByText("The owner must keep Read and Open for a folder.")).toBeTruthy();
+    fireEvent.click(dialog.getByLabelText("Owner: open (folders)"));
+    fireEvent.click(dialog.getByLabelText("Also change all folders and files in this folder"));
+    fireEvent.click(dialog.getByLabelText("Others: open (folders)"));
+    fireEvent.click(dialog.getByLabelText("Others: read (folders)"));
+    fireEvent.change(dialog.getByLabelText("Octal value (files)"), { target: { value: "0644" } });
+    api.on(`PUT /websites/${id}/files/permissions`, () => ({ file: { name: "css", path: "/public/css", type: "directory", sizeBytes: 0, modifiedAt: "2026-11-14T10:00:00Z", mode: "0755" }, changed: 7 }));
+    fireEvent.click(dialog.getByRole("button", { name: "Change" }));
+    expect(await screen.findByText("Changed the permissions of 7 files and folders in /public/css.")).toBeTruthy();
+    expect(api.changes.at(-1)?.body).toEqual({ path: "/public/css", mode: "0755", recursive: true, fileMode: "0644" });
+  });
+
+  it("makes an archive of the selected files and shows the summary of the job", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await openPublic();
+    fireEvent.click(screen.getByLabelText("Select index.php"));
+    fireEvent.click(screen.getByLabelText("Select robots.txt"));
+    expect(screen.getByText("2 items selected")).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("region", { name: "Selected files" })).getByRole("button", { name: "Make archive" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText("Name of the archive"), { target: { value: "pages" } });
+    fireEvent.change(dialog.getByLabelText("Format"), { target: { value: ".tar.gz" } });
+    expect(dialog.getByText("/public/pages.tar.gz")).toBeTruthy();
+    const job = apiJob({ websiteId: id, action: "MakeArchive", title: "Make archive", ref: "/public/pages.tar.gz", steps: ["Make the archive"], step: 1, result: { files: 2, directories: 0, links: 0, sizeBytes: 2048, kept: 0, skipped: 0, skippedNames: [] } });
+    api.on(`POST /websites/${id}/files/archives`, () => [202, { job }]);
+    fireEvent.click(dialog.getByRole("button", { name: "Make archive" }));
+    expect(await screen.findByText(/^The archive pages\.tar\.gz is ready: 2 files and 0 folders/)).toBeTruthy();
+    expect(api.changes.find((c) => c.path.endsWith("/files/archives"))?.body).toEqual({ paths: ["/public/index.php", "/public/robots.txt"], path: "/public/pages.tar.gz" });
+    expect(screen.queryByText("2 items selected")).toBeNull();
+  });
+
+  it("extracts an archive and shows the entries that the server skipped", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await screen.findAllByText("site-2026-10.zip");
+    expect(screen.queryByRole("button", { name: /^Edit\s*site-2026-10\.zip$/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Extract\s*site-2026-10\.zip$/ }));
+    const dialog = within(screen.getByRole("dialog"));
+    expect((dialog.getByLabelText("Extract to the folder") as HTMLInputElement).value).toBe("/");
+    fireEvent.change(dialog.getByLabelText("Extract to the folder"), { target: { value: "restore" } });
+    fireEvent.click(dialog.getByLabelText("Replace files that exist"));
+    expect(dialog.getByText(/You cannot undo this/)).toBeTruthy();
+    const job = apiJob({ websiteId: id, action: "ExtractArchive", title: "Extract archive", ref: "/site-2026-10.zip", result: { files: 4, directories: 2, links: 0, sizeBytes: 900, kept: 0, skipped: 1, skippedNames: ["../evil.php"] } });
+    api.on(`POST /websites/${id}/files/extract`, () => [202, { job }]);
+    fireEvent.click(dialog.getByRole("button", { name: "Extract" }));
+    expect(await screen.findByText(/^Extracted site-2026-10\.zip to \/restore: 4 files and 2 folders\. The server skipped 1 entry/)).toBeTruthy();
+    expect(screen.getByText("../evil.php")).toBeTruthy();
+    expect(api.changes.find((c) => c.path.endsWith("/files/extract"))?.body).toEqual({ path: "/site-2026-10.zip", to: "/restore", overwrite: true });
+  });
+
+  it("shows the error of a failed archive job", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await screen.findAllByText("site-2026-10.zip");
+    fireEvent.click(screen.getByRole("button", { name: /^Extract\s*site-2026-10\.zip$/ }));
+    const job = apiJob({ websiteId: id, action: "ExtractArchive", title: "Extract archive", ref: "/site-2026-10.zip", state: "failed", error: "The archive is damaged or is not a supported archive." });
+    api.on(`POST /websites/${id}/files/extract`, () => [202, { job }]);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Extract" }));
+    expect(await screen.findByText("Extract archive /site-2026-10.zip failed. The archive is damaged or is not a supported archive.")).toBeTruthy();
   });
 
   it("encodes the bytes of an upload", () => {
@@ -82,12 +175,93 @@ describe("the file manager", () => {
 });
 
 describe("the logs of a website", () => {
-  it("shows the log lines and filters them", async () => {
-    await open("shop.acme.example.com", "logs");
+  const request: LogEntry = {
+    at: "2026-11-14T09:58:52.757Z", source: "access", text: "",
+    access: { client: "198.51.100.250", method: "POST", host: "shop.acme.example.com", uri: "/wp-login.php", proto: "HTTP/2.0", status: 404, sizeBytes: 548, durationMs: 1.2, userAgent: "zgrab", referer: "" },
+  };
+  const line: LogEntry = { at: "2026-11-14T09:58:52.700Z", source: "error", text: "PHP Warning:  Undefined array key", access: null };
+
+  /**
+   * The first page of a search with no filters: 45 requests and 5 lines of the errors, the
+   * newest first, with a summary. The tests do not use the logs of the fixtures.
+   */
+  function firstPage(): LogSearchResult {
+    const entries: LogEntry[] = Array.from({ length: 50 }, (_, i) => {
+      const at = new Date(Date.UTC(2026, 10, 14, 10, 0) - i * 60_000).toISOString();
+      if (i % 10 === 9) return { ...line, at };
+      const client = i % 3 === 0 ? "198.51.100.250" : "203.0.113.7";
+      return { ...request, at, access: { ...request.access!, client, method: "GET", uri: i % 2 ? "/" : "/products", status: i % 7 === 0 ? 500 : 200 } };
+    });
+    return {
+      entries, next: "page-2",
+      summary: {
+        total: 120, sources: { access: 108, output: 0, error: 12 }, statuses: { "1xx": 0, "2xx": 96, "3xx": 0, "4xx": 4, "5xx": 8 },
+        topPaths: [{ value: "/products", count: 60 }, { value: "/", count: 48 }], topClients: [{ value: "203.0.113.7", count: 72 }, { value: "198.51.100.250", count: 36 }],
+        sizeBytes: 912_000, oldest: "2026-11-12T10:00:00Z",
+      },
+    };
+  }
+
+  /** Signs in as an owner and opens the logs of a website, with firstPage as the answer. */
+  async function openLogs(): Promise<{ api: PanelApi; id: string }> {
+    const api = await signedIn("owner");
+    const id = website("shop.acme.example.com").id;
+    api.on(`GET /websites/${id}/logs?*`, () => firstPage());
+    render(<MemoryRouter initialEntries={[`/websites/${id}/logs`]}><App /></MemoryRouter>);
+    return { api, id };
+  }
+
+  it("shows the requests, the lines and the summary of the search", async () => {
+    await openLogs();
     const view = await screen.findByLabelText("Log lines");
-    await waitFor(() => expect(view.querySelectorAll("div").length).toBeGreaterThan(5));
-    fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "no line has this text" } });
-    expect(view.textContent).toBe("No lines match the filter.");
+    await waitFor(() => expect(view.querySelectorAll(".log-row")).toHaveLength(50));
+    const summary = screen.getByRole("region", { name: "Summary of the search" });
+    expect(summary.textContent).toContain("Requests");
+    expect(within(summary).getByRole("img").getAttribute("aria-label")).toMatch(/^Status codes: 2xx \d/);
+    expect(screen.getByRole("button", { name: "Load older entries" })).toBeTruthy();
+  });
+
+  it("sends the search and the filters to the API, and loads older entries", async () => {
+    const { api, id } = await openLogs();
+    await screen.findByRole("button", { name: "Load older entries" });
+    const paths: string[] = [];
+    api.on(`GET /websites/${id}/logs?*`, (_body, path) => {
+      paths.push(path);
+      const first = !path.includes("cursor=");
+      return { entries: first ? [request] : [line], next: first ? "page-2" : null, summary: null };
+    });
+    const base = `/websites/${id}/logs`;
+
+    fireEvent.change(screen.getByLabelText("Search the logs"), { target: { value: " wp-login " } });
+    fireEvent.change(screen.getByLabelText("Client"), { target: { value: "198.51.100.0/24" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?q=wp-login&client=198.51.100.0%2F24&limit=50&summary=1`));
+    fireEvent.click(screen.getByRole("button", { name: "4xx" }));
+    fireEvent.change(screen.getByLabelText("Method"), { target: { value: "POST" } });
+    fireEvent.click(screen.getByRole("button", { name: "Output" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?sources=access%2Cerror&q=wp-login&status=4xx&method=POST&client=198.51.100.0%2F24&limit=50&summary=1`));
+    expect(screen.getByText(/filters apply only to requests/)).toBeTruthy();
+
+    const view = screen.getByLabelText("Log lines");
+    await waitFor(() => expect(view.textContent).toContain("/wp-login.php"));
+    fireEvent.click(screen.getByRole("button", { name: "Load older entries" }));
+    await waitFor(() => expect(view.querySelectorAll(".log-row")).toHaveLength(2));
+    expect(paths.at(-1)).toBe(`${base}?sources=access%2Cerror&q=wp-login&status=4xx&method=POST&client=198.51.100.0%2F24&cursor=page-2&limit=50`);
+    expect(view.querySelector(".log-row.err")?.textContent).toContain("PHP Warning");
+    expect(screen.queryByRole("button", { name: "Load older entries" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?limit=50&summary=1`));
+  });
+
+  it("filters by a top client of the summary, and shows the error of the API", async () => {
+    const { api, id } = await openLogs();
+    const top = (await screen.findAllByRole("button", { name: /^Show the requests of / }))[0];
+    const client = top.getAttribute("aria-label")!.replace("Show the requests of ", "");
+    api.on(`GET /websites/${id}/logs?*`, () => [422, { message: "Enter an IP address or a network, for example 203.0.113.7 or 203.0.113.0/24.", errors: { client: ["Enter an IP address or a network."] } }]);
+    fireEvent.click(top);
+    expect((screen.getByLabelText("Client") as HTMLInputElement).value).toBe(client);
+    expect((await screen.findByRole("alert")).textContent).toContain("Enter an IP address");
   });
 });
 

@@ -66,6 +66,9 @@ final class InputRules
     /** The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, "%", "$" or backslash. */
     public const ENVIRONMENT_VALUE = '/^(?=[\\s\\S]{0,1024}\\z)(?:^[A-Za-z0-9_.,:\\/|@+=~-]+$)/D';
 
+    /** The permission bits of a file or a directory for the file manager, as an octal number, for example "0644" or "755". The bits setuid, setgid and sticky are not permitted. */
+    public const FILE_MODE = '/^(?:^0?[0-7]{3}$)/D';
+
     /** The path of a file or a directory in the files of a website, for the file manager. "/" is the directory of the website, which the container has at /app. The path has no empty part, no "." part, no ".." part, no control characters and no "/" at the end. */
     public const FILE_PATH = '/^(?=[\\s\\S]{0,1024}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^(\\/|(\\/[^\\/\\x00-\\x1f\\x7f]+)+)$)/D';
 
@@ -74,6 +77,12 @@ final class InputRules
 
     /** The address of a Git repository: HTTPS with no user name and no password, SSH as a URL, or the short SSH form "git@host:path". It cannot start with "-", and it cannot name a file or a helper program. */
     public const GIT_REPOSITORY = '/^(?=[\\s\\S]{0,300}\\z)(?![\\s\\S]*?(?:\\.\\.))(?![\\s\\S]*?(?:\\/\\/[^\\/]*\\/\\/))(?:^(https:\\/\\/[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?\\/[A-Za-z0-9_][A-Za-z0-9._~\\/-]{0,199}|ssh:\\/\\/[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?\\/[A-Za-z0-9_][A-Za-z0-9._~\\/-]{0,199}|[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[A-Za-z0-9_][A-Za-z0-9._~\\/-]{0,199})$)/D';
+
+    /** An HTTP method in upper case, for example "POST". */
+    public const HTTP_METHOD = '/^(?:^[A-Z]{1,16}$)/D';
+
+    /** An HTTP status code from 100 to 599, for example "404", or a class of status codes, for example "5xx". */
+    public const HTTP_STATUS = '/^(?:^[1-5]([0-9][0-9]|xx)$)/D';
 
     /** A ULID from the panel. */
     public const ID = '/^(?:^[0-9A-Za-z]{26}$)/D';
@@ -98,6 +107,12 @@ final class InputRules
 
     /** An IPv6 address in lower case, for the value of an AAAA record. It has only hexadecimal groups and colons: no IPv4 part and no zone. */
     public const IPV6 = '/^(?:^(([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,7}:|([0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,5}(:[0-9a-f]{1,4}){1,2}|([0-9a-f]{1,4}:){1,4}(:[0-9a-f]{1,4}){1,3}|([0-9a-f]{1,4}:){1,3}(:[0-9a-f]{1,4}){1,4}|([0-9a-f]{1,4}:){1,2}(:[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:(:[0-9a-f]{1,4}){1,6}|:(:[0-9a-f]{1,4}){1,7}|::)$)/D';
+
+    /** The value "next" of a search in the logs, which the agent makes. The search then gives the older entries. */
+    public const LOG_CURSOR = '/^(?=[\\s\\S]{0,512}\\z)(?:^[A-Za-z0-9_-]+$)/D';
+
+    /** The words of a search in the logs of a website. It is on one line and has no control characters. A word that starts with "-" must not be in an entry, and words in double quotation marks are one word. */
+    public const LOG_SEARCH = '/^(?=[\\s\\S]{0,200}\\z)(?:^[^\\x00-\\x1f\\x7f]+$)/D';
 
     /** A mail address in lower case, for example the destination of a forwarder. */
     public const MAIL_ADDRESS = '/^(?=[\\s\\S]{0,254}\\z)(?![\\s\\S]*?(?:\\.\\.))(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^[a-z0-9]([a-z0-9._+-]{0,62}[a-z0-9])?@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
@@ -183,9 +198,12 @@ final class InputRules
         'envName' => self::ENV_NAME,
         'envValue' => self::ENV_VALUE,
         'environmentValue' => self::ENVIRONMENT_VALUE,
+        'fileMode' => self::FILE_MODE,
         'filePath' => self::FILE_PATH,
         'gitBranch' => self::GIT_BRANCH,
         'gitRepository' => self::GIT_REPOSITORY,
+        'httpMethod' => self::HTTP_METHOD,
+        'httpStatus' => self::HTTP_STATUS,
         'id' => self::ID,
         'image' => self::IMAGE,
         'imageReference' => self::IMAGE_REFERENCE,
@@ -194,6 +212,8 @@ final class InputRules
         'iniValue' => self::INI_VALUE,
         'ipv4' => self::IPV4,
         'ipv6' => self::IPV6,
+        'logCursor' => self::LOG_CURSOR,
+        'logSearch' => self::LOG_SEARCH,
         'mailAddress' => self::MAIL_ADDRESS,
         'mailLocalPart' => self::MAIL_LOCAL_PART,
         'mailPasswordHash' => self::MAIL_PASSWORD_HASH,
@@ -238,9 +258,12 @@ final class InputRules
         'envName' => 'Use 1 to 64 letters, digits and underscores. Do not start with a digit. PORT, HOST, HOME, PATH, PWD, SERVER_NAME and names that start with CF_, FRANKENPHP_, CADDY_, XDG_ or APACHE_ are not available.',
         'envValue' => 'Enter a value of up to 4096 characters on one line.',
         'environmentValue' => 'Use 1 to 1024 letters, digits and the characters _ . , : / | @ + = ~ -.',
+        'fileMode' => 'Enter the permissions as 3 octal digits, for example 644 or 0755.',
         'filePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'gitBranch' => 'Enter the name of a branch, for example main. Use letters, digits, dots, underscores, hyphens and slashes.',
         'gitRepository' => 'Enter the address of a Git repository, for example https://github.com/acme/shop.git or git@github.com:acme/shop.git.',
+        'httpMethod' => 'Enter a method in upper-case letters, for example POST.',
+        'httpStatus' => 'Enter a status code such as 404, or a class such as 5xx.',
         'id' => 'Enter an ID of 26 letters and digits.',
         'image' => 'Enter an image reference with its registry and a tag, for example ghcr.io/team/app:1.2.',
         'imageReference' => 'Enter an image reference with its registry and no tag, for example ghcr.io/team/app.',
@@ -249,6 +272,8 @@ final class InputRules
         'iniValue' => 'Use at most 200 characters on one line, with no double quotes and no backslash at the end.',
         'ipv4' => 'Enter an IPv4 address, for example 203.0.113.10.',
         'ipv6' => 'Enter an IPv6 address in lower-case letters, for example 2001:db8::10.',
+        'logCursor' => 'Use the value next of an earlier search.',
+        'logSearch' => 'Enter at most 200 characters on one line.',
         'mailAddress' => 'Enter a mail address in lower-case letters, for example sales@example.com.',
         'mailLocalPart' => 'Use 1 to 64 lower-case letters, digits, dots, hyphens and underscores. Start and end with a letter or a digit.',
         'mailPasswordHash' => 'Enter a bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt hash.',
@@ -289,6 +314,9 @@ final class InputRules
 
     /** The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names. */
     public const RESERVED_RUNTIME_NAMES = ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'static', 'edge', 'mail', 'dns', 'database', 'mariadb', 'postgresql', 'valkey'];
+
+    /** The largest number of files and directories that the file manager puts in one new archive. */
+    public const MAX_ARCHIVE_PATHS = 2000;
 
     /** The largest number of build commands of a deploy. */
     public const MAX_BUILD_COMMANDS = 10;
@@ -343,6 +371,12 @@ final class InputRules
 
     /** The largest number of IP addresses and ranges in the allow list or in the block list of a website. */
     public const MAX_IP_RULES = 200;
+
+    /** The largest number of entries in one page of a search in the logs. */
+    public const MAX_LOG_ENTRIES = 1000;
+
+    /** The largest number of status codes or of methods in a search in the logs. */
+    public const MAX_LOG_FILTERS = 10;
 
     /** The smallest sign-in limit of a website that is not 0. */
     public const MIN_LOW_SIGN_IN_LIMIT = 3;

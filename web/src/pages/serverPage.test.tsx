@@ -172,3 +172,22 @@ describe("the database servers of each customer", () => {
     expect(api.changes.at(-1)!.body).toEqual({ roles: server("web-2").roles, dnsName: "ns3.panel.example" });
   });
 });
+
+describe("the access log of a server", () => {
+  it("loads only when the administrator opens it, and has only requests", async () => {
+    const id = server("web-1").id;
+    const paths: string[] = [];
+    api.on(`GET /servers/${id}/access-log?*`, (_body, path) => {
+      paths.push(path);
+      return { entries: [{ at: "2026-11-14T09:58:00Z", source: "access", text: "", access: { client: "203.0.113.7", method: "GET", host: "panel.example.com", uri: "/api/v1/me", proto: "HTTP/2.0", status: 200, sizeBytes: 812, durationMs: 4.1, userAgent: "", referer: "" } }], next: null, summary: null };
+    });
+    page("web-1");
+    expect(paths).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Show the access log" }));
+    const view = await screen.findByLabelText("Log lines");
+    await waitFor(() => expect(view.textContent).toContain("panel.example.com/api/v1/me"));
+    expect(paths).toEqual([`/servers/${id}/access-log?limit=50&summary=1`]);
+    expect(screen.queryByRole("group", { name: "Sources" })).toBeNull();
+  });
+});
+

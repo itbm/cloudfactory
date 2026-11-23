@@ -254,7 +254,7 @@ The start points for common applications.
 
 ### owner-11-website-files
 
-The file manager of a website. The server does each operation as the Unix user of the website.
+The file manager of a website, with the permissions of each file. Select files to make an archive. An archive has an **Extract** button. The server does each operation as the Unix user of the website.
 
 ![owner-11-website-files](owner-11-website-files.png)
 
@@ -272,7 +272,7 @@ The cron jobs of a website, with the result of the last run of each one.
 
 ### owner-14-website-logs
 
-The last log lines of a website.
+The logs of a website: one search of the requests to its domains and of the output and the errors of its containers, with a summary of the status codes, the top paths and the top clients.
 
 ![owner-14-website-logs](owner-14-website-logs.png)
 
