@@ -184,3 +184,30 @@ func TestPacksIsABuiltInCommand(t *testing.T) {
 		}
 	}
 }
+
+// A cf-php/1 pack adds versions of PHP to a built-in PHP runtime. It has no type and no
+// commands, so the CLI shows the PHP runtime.
+func TestPackRuntimeOfAPHPPack(t *testing.T) {
+	got := packRuntime(map[string]any{"runtime": map[string]any{"contract": "cf-php/1", "type": "", "defaultCommand": "", "defaultInstall": "", "family": "apache-php-fpm"}, "database": nil})
+	if want := "Runtime:       cf-php/1, adds PHP versions to apache-php-fpm\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	got = packRuntime(map[string]any{"runtime": map[string]any{"contract": "cf-runtime/1", "type": "app", "defaultCommand": "./server", "defaultInstall": "", "family": ""}})
+	if !strings.Contains(got, "Start command: ./server\n") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// A database pack (cf-database/1) adds an engine. An installed pack also has its block of host
+// ports. A manifest before the install has no block.
+func TestPackRuntimeOfADatabasePack(t *testing.T) {
+	empty := map[string]any{"contract": "", "type": "", "defaultCommand": "", "defaultInstall": "", "family": ""}
+	got := packRuntime(map[string]any{"runtime": empty, "database": map[string]any{"contract": "cf-database/1", "port": 3306.0, "dataDir": "/var/lib/mysql", "firstPort": 20000.0, "lastPort": 20049.0, "databaseServers": 2.0}})
+	if want := "Database:      cf-database/1, port 3306, data in /var/lib/mysql\nHost ports:    20000 to 20049, 2 database servers\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	got = packRuntime(map[string]any{"runtime": empty, "database": map[string]any{"contract": "cf-database/1", "port": 27017.0, "dataDir": "/data/db"}})
+	if want := "Database:      cf-database/1, port 27017, data in /data/db\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

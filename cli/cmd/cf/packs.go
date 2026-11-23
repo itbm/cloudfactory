@@ -48,18 +48,40 @@ func packVersions(images any) string {
 	return strings.Join(versions, ", ")
 }
 
+// packRuntime gives the lines of the runtime or the database engine of a pack. A cf-runtime/1
+// pack has a type and commands. A cf-php/1 pack adds versions of PHP to a built-in PHP runtime.
+// A database pack (cf-database/1) adds an engine with its port and its data directory.
+func packRuntime(p map[string]any) string {
+	if db, ok := p["database"].(map[string]any); ok {
+		line := fmt.Sprintf("Database:      %s, port %s, data in %s\n", cell(db["contract"]), cell(db["port"]), cell(db["dataDir"]))
+		if db["firstPort"] != nil {
+			line += fmt.Sprintf("Host ports:    %s to %s, %s database servers\n", cell(db["firstPort"]), cell(db["lastPort"]), cell(db["databaseServers"]))
+		}
+		return line
+	}
+	rt, _ := p["runtime"].(map[string]any)
+	if rt["contract"] == "cf-php/1" {
+		return fmt.Sprintf("Runtime:       %s, adds PHP versions to %s\n", cell(rt["contract"]), cell(rt["family"]))
+	}
+	return fmt.Sprintf("Runtime:       %s, type %s\nStart command: %s\nInstall:       %s\n",
+		cell(rt["contract"]), cell(rt["type"]), cell(rt["defaultCommand"]), cell(rt["defaultInstall"]))
+}
+
 func (a *app) printPack(p map[string]any) error {
 	if a.json {
 		return a.printJSON(p)
 	}
-	rt, _ := p["runtime"].(map[string]any)
-	fmt.Fprintf(a.out, "Name:          %s %s (%s)\nID:            %s\nPublisher:     %s, %s\nRuntime:       %s, type %s\nStart command: %s\nInstall:       %s\n",
-		cell(p["name"]), cell(p["version"]), cell(p["slug"]), cell(p["id"]), cell(p["publisher"]), packSigner(p["signedBy"]),
-		cell(rt["contract"]), cell(rt["type"]), cell(rt["defaultCommand"]), cell(rt["defaultInstall"]))
+	fmt.Fprintf(a.out, "Name:          %s %s (%s)\nID:            %s\nPublisher:     %s, %s\n%s",
+		cell(p["name"]), cell(p["version"]), cell(p["slug"]), cell(p["id"]), cell(p["publisher"]), packSigner(p["signedBy"]), packRuntime(p))
 	images, _ := p["images"].([]any)
+	_, database := p["database"].(map[string]any)
 	for _, x := range images {
 		i, _ := x.(map[string]any)
-		line := fmt.Sprintf("Image:         %s  %s:%s@%s  websites %s", cell(i["version"]), cell(i["reference"]), cell(i["tag"]), cell(i["digest"]), cell(i["websites"]))
+		use := "websites " + cell(i["websites"])
+		if database {
+			use = "database servers " + cell(i["databaseServers"])
+		}
+		line := fmt.Sprintf("Image:         %s  %s:%s@%s  %s", cell(i["version"]), cell(i["reference"]), cell(i["tag"]), cell(i["digest"]), use)
 		if i["supportEndsAt"] != nil {
 			line += "  support ends " + cell(i["supportEndsAt"])
 		}
@@ -82,10 +104,8 @@ func (a *app) printPackPreview(out map[string]any) error {
 		return a.printJSON(out)
 	}
 	m, _ := out["manifest"].(map[string]any)
-	rt, _ := m["runtime"].(map[string]any)
-	fmt.Fprintf(a.out, "Pack:          %s %s (%s)\nPublisher:     %s, %s\nRuntime:       %s, type %s\nStart command: %s\nInstall:       %s\n",
-		cell(m["name"]), cell(m["version"]), cell(m["slug"]), cell(m["publisher"]), packSigner(out["signedBy"]),
-		cell(rt["contract"]), cell(rt["type"]), cell(rt["defaultCommand"]), cell(rt["defaultInstall"]))
+	fmt.Fprintf(a.out, "Pack:          %s %s (%s)\nPublisher:     %s, %s\n%s",
+		cell(m["name"]), cell(m["version"]), cell(m["slug"]), cell(m["publisher"]), packSigner(out["signedBy"]), packRuntime(m))
 	images, _ := m["images"].([]any)
 	for _, x := range images {
 		i, _ := x.(map[string]any)
@@ -135,7 +155,7 @@ func (a *app) packs(ctx context.Context, sub string, args []string) error {
 		for _, p := range out.Data {
 			p["versions"] = packVersions(p["images"])
 		}
-		a.table(out.Data, []string{"slug", "name", "version", "publisher", "signed", "versions", "id"})
+		a.table(out.Data, []string{"slug", "kind", "name", "version", "publisher", "signed", "versions", "id"})
 		return nil
 	case "preview", "check":
 		m, s, _, err := a.manifestFlags(sub, args, false)

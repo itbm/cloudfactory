@@ -139,6 +139,32 @@ class Server extends Model
         return in_array($runtime, $this->agent_runtimes ?? ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom'], true);
     }
 
+    /** True when the agent of the server reports the pack, in any version. */
+    public function hasPack(string $slug): bool
+    {
+        return collect($this->agent_packs ?? [])->contains(fn ($p) => is_array($p) && ($p['slug'] ?? null) === $slug);
+    }
+
+    /**
+     * True when a website on the server can use the image. An image of a pack needs an agent
+     * that loaded the pack: the agent lets Podman pull an image of a pack only with the key of
+     * the pack. The agent reports the runtime of a pack of a new runtime. A PHP pack has no
+     * runtime of its own, so the agent must report the pack.
+     */
+    public function canRun(Image $image): bool
+    {
+        if ($image->pack_id === null) {
+            return true;
+        }
+        if ($image->isPhp()) {
+            $slug = $image->pack?->slug;
+
+            return $slug !== null && $this->hasPack($slug);
+        }
+
+        return $this->hasRuntime($image->family);
+    }
+
     public function websites(): HasMany
     {
         return $this->hasMany(Website::class);

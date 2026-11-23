@@ -45,6 +45,9 @@ return new class extends Migration
             $table->foreignUlid('server_id')->constrained();
             $table->foreignUlid('plan_id')->constrained();
             $table->string('engine');
+            // The version of a pack engine, for example "8.4": an image of the pack. It does
+            // not change. Null for a built-in engine.
+            $table->string('engine_version', 16)->nullable();
             $table->string('name');
             // The port on the address of the customer. The first database server of an engine
             // has the usual port of the engine.

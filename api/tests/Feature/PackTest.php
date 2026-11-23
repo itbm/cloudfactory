@@ -445,6 +445,105 @@ class PackTest extends TestCase
             ->assertJsonValidationErrors(['manifest' => 'The image ghcr.io/example/cf-zig is the image Zig of the panel. A pack needs its own image repository.']);
     }
 
+    /** The first-party PHP pack of the repository, with changes. */
+    private function phpManifest(array $changes = [], array $images = []): string
+    {
+        $m = json_decode((string) file_get_contents(base_path('../plugins/packs/php-legacy-apache/pack.json')), true);
+        foreach ($images as $i => $image) {
+            $m['images'][$i] = $image === null ? null : array_merge($m['images'][$i] ?? [], $image);
+        }
+        $m['images'] = array_values(array_filter($m['images']));
+
+        return json_encode(array_merge($m, $changes), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+    }
+
+    public function test_a_php_pack_adds_versions_of_php_to_a_built_in_runtime(): void
+    {
+        $this->server();
+        $this->admin();
+        $this->trustKey();
+        $manifest = $this->phpManifest();
+        $this->postJson('/api/v1/packs/preview', ['manifest' => $manifest, 'signature' => $this->sign($manifest)])->assertOk()
+            ->assertJsonPath('manifest.runtime', ['contract' => 'cf-php/1', 'type' => '', 'defaultCommand' => '', 'defaultInstall' => '', 'family' => 'apache-php-fpm']);
+        $pack = $this->install($manifest);
+        $this->assertSame(['php-legacy-apache', ['8.3', '8.2']], [$pack['slug'], array_column($pack['images'], 'version')]);
+        $this->assertSame('cf-php/1', $pack['runtime']['contract']);
+
+        // Each version is one more image of the built-in runtime, with the name of its PHP
+        // version. It is not a runtime that runs a start command.
+        $image = Image::where('php_version', '8.2')->firstOrFail();
+        $this->assertSame(['Apache + PHP-FPM · PHP 8.2', 'apache-php-fpm', 'ghcr.io/itbm/apache-php8.2', '0.0.0', '2026-12-31', null, null],
+            [$image->name, $image->family, $image->reference, $image->tag, $image->support_ends_at->toDateString(), $image->default_command, $image->default_install]);
+        $this->assertTrue($image->isPhp());
+        $this->assertFalse($image->isApp());
+        $this->assertNull($image->appDefaults());
+        $this->assertSame('php', $image->kind());
+        // The pack adds no runtime: the agent of each server runs the images as Apache + PHP-FPM.
+        $this->assertSame(0, Image::where('family', 'php-legacy-apache')->count());
+    }
+
+    public function test_a_php_pack_adds_only_a_version_that_the_runtime_does_not_have(): void
+    {
+        $this->server();
+        $this->admin();
+        $this->trustKey();
+        $this->image(['name' => 'Apache + PHP-FPM · PHP 8.4', 'family' => 'apache-php-fpm', 'php_version' => '8.4', 'reference' => 'ghcr.io/itbm/apache-php8.4']);
+        $twice = $this->phpManifest([], [['version' => '8.4', 'ref' => 'ghcr.io/example/apache-php8.4:1.0']]);
+        $this->postJson('/api/v1/packs', ['manifest' => $twice, 'signature' => $this->sign($twice), 'password' => 'password'])
+            ->assertJsonValidationErrors(['manifest' => 'The panel has the image Apache + PHP-FPM · PHP 8.4 already. A PHP pack can add only a version of PHP that the runtime does not have.']);
+        // FrankenPHP does not have PHP 8.4 here, so a FrankenPHP pack can add it.
+        $franken = $this->phpManifest(['slug' => 'php-franken', 'runtime' => ['contract' => 'cf-php/1', 'family' => 'frankenphp']], [['version' => '8.4', 'ref' => 'ghcr.io/example/frankenphp-php8.4:1.0'], ['ref' => 'ghcr.io/example/frankenphp-php8.2:1.0']]);
+        $this->postJson('/api/v1/packs', ['manifest' => $franken, 'signature' => $this->sign($franken), 'password' => 'password'])->assertCreated();
+        $this->assertSame('FrankenPHP · PHP 8.4', Image::where('family', 'frankenphp')->where('php_version', '8.4')->value('name'));
+
+        // An update cannot change the runtime of the pack.
+        $pack = Pack::where('slug', 'php-franken')->firstOrFail();
+        $apache = $this->phpManifest(['slug' => 'php-franken', 'version' => '0.0.1'], [['version' => '8.3', 'ref' => 'ghcr.io/example/frankenphp-php8.4:1.0'], ['ref' => 'ghcr.io/example/frankenphp-php8.2:1.0']]);
+        $this->putJson("/api/v1/packs/{$pack->id}", ['manifest' => $apache, 'signature' => $this->sign($apache), 'password' => 'password'])
+            ->assertJsonValidationErrors(['manifest' => 'The new version has a different runtime. An update of a pack cannot change its runtime contract or its PHP runtime.']);
+        $app = $this->manifest(['slug' => 'php-franken', 'version' => '0.0.1'], [['ref' => 'ghcr.io/example/frankenphp-php8.4:1.0'], ['ref' => 'ghcr.io/example/frankenphp-php8.2:1.0']]);
+        $this->putJson("/api/v1/packs/{$pack->id}", ['manifest' => $app, 'signature' => $this->sign($app), 'password' => 'password'])
+            ->assertJsonValidationErrors('manifest');
+    }
+
+    public function test_a_website_of_a_php_pack_goes_to_a_server_that_loaded_the_pack(): void
+    {
+        $this->admin();
+        $this->trustKey();
+        $this->install($this->phpManifest());
+        $php82 = Image::where('php_version', '8.2')->firstOrFail();
+        // All agents report the built-in runtime. Only the agent that loaded the pack can pull
+        // its images.
+        $old = $this->server(['name' => 'web-old', 'agent_packs' => []]);
+        $new = $this->server(['name' => 'web-new', 'agent_packs' => [['slug' => 'php-legacy-apache', 'version' => '0.0.0']]]);
+        $customer = $this->customer();
+        $this->actingWith($this->user(Role::Owner, $customer));
+
+        $listed = collect($this->getJson('/api/v1/runtime-images')->assertOk()->json('data'))->firstWhere('id', $php82->id);
+        $this->assertSame(['family' => 'apache-php-fpm', 'phpVersion' => '8.2', 'defaults' => null], array_intersect_key($listed, array_flip(['family', 'phpVersion', 'defaults'])));
+        $this->assertSame('php-legacy-apache', $listed['pack']['slug']);
+
+        $this->postJson('/api/v1/websites', ['name' => 'shop.acme.example', 'imageId' => $php82->id])->assertStatus(202)
+            ->assertJsonPath('website.runtime.family', 'apache-php-fpm')->assertJsonPath('website.runtime.phpVersion', '8.2');
+        $job = AgentJob::where('action', AgentAction::CreateWebsite->value)->latest('id')->firstOrFail();
+        $this->assertSame($new->id, $job->server_id);
+        $p = $job->payload['website'];
+        $this->assertSame(['apache-php-fpm', '8.2', 'ghcr.io/itbm/apache-php8.2:0.0.0'], [$p['runtime'], $p['phpVersion'], $p['image']]);
+
+        // An administrator who selects a server without the pack gets an error.
+        $this->actingWith($this->user(Role::Administrator));
+        $this->postJson('/api/v1/websites', ['name' => 'old.acme.example', 'imageId' => $php82->id, 'serverId' => $old->id, 'customerId' => $customer->id])
+            ->assertJsonValidationErrors(['serverId' => 'The agent on the server web-old does not have the pack Older PHP for Apache + PHP-FPM yet. The panel sends the packs to each web server: wait for the server to load the pack, or select a different server.']);
+
+        // A website on PHP 8.4 changes to PHP 8.2 only on a server that loaded the pack.
+        $php84 = $this->image(['name' => 'Apache + PHP-FPM · PHP 8.4', 'family' => 'apache-php-fpm', 'php_version' => '8.4', 'reference' => 'ghcr.io/itbm/apache-php8.4']);
+        $there = $this->website($customer, $old, $php84, 'there.acme.example');
+        $this->putJson("/api/v1/websites/{$there->id}/runtime", ['imageId' => $php82->id])->assertJsonValidationErrors('imageId');
+        $here = $this->website($customer, $new, $php84, 'here.acme.example');
+        $this->putJson("/api/v1/websites/{$here->id}/runtime", ['imageId' => $php82->id])->assertStatus(202);
+        $this->assertSame($php82->id, $here->fresh()->image_id);
+    }
+
     public function test_only_an_administrator_with_the_packs_scope_manages_packs(): void
     {
         $this->actingWith($this->user(Role::Owner, $this->customer()));

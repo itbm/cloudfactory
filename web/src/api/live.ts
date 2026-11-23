@@ -16,6 +16,7 @@ import type {
   CustomerCertificate,
   Database,
   DatabaseGrant,
+  DatabaseEngineInfo,
   DatabaseServer,
   MailAlias,
   MailDomain,
@@ -190,7 +191,7 @@ interface ApiPanelCertificate {
   domain: string; method: PanelCertificate["method"]; state: PanelCertificate["state"]; expiresAt: string | null; caCertificate: string | null; caSha256: string | null;
   reportedAt: string | null; letsEncryptAvailable: boolean; serversWithoutCa: string[]; job: ApiJob | null;
 }
-interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt"> { usage: DatabaseServer["usage"] | null; createdAt: string | null }
+interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt" | "engineVersion"> { usage: DatabaseServer["usage"] | null; createdAt: string | null; engineVersion?: string | null }
 interface ApiDnsRecord extends Omit<DnsRecord, "priority" | "managed"> { priority: number | null; managed: DnsRecord["managed"] | null }
 interface ApiDnsZoneProvider extends Omit<DnsZoneProvider, "error" | "syncedAt" | "changes" | "imported" | "handover"> {
   error: string | null; syncedAt: string | null; changes: DnsZoneProvider["changes"] | null; imported: DnsZoneProvider["imported"] | null; handover: { endsAt: string | null } | null;
@@ -334,7 +335,7 @@ interface ApiMailDomain extends Omit<MailDomain, "dnsCheckedAt"> { dnsCheckedAt:
 interface ApiMailbox extends Omit<Mailbox, "usedBytes"> { usedBytes: number | null }
 export const toMailDomain = (d: ApiMailDomain): MailDomain => ({ ...d, records: d.records ?? [], dnsCheckedAt: d.dnsCheckedAt ?? undefined });
 export const toMailbox = (m: ApiMailbox): Mailbox => ({ ...m, usedBytes: m.usedBytes ?? 0 });
-export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
+export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, engineVersion: s.engineVersion ?? null, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
 
 export const toDnsRecord = (r: ApiDnsRecord): DnsRecord => ({ id: r.id, name: r.name, type: r.type, value: r.value, ttl: r.ttl, priority: r.priority ?? undefined, managed: r.managed ?? undefined });
 
@@ -475,7 +476,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, databaseEngines, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -492,6 +493,8 @@ export async function load(previous: State): Promise<State> {
     admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
     // The database servers of the customers that the user can see.
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
+    // The engines of the database packs. A panel API of an earlier release has the built-in engines only.
+    optional(request<{ data: DatabaseEngineInfo[] }>("GET", "/database-engines").then((r) => r.data), previous.databaseEngines),
     // The DNS zones, and the name servers that a customer gives to the registrar of a domain.
     optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
     // The accounts at external DNS providers, and the providers of the plugins.
@@ -561,6 +564,7 @@ export async function load(previous: State): Promise<State> {
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
     databaseServers: databaseServers.map(toDatabaseServer),
+    databaseEngines,
     dnsZones: dns.data.map((z) => zoneDetails.get(z.id) ?? { ...toDnsZone(z), records: previous.dnsZones.find((x) => x.id === z.id && x.serial === z.serial)?.records }),
     nameServers: dns.nameServers ?? [],
     dnsAccounts: dnsAccounts.data.map(toDnsAccount),

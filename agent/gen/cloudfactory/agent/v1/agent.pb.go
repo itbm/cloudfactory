@@ -661,13 +661,17 @@ type DatabaseServer struct {
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// The ID of the customer.
 	Customer string `protobuf:"bytes,2,opt,name=customer,proto3" json:"customer,omitempty"`
-	// "mariadb", "postgresql" or "valkey".
+	// "mariadb", "postgresql", "valkey", or the slug of a database pack (docs/packs.md).
 	Engine string `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
-	// The port on the address of the customer. The first database server of an engine has the
-	// usual port of the engine (3306, 5432 or 6379). A second one has the next port.
+	// The port on the address of the customer. The first database server of a built-in engine
+	// has the usual port of the engine (3306, 5432 or 6379). A second one has the next port. A
+	// database server of a pack engine has a port in the block of its pack, from 20000.
 	Port int32 `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`
 	// The limits of the container: vcpus, memory_bytes and disk_bytes. 0 means no limit.
-	Limits        *Limits `protobuf:"bytes,5,opt,name=limits,proto3" json:"limits,omitempty"`
+	Limits *Limits `protobuf:"bytes,5,opt,name=limits,proto3" json:"limits,omitempty"`
+	// The version of the engine of a pack engine, for example "8.4": an image of the pack. A
+	// database server keeps its version. Empty for a built-in engine.
+	Version       string `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -735,6 +739,13 @@ func (x *DatabaseServer) GetLimits() *Limits {
 		return x.Limits
 	}
 	return nil
+}
+
+func (x *DatabaseServer) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
 }
 
 // SetDatabaseServer makes a database server, or changes the limits of a database server.
@@ -7271,13 +7282,14 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x05users\x18\x02 \x03(\v2\x1f.cloudfactory.agent.v1.PathUserR\x05users\"C\n" +
 	"\bPathUser\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
-	"\rpassword_hash\x18\x02 \x01(\tR\fpasswordHash\"\x9f\x01\n" +
+	"\rpassword_hash\x18\x02 \x01(\tR\fpasswordHash\"\xb9\x01\n" +
 	"\x0eDatabaseServer\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bcustomer\x18\x02 \x01(\tR\bcustomer\x12\x16\n" +
 	"\x06engine\x18\x03 \x01(\tR\x06engine\x12\x12\n" +
 	"\x04port\x18\x04 \x01(\x05R\x04port\x125\n" +
-	"\x06limits\x18\x05 \x01(\v2\x1d.cloudfactory.agent.v1.LimitsR\x06limits\"~\n" +
+	"\x06limits\x18\x05 \x01(\v2\x1d.cloudfactory.agent.v1.LimitsR\x06limits\x12\x18\n" +
+	"\aversion\x18\x06 \x01(\tR\aversion\"~\n" +
 	"\x15DatabaseServerRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12N\n" +
 	"\x0fdatabase_server\x18\x02 \x01(\v2%.cloudfactory.agent.v1.DatabaseServerR\x0edatabaseServer\"I\n" +

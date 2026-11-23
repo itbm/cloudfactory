@@ -10,17 +10,36 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * A pack (docs/packs.md): a signed manifest from a publisher that adds a website runtime to
- * Cloudfactory. The panel keeps the exact bytes of the manifest, because each agent checks
- * the signature again. Each version of the runtime is an image of the pack.
+ * A pack (docs/packs.md): a signed manifest from a publisher that adds a website runtime or a
+ * database engine to Cloudfactory. The panel keeps the exact bytes of the manifest, because
+ * each agent checks the signature again. Each version of the runtime of a runtime pack is an
+ * image of the pack. A database pack has no images for websites: each database server of its
+ * engine has one version of the pack.
  */
-#[Fillable(['slug', 'name', 'version', 'publisher', 'description', 'manifest', 'signature', 'public_key', 'plugin_key_id', 'signer', 'user_id'])]
+#[Fillable(['slug', 'name', 'version', 'publisher', 'description', 'kind', 'database_port', 'manifest', 'signature', 'public_key', 'plugin_key_id', 'signer', 'user_id'])]
 class Pack extends Model
 {
     use HasUlids;
 
     /** The name of the signer when the release key of Cloudfactory signed the manifest. */
     public const RELEASE_KEY = 'Cloudfactory release key';
+
+    protected function casts(): array
+    {
+        return ['database_port' => 'integer'];
+    }
+
+    /** True when the pack adds a database engine. */
+    public function isDatabase(): bool
+    {
+        return $this->kind === PackManifest::KIND_DATABASE;
+    }
+
+    /** The database servers of the engine of a database pack. */
+    public function databaseServers(): HasMany
+    {
+        return $this->hasMany(DatabaseServer::class, 'engine', 'slug');
+    }
 
     public function images(): HasMany
     {

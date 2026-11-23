@@ -1,0 +1,59 @@
+# Tests the example database pack (plugins/packs/mysql) on a pull request that changes it. The
+# job builds the image, starts it as the agent starts a database server, and runs each
+# operation of the contract cf-database/1 (docs/packs.md) against a real MySQL server. The
+# release does not publish this pack.
+name: Database pack
+
+on:
+  pull_request:
+    paths:
+      - plugins/packs/mysql/**
+      - .github/workflows/database-pack.yml
+
+permissions:
+  contents: read
+
+# A new push to a pull request stops the test of the earlier push. The paths above already
+# select the changed files: the workflow has one job, for the one pack.
+concurrency:
+  group: database-pack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mysql:
+    name: MySQL example pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+      - name: Test /cf/manage
+        working-directory: plugins/packs/mysql/manage
+        run: |
+          set -eu
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test ./...
+      # The pack must have each version that the job builds.
+      - name: Check the manifest
+        run: jq -e '.contract == "cf-pack/2" and .kind == "database" and .database.port == "3306" and (.images | map(.version) | index("8.4"))' plugins/packs/mysql/pack.json
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: plugins/packs/mysql
+          file: plugins/packs/mysql/Containerfile
+          build-args: MYSQL_VERSION=8.4
+          load: true
+          tags: cf-mysql:test
+      - name: Run each operation of cf-database/1
+        run: sh plugins/packs/mysql/test.sh cf-mysql:test
+      - name: Scan for known vulnerabilities (FR-1102)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: cf-mysql:test
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
