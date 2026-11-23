@@ -196,6 +196,9 @@ const (
 	AgentServiceDeleteFileProcedure = "/cloudfactory.agent.v1.AgentService/DeleteFile"
 	// AgentServiceGetLogsProcedure is the fully-qualified name of the AgentService's GetLogs RPC.
 	AgentServiceGetLogsProcedure = "/cloudfactory.agent.v1.AgentService/GetLogs"
+	// AgentServiceCheckBranchesProcedure is the fully-qualified name of the AgentService's
+	// CheckBranches RPC.
+	AgentServiceCheckBranchesProcedure = "/cloudfactory.agent.v1.AgentService/CheckBranches"
 )
 
 // AgentServiceClient is a client for the cloudfactory.agent.v1.AgentService service.
@@ -276,6 +279,10 @@ type AgentServiceClient interface {
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// Gives the last commit of the branch of each Git source, for the deploys on a schedule
+	// (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
+	// container of each website, as for the step "Get the code" of a deploy.
+	CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error)
 }
 
 // NewAgentServiceClient constructs a client for the cloudfactory.agent.v1.AgentService service. By
@@ -637,6 +644,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		checkBranches: connect.NewClient[v1.CheckBranchesRequest, v1.BranchHeads](
+			httpClient,
+			baseURL+AgentServiceCheckBranchesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("CheckBranches")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -700,6 +713,7 @@ type agentServiceClient struct {
 	moveFile              *connect.Client[v1.MoveFileRequest, v1.FileEntry]
 	deleteFile            *connect.Client[v1.FileRequest, v1.FileDeleted]
 	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
+	checkBranches         *connect.Client[v1.CheckBranchesRequest, v1.BranchHeads]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -992,6 +1006,11 @@ func (c *agentServiceClient) GetLogs(ctx context.Context, req *connect.Request[v
 	return c.getLogs.CallUnary(ctx, req)
 }
 
+// CheckBranches calls cloudfactory.agent.v1.AgentService.CheckBranches.
+func (c *agentServiceClient) CheckBranches(ctx context.Context, req *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error) {
+	return c.checkBranches.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the cloudfactory.agent.v1.AgentService service.
 type AgentServiceHandler interface {
 	CreateWebsite(context.Context, *connect.Request[v1.WebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1070,6 +1089,10 @@ type AgentServiceHandler interface {
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// Gives the last commit of the branch of each Git source, for the deploys on a schedule
+	// (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
+	// container of each website, as for the step "Get the code" of a deploy.
+	CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1427,6 +1450,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceCheckBranchesHandler := connect.NewUnaryHandler(
+		AgentServiceCheckBranchesProcedure,
+		svc.CheckBranches,
+		connect.WithSchema(agentServiceMethods.ByName("CheckBranches")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cloudfactory.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceCreateWebsiteProcedure:
@@ -1545,6 +1574,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceDeleteFileHandler.ServeHTTP(w, r)
 		case AgentServiceGetLogsProcedure:
 			agentServiceGetLogsHandler.ServeHTTP(w, r)
+		case AgentServiceCheckBranchesProcedure:
+			agentServiceCheckBranchesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1784,4 +1815,8 @@ func (UnimplementedAgentServiceHandler) DeleteFile(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetLogs is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.CheckBranches is not implemented"))
 }
