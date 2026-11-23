@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toDatabaseServer, toJob, toPanelCertificate, toRuntimeImage, toServer, toWebsite } from "./live";
+import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toDatabaseServer, toJob, toPanelCertificate, toRuntimeImage, toServer, toWebsite, waitForJob } from "./live";
 import { emptyState } from "./store";
 import { defaultImage } from "../pages/NewWebsitePage";
 
@@ -41,6 +41,33 @@ describe("request", () => {
     answer(401, { message: "Unauthenticated." });
     await expect(request("GET", "/me")).rejects.toMatchObject({ status: 401 });
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe("waitForJob", () => {
+  const job = { id: "job-1", title: "Job", ref: null, action: "Backup", state: "running", steps: ["One"], step: 0, error: null, websiteId: null, serverId: null, createdAt: "2026-11-14T10:00:00+00:00", finishedAt: null };
+
+  it("reads the job until it ends", async () => {
+    vi.useFakeTimers();
+    answer(200, { data: { ...job, state: "succeeded", step: 1 } });
+    const changed = vi.fn();
+    const done = waitForJob(job as never, changed);
+    await vi.advanceTimersByTimeAsync(1500);
+    await expect(done).resolves.toMatchObject({ state: "succeeded" });
+    expect(changed).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it("stops after a sign-out, and does not ask the API again", async () => {
+    vi.useFakeTimers();
+    answer(500, { message: "No answer" });
+    let active = true;
+    const done = waitForJob(job as never, () => undefined, () => active);
+    active = false;
+    await vi.advanceTimersByTimeAsync(1500);
+    await expect(done).resolves.toMatchObject({ state: "running" });
+    expect(fetch).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
 
