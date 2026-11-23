@@ -24,7 +24,7 @@ type siteCall struct {
 func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 	t.Helper()
 	var calls []siteCall
-	deploy := `{"source":{"repository":"git@github.com:acme/shop.git","branch":"main","webDirectory":"public","trigger":"manual","buildCommands":["composer install"],"deployKey":"ssh-ed25519 AAAA cloudfactory","webhookUrl":"https://panel.example/api/v1/hooks/deploy/tok","secrets":["NPM_TOKEN"]},"releases":[{"id":"R2","createdAt":"2026-11-14T10:00:00Z","state":"ready","live":true,"commit":"4f9a1c2d5e6f7a8b","message":"Fix the cart"}]}`
+	deploy := `{"source":{"repository":"git@github.com:acme/shop.git","branch":"main","webDirectory":"public","trigger":"webhook","checkMinutes":5,"buildCommands":["composer install"],"migrationCommand":"php artisan migrate --force","deployKey":"ssh-ed25519 AAAA cloudfactory","webhookUrl":"https://panel.example/api/v1/hooks/deploy/tok","webhookSecret":"hook-secret","deployQueued":false,"secrets":["NPM_TOKEN"]},"releases":[{"id":"R2","createdAt":"2026-11-14T10:00:00Z","state":"ready","live":true,"trigger":"webhook","migration":true,"healthError":"the health check failed after the switch: 9 of 30 checks failed.","commit":"4f9a1c2d5e6f7a8b","message":"Fix the cart"}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call := siteCall{Method: r.Method, Path: strings.TrimPrefix(r.URL.Path, "/api/v1"), Query: r.URL.RawQuery}
 		if b, _ := io.ReadAll(r.Body); len(b) > 0 {
@@ -73,7 +73,7 @@ func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 			"POST /websites/W1/deploy/releases", "POST /websites/W1/deploy/releases/R1/activate":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{` + job + `}`))
-		case "GET /websites/W1/deploy", "PUT /websites/W1/deploy", "PUT /websites/W1/deploy/secrets/NPM_TOKEN", "DELETE /websites/W1/deploy/secrets/NPM_TOKEN":
+		case "GET /websites/W1/deploy", "PUT /websites/W1/deploy", "PUT /websites/W1/deploy/secrets/NPM_TOKEN", "DELETE /websites/W1/deploy/secrets/NPM_TOKEN", "POST /websites/W1/deploy/webhook":
 			w.Write([]byte(deploy))
 		case "DELETE /websites/W1/deploy":
 			w.WriteHeader(http.StatusNoContent)
@@ -271,7 +271,7 @@ func TestDeploys(t *testing.T) {
 	if err := a.dispatch(ctx, []string{"deploys", "show", "acme.example"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"git@github.com:acme/shop.git", "ssh-ed25519 AAAA cloudfactory", "hooks/deploy/tok", "NPM_TOKEN", "4f9a1c2 ", "Fix the cart"} {
+	for _, want := range []string{"git@github.com:acme/shop.git", "ssh-ed25519 AAAA cloudfactory", "hooks/deploy/tok", "hook-secret", "php artisan migrate --force", "NPM_TOKEN", "4f9a1c2 ", "Fix the cart", "ready, check failed"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("show has no %q: %s", want, out)
 		}
@@ -286,6 +286,31 @@ func TestDeploys(t *testing.T) {
 	}
 	if _, has := c.Body["webDirectory"]; has {
 		t.Errorf("connect sent a web directory: %+v", c)
+	}
+	if _, has := c.Body["migrationCommand"]; has {
+		t.Errorf("connect sent a migration command: %+v", c)
+	}
+	// FR-1004 and FR-1009: a check of the branch on a schedule, and a migration command.
+	if err := a.dispatch(ctx, []string{"deploys", "connect", "acme.example", "--trigger", "schedule", "--check-minutes", "15", "--migration", "php artisan migrate --force"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Body["trigger"] != "schedule" || c.Body["checkMinutes"] != float64(15) || c.Body["migrationCommand"] != "php artisan migrate --force" {
+		t.Errorf("schedule = %+v", c)
+	}
+	if err := a.dispatch(ctx, []string{"deploys", "connect", "acme.example", "--no-migration"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Body["migrationCommand"] != nil {
+		t.Errorf("no migration = %+v", c)
+	} else if _, has := c.Body["migrationCommand"]; !has {
+		t.Errorf("no migration sent no migrationCommand: %+v", c)
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"deploys", "webhook", "acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Method != "POST" || c.Path != "/websites/W1/deploy/webhook" || !strings.Contains(out.String(), "hook-secret") {
+		t.Errorf("webhook = %+v: %s", c, out)
 	}
 	// The value of a secret is not an argument.
 	a.in = strings.NewReader("s3cret\n")

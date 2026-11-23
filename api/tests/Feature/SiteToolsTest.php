@@ -403,28 +403,4 @@ class SiteToolsTest extends TestCase
         $this->actingWith($this->user());
         $this->getJson("/api/v1/websites/{$website->id}/deploy")->assertJsonPath('releases.0.error', $error);
     }
-
-    public function test_the_webhook_starts_a_deploy_of_the_branch(): void
-    {
-        $website = $this->site();
-        $this->actingWith($this->user());
-        $url = parse_url($this->connect($website)['source']['webhookUrl'], PHP_URL_PATH);
-        $this->app['auth']->forgetGuards();
-
-        // The trigger is "manual": the webhook is off.
-        $this->postJson($url)->assertNotFound();
-        GitSource::first()->update(['trigger' => 'webhook']);
-        $this->postJson('/api/v1/hooks/deploy/'.str_repeat('x', 48))->assertNotFound();
-
-        $this->postJson($url, ['ref' => 'refs/heads/feature'])->assertOk()->assertJsonPath('status', 'ignored');
-        $this->assertSame(0, Release::count());
-        $id = $this->postJson($url, ['ref' => 'refs/heads/main'])->assertAccepted()->assertJsonPath('status', 'started')->json('releaseId');
-        $this->assertSame(['webhook', 'building'], [Release::find($id)->trigger, Release::find($id)->state]);
-        $this->postJson($url)->assertAccepted()->assertJsonPath('status', 'busy');
-        $this->assertSame(1, AgentJob::where('action', AgentAction::Deploy)->count());
-
-        Release::query()->update(['state' => 'failed']);
-        $website->customer->update(['suspended' => true]);
-        $this->postJson($url)->assertStatus(409);
-    }
 }

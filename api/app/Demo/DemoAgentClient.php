@@ -20,14 +20,24 @@ class DemoAgentClient extends AgentClient
         RunDemoJob::dispatch($job->id);
     }
 
-    /** The file manager and the logs, with the sample files of the demonstration mode. */
-    public function call(Server $server, string $method, array $payload): array
+    /**
+     * The file manager and the logs, with the sample files of the demonstration mode. A check
+     * of a branch gives the commit of the last release, so that no deploy starts.
+     */
+    public function call(Server $server, string $method, array $payload, int $timeout = 75): array
     {
         if ($method === 'SearchLogs') {
             // An empty website ID is the access log of the server.
             $website = ($payload['websiteId'] ?? '') === '' ? null : (Website::find($payload['websiteId']) ?? throw new AgentCallException('not_found', 'the agent does not know this website'));
 
             return DemoLogs::search($server, $website, $payload);
+        }
+
+        if ($method === 'CheckBranches') {
+            return ['heads' => array_map(fn (array $check) => array_filter([
+                'websiteId' => $check['websiteId'] ?? '',
+                'commit' => Website::find($check['websiteId'] ?? '')?->releases()->whereNotNull('commit')->value('commit'),
+            ]), (array) ($payload['checks'] ?? []))];
         }
 
         return DemoSite::call($method, $payload);

@@ -23,6 +23,7 @@ import type {
   DnsProvider,
   DnsRecordType,
   Deploy,
+  DeployTrigger,
   MailAlias,
   DomainKind,
   FileContent,
@@ -599,14 +600,28 @@ export interface GitSourceInput {
   repository: string;
   branch: string;
   webDirectory: string;
-  trigger: "manual" | "webhook";
+  trigger: DeployTrigger;
+  checkMinutes: number;
   buildCommands: string[];
+  migrationCommand: string;
 }
 
 /** Connects a Git repository to the website, or changes the connection. */
 export function setGitSource(websiteId: string, input: GitSourceInput): Promise<Deploy> {
-  const body = { ...input, repository: input.repository.trim(), branch: input.branch.trim(), webDirectory: input.webDirectory.trim() || ".", buildCommands: input.buildCommands.map((c) => c.trim()).filter(Boolean) };
+  const body = {
+    ...input,
+    repository: input.repository.trim(),
+    branch: input.branch.trim(),
+    webDirectory: input.webDirectory.trim() || ".",
+    buildCommands: input.buildCommands.map((c) => c.trim()).filter(Boolean),
+    migrationCommand: input.migrationCommand.trim() || null,
+  };
   return call(() => live.request<Deploy>("PUT", `/websites/${websiteId}/deploy`, body));
+}
+
+/** Makes a new webhook address and secret. The old address stops at once. */
+export function newWebhook(websiteId: string): Promise<Deploy> {
+  return call(() => live.request<Deploy>("POST", `/websites/${websiteId}/deploy/webhook`));
 }
 
 export function removeGitSource(websiteId: string): Promise<void> {

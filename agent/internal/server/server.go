@@ -342,6 +342,15 @@ func (s *Service) SearchLogs(ctx context.Context, r *connect.Request[agentv1.Sea
 	return connect.NewResponse(out), nil
 }
 
+// CheckBranches gives the last commit of the branch of each Git source (FR-1004).
+func (s *Service) CheckBranches(ctx context.Context, r *connect.Request[agentv1.CheckBranchesRequest]) (*connect.Response[agentv1.BranchHeads], error) {
+	heads, err := s.Deps.CheckBranches(ctx, r.Msg)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return connect.NewResponse(heads), nil
+}
+
 func (s *Service) GetStatus(ctx context.Context, _ *connect.Request[agentv1.GetStatusRequest]) (*connect.Response[agentv1.HostStatus], error) {
 	r := s.Status.Report(ctx)
 	out := &agentv1.HostStatus{AgentVersion: r.AgentVersion, Kernel: r.Kernel, PodmanVersion: r.PodmanVersion, GvisorVersion: r.GVisorVersion, RebootRequired: r.RebootRequired}

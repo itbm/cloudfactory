@@ -163,6 +163,7 @@ Route::prefix('v1')->group(function () {
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);
             Route::put('websites/{websiteId}/deploy', [DeployController::class, 'update']);
             Route::delete('websites/{websiteId}/deploy', [DeployController::class, 'destroy']);
+            Route::post('websites/{websiteId}/deploy/webhook', [DeployController::class, 'newWebhook']);
             Route::put('websites/{websiteId}/deploy/secrets/{name}', [DeployController::class, 'setSecret']);
             Route::delete('websites/{websiteId}/deploy/secrets/{name}', [DeployController::class, 'removeSecret']);
             Route::post('websites/{websiteId}/deploy/releases', [DeployController::class, 'start'])->middleware('throttle:30,1,post-websites-x-deploy-releases');

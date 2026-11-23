@@ -1230,16 +1230,30 @@ export interface CronJob {
   lastOutput: string | null;
 }
 
+/** How a deploy starts: by hand, with a signed webhook, or with a check of the branch on a schedule. */
+export type DeployTrigger = "manual" | "webhook" | "schedule";
+
 export interface GitSource {
   repository: string;
   branch: string;
   /** The directory in the repository that the web server serves. */
   webDirectory: string;
-  trigger: "manual" | "webhook";
+  trigger: DeployTrigger;
+  /** The interval of the branch check, for the trigger "schedule". */
+  checkMinutes: number;
+  /** The last branch check, and its error. */
+  checkedAt: string | null;
+  checkError: string | null;
   buildCommands: string[];
+  /** A command that changes the database. It runs before the switch. */
+  migrationCommand: string | null;
   /** The public key that gives read access to the repository. */
   deployKey: string;
-  webhookUrl: string;
+  /** Only a token that can change websites gets the address and the secret. */
+  webhookUrl: string | null;
+  webhookSecret: string | null;
+  /** True when a push came during a deploy. The panel deploys it next. */
+  deployQueued: boolean;
   /** The names of the secrets. The API does not give the values. */
   secrets: string[];
 }
@@ -1251,7 +1265,11 @@ export interface Release {
   message: string | null;
   state: "building" | "ready" | "failed" | "removed";
   live: boolean;
-  trigger: "manual" | "webhook";
+  trigger: DeployTrigger;
+  /** True when the deploy ran the migration command. */
+  migration: boolean;
+  /** The failed health check after a migration. The website kept this release. */
+  healthError: string | null;
   durationSeconds: number | null;
   error: string | null;
   jobId: string | null;
