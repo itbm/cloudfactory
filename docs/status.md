@@ -85,6 +85,10 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `api/app/Http/Controllers/Api/MailDomainController.php`, `api/app/Services/Mail.php`, `agent/internal/actions/mail.go`, `agent/internal/stalwart`, `images/mail`, `web/src/pages/EmailPage.tsx`, `cli/cmd/cf/mail.go`
 
+- Uptime checks: the panel requests up to 5 addresses of each public website on a schedule (each 1 to 60 minutes), from the panel server. A check can expect an HTTP status and a text. After the number of failed requests in a row that the check has, the panel opens an incident and sends the email `uptime.down`, and sends `uptime.up` when the address answers again. Plugins get the same events. The panel connects only to public addresses that it checked, and does not follow redirects. The **Uptime** tab of a website shows the last 24 hours, the response time, the last 30 days and the incidents. The page **Uptime checks** shows the checks of all websites. `cf uptime-checks` does the same work
+
+  Where: `api/app/Services/Uptime`, `api/app/Http/Controllers/Api/UptimeController.php`, `web/src/pages/website/UptimeTab.tsx`, `web/src/pages/UptimePage.tsx`, `cli/cmd/cf/uptime.go`
+
 - File manager, logs, cron jobs and deploys from Git for each website, in the API, the agent, the web panel and the CLI. The agent does all of this work as the Unix user of the website, and the root helper has no new operation for it
 
   Where: `api/app/Http/Controllers/Api/FileController.php`, `LogController.php`, `CronJobController.php`, `DeployController.php`, `agent/internal/actions/files.go`, `cron.go`, `deploy.go`, `agent/internal/sitefiles`, `web/src/features/FileManager.tsx`, `web/src/pages/website/`, `cli/cmd/cf/sitetools.go`

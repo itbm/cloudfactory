@@ -34,6 +34,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 import { SsoPage } from "./pages/SsoPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
+import { UptimePage } from "./pages/UptimePage";
 import { WebsiteDetailPage } from "./pages/WebsiteDetailPage";
 import { WebsitesPage } from "./pages/WebsitesPage";
 
@@ -116,6 +117,7 @@ export function App() {
             <Route path="apps" element={<AppsPage />} />
             <Route path="jobs" element={<JobsPage />} />
             <Route path="alerts" element={<AlertsPage />} />
+            <Route path="uptime" element={<UptimePage />} />
             <Route path="account" element={<AccountPage />} />
             <Route path="brand" element={<BrandPage />} />
             <Route path="settings" element={<SettingsPage />} />

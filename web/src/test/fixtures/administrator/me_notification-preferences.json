@@ -46,6 +46,20 @@
                 "required": false
             },
             {
+                "event": "uptime.down",
+                "label": "Websites that are down",
+                "description": "An uptime check of a website failed a number of times in a row.",
+                "email": false,
+                "required": false
+            },
+            {
+                "event": "uptime.up",
+                "label": "Websites that are up again",
+                "description": "A website that was down answers its uptime check again.",
+                "email": false,
+                "required": false
+            },
+            {
                 "event": "password.reset",
                 "label": "Password reset",
                 "description": "Someone asked for a link to set a new password for your user.",

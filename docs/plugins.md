@@ -256,7 +256,7 @@ the scope to read that data. The panel refuses a manifest that does not have the
 | Event | Necessary scope |
 | ----- | --------------- |
 | `audit.recorded` | `audit:read` |
-| `job.finished`, `website.*`, `domain.*`, `deploy.started` | `websites:read` |
+| `job.finished`, `website.*`, `domain.*`, `deploy.started`, `uptime.down`, `uptime.up` | `websites:read` |
 | `database.*` | `databases:read` |
 | `backup.started`, `restore.started` | `backups:read` |
 | `customer.*` | `customers:read` |
@@ -268,6 +268,8 @@ The scope to change data (for example `websites:write`) is also sufficient.
 | ----- | ---- | ---- |
 | `audit.recorded` | Each change in the audit log | `action`, `target`, `actor`, `customerId`, `pluginId`, `at` |
 | `job.finished` | A job of an agent succeeded or failed | `id`, `action`, `title`, `state`, `error`, `serverId`, `websiteId`, `customerId` |
+| `uptime.down` | An uptime check of a website is down: the number of failed requests in a row that the check has | `check` (`id`, `url`), `website` (`id`, `name`, `customerId`), `incident` (`id`, `startedAt`, `resolvedAt`, `durationSeconds`, `error`, `endedByPause`) |
+| `uptime.up` | The address of a check that was down answers correctly again | The same as `uptime.down`. `incident.resolvedAt` has a value |
 | `plugin.test` | An administrator sends a test event | `message`, `by` |
 
 The named events are changes of the audit log with one action. Use them when your plugin wants

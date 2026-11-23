@@ -161,6 +161,45 @@
                 ]
             },
             {
+                "event": "uptime.down",
+                "label": "Websites that are down",
+                "description": "An uptime check of a website failed a number of times in a row.",
+                "subject": "{{website}} is down",
+                "body": "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
+                "changed": false,
+                "originalSubject": "{{website}} is down",
+                "originalBody": "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "website",
+                    "url",
+                    "error",
+                    "since"
+                ]
+            },
+            {
+                "event": "uptime.up",
+                "label": "Websites that are up again",
+                "description": "A website that was down answers its uptime check again.",
+                "subject": "{{website}} is up again",
+                "body": "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
+                "changed": false,
+                "originalSubject": "{{website}} is up again",
+                "originalBody": "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
+                "variables": [
+                    "name",
+                    "brand",
+                    "panelUrl",
+                    "website",
+                    "url",
+                    "downtime",
+                    "since",
+                    "until"
+                ]
+            },
+            {
                 "event": "password.reset",
                 "label": "Password reset",
                 "description": "Someone asked for a link to set a new password for your user.",

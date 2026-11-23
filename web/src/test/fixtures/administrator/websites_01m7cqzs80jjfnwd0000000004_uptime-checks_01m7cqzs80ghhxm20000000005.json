@@ -1,0 +1,545 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000004/uptime-checks/01m7cqzs80ghhxm20000000005",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs80ghhxm20000000005",
+        "websiteId": "01m7cqzs80jjfnwd0000000004",
+        "websiteName": "storefront.acme.example.com",
+        "domain": "storefront.acme.example.com",
+        "scheme": "https",
+        "path": "/",
+        "url": "https://storefront.acme.example.com/",
+        "intervalSeconds": 300,
+        "timeoutSeconds": 10,
+        "expectedStatus": null,
+        "keyword": "Order now",
+        "failuresBeforeAlert": 2,
+        "enabled": true,
+        "state": "down",
+        "pausedReason": null,
+        "since": "2026-11-14T09:35:00+00:00",
+        "failures": 6,
+        "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+        "lastResult": {
+            "ok": false,
+            "status": 200,
+            "responseMs": 95,
+            "error": "The answer does not have the text \"Order now\"."
+        },
+        "nextCheckAt": "2026-11-14T10:05:00+00:00",
+        "uptime": {
+            "day": 98.26,
+            "week": 99.75,
+            "month": 99.88
+        },
+        "incident": {
+            "id": "01m7cqzs80n49e1s0000000005",
+            "startedAt": "2026-11-14T09:35:00+00:00",
+            "resolvedAt": null,
+            "durationSeconds": 1500,
+            "error": "The answer does not have the text \"Order now\".",
+            "endedByPause": false
+        },
+        "createdAt": "2026-10-30T10:00:00+00:00",
+        "history": [
+            {
+                "at": "2026-11-13T10:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 86,
+                "maxResponseMs": 101
+            },
+            {
+                "at": "2026-11-13T11:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 86,
+                "maxResponseMs": 97
+            },
+            {
+                "at": "2026-11-13T11:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 78,
+                "maxResponseMs": 95
+            },
+            {
+                "at": "2026-11-13T12:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 99,
+                "maxResponseMs": 107
+            },
+            {
+                "at": "2026-11-13T12:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 92,
+                "maxResponseMs": 111
+            },
+            {
+                "at": "2026-11-13T13:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 107,
+                "maxResponseMs": 111
+            },
+            {
+                "at": "2026-11-13T13:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 89,
+                "maxResponseMs": 98
+            },
+            {
+                "at": "2026-11-13T14:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 91,
+                "maxResponseMs": 104
+            },
+            {
+                "at": "2026-11-13T14:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 91,
+                "maxResponseMs": 103
+            },
+            {
+                "at": "2026-11-13T15:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 91,
+                "maxResponseMs": 106
+            },
+            {
+                "at": "2026-11-13T15:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 107,
+                "maxResponseMs": 117
+            },
+            {
+                "at": "2026-11-13T16:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 97,
+                "maxResponseMs": 115
+            },
+            {
+                "at": "2026-11-13T16:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 96,
+                "maxResponseMs": 110
+            },
+            {
+                "at": "2026-11-13T17:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 87,
+                "maxResponseMs": 113
+            },
+            {
+                "at": "2026-11-13T17:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 96,
+                "maxResponseMs": 104
+            },
+            {
+                "at": "2026-11-13T18:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 90,
+                "maxResponseMs": 109
+            },
+            {
+                "at": "2026-11-13T18:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 83,
+                "maxResponseMs": 91
+            },
+            {
+                "at": "2026-11-13T19:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 86,
+                "maxResponseMs": 99
+            },
+            {
+                "at": "2026-11-13T19:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 82,
+                "maxResponseMs": 92
+            },
+            {
+                "at": "2026-11-13T20:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 81,
+                "maxResponseMs": 90
+            },
+            {
+                "at": "2026-11-13T20:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 75,
+                "maxResponseMs": 84
+            },
+            {
+                "at": "2026-11-13T21:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 70,
+                "maxResponseMs": 82
+            },
+            {
+                "at": "2026-11-13T21:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 53,
+                "maxResponseMs": 55
+            },
+            {
+                "at": "2026-11-13T22:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 60,
+                "maxResponseMs": 80
+            },
+            {
+                "at": "2026-11-13T22:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 56,
+                "maxResponseMs": 75
+            },
+            {
+                "at": "2026-11-13T23:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 48,
+                "maxResponseMs": 60
+            },
+            {
+                "at": "2026-11-13T23:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 54,
+                "maxResponseMs": 66
+            },
+            {
+                "at": "2026-11-14T00:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 48,
+                "maxResponseMs": 64
+            },
+            {
+                "at": "2026-11-14T00:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 48,
+                "maxResponseMs": 62
+            },
+            {
+                "at": "2026-11-14T01:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 37,
+                "maxResponseMs": 57
+            },
+            {
+                "at": "2026-11-14T01:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 49,
+                "maxResponseMs": 61
+            },
+            {
+                "at": "2026-11-14T02:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 35,
+                "maxResponseMs": 49
+            },
+            {
+                "at": "2026-11-14T02:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 33,
+                "maxResponseMs": 49
+            },
+            {
+                "at": "2026-11-14T03:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 41,
+                "maxResponseMs": 57
+            },
+            {
+                "at": "2026-11-14T03:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 36,
+                "maxResponseMs": 51
+            },
+            {
+                "at": "2026-11-14T04:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 44,
+                "maxResponseMs": 59
+            },
+            {
+                "at": "2026-11-14T04:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 45,
+                "maxResponseMs": 59
+            },
+            {
+                "at": "2026-11-14T05:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 44,
+                "maxResponseMs": 58
+            },
+            {
+                "at": "2026-11-14T05:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 49,
+                "maxResponseMs": 65
+            },
+            {
+                "at": "2026-11-14T06:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 42,
+                "maxResponseMs": 68
+            },
+            {
+                "at": "2026-11-14T06:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 50,
+                "maxResponseMs": 72
+            },
+            {
+                "at": "2026-11-14T07:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 51,
+                "maxResponseMs": 61
+            },
+            {
+                "at": "2026-11-14T07:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 50,
+                "maxResponseMs": 69
+            },
+            {
+                "at": "2026-11-14T08:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 55,
+                "maxResponseMs": 71
+            },
+            {
+                "at": "2026-11-14T08:30:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 74,
+                "maxResponseMs": 82
+            },
+            {
+                "at": "2026-11-14T09:00:00Z",
+                "checks": 6,
+                "failures": 0,
+                "responseMs": 70,
+                "maxResponseMs": 84
+            },
+            {
+                "at": "2026-11-14T09:30:00Z",
+                "checks": 6,
+                "failures": 5,
+                "responseMs": 73,
+                "maxResponseMs": 91
+            },
+            {
+                "at": "2026-11-14T10:00:00Z",
+                "checks": 1,
+                "failures": 1,
+                "responseMs": 95,
+                "maxResponseMs": 95
+            }
+        ],
+        "days": [
+            {
+                "date": "2026-10-16",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-17",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-18",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-19",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-20",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-21",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-22",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-23",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-24",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-25",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-26",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-27",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-28",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-29",
+                "uptime": null,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-30",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-10-31",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-01",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-02",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-03",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-04",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-05",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-06",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-07",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-08",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-09",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-10",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-11",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-12",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-13",
+                "uptime": 100,
+                "downSeconds": 0
+            },
+            {
+                "date": "2026-11-14",
+                "uptime": 95.83,
+                "downSeconds": 1500
+            }
+        ],
+        "incidents": [
+            {
+                "id": "01m7cqzs80n49e1s0000000005",
+                "startedAt": "2026-11-14T09:35:00+00:00",
+                "resolvedAt": null,
+                "durationSeconds": 1500,
+                "error": "The answer does not have the text \"Order now\".",
+                "endedByPause": false
+            }
+        ]
+    }
+}

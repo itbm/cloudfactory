@@ -5,6 +5,7 @@ namespace App\Demo;
 use App\Models\Certificate;
 use App\Models\DnsZone;
 use App\Models\Import;
+use App\Models\UptimeCheck;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Contracts\Http\Kernel;
@@ -65,6 +66,8 @@ class Fixtures
         '/setup',
         '/tokens',
         '/trusted-keys',
+        '/uptime-checks?perPage=100&page=1',
+        '/uptime-incidents',
         '/usage-alerts',
         '/users',
         '/websites?perPage=100&page=1',
@@ -89,6 +92,7 @@ class Fixtures
         '/websites/{id}/security/events',
         '/websites/{id}/snapshots',
         '/websites/{id}/terminal-sessions',
+        '/websites/{id}/uptime-checks',
     ];
 
     /**
@@ -102,6 +106,10 @@ class Fixtures
         foreach (self::websites($user) as $id) {
             foreach (self::WEBSITE_PATHS as $path) {
                 $paths[] = str_replace('{id}', $id, $path);
+            }
+            // The tab "Uptime" of a website reads each check with its history.
+            foreach (UptimeCheck::where('website_id', $id)->orderBy('created_at')->pluck('id') as $check) {
+                $paths[] = "/websites/{$id}/uptime-checks/{$check}";
             }
         }
         // The page of a DNS zone reads the zone with its records.
