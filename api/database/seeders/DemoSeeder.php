@@ -37,6 +37,7 @@ use App\Models\Plan;
 use App\Models\Plugin;
 use App\Models\PluginDelivery;
 use App\Models\PluginKey;
+use App\Models\Preview;
 use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Server;
@@ -1141,6 +1142,54 @@ class DemoSeeder extends Seeder
                 $api->update(['document_root' => $release->document_root]);
             }
         }
+        $this->previews($api);
+    }
+
+    /**
+     * The previews of the pull requests of the API. The settings permit one preview at a time,
+     * so the second pull request has no preview: the page shows the cause.
+     */
+    private function previews(Website $api): void
+    {
+        $source = $api->gitSource;
+        $source->update(['previews' => true, 'preview_domain' => 'preview.acme.example.com', 'preview_limit' => 1]);
+        $name = 'pr-42.preview.acme.example.com';
+        $site = new Website([
+            ...$api->only(['customer_id', 'server_id', 'plan_id', 'image_id', 'extensions', 'php_ini', 'limits', 'worker_mode']),
+            'name' => $name, 'application' => 'Preview of api.acme.example.com, pull request #42', 'unix_user' => self::unixUser($name), 'status' => 'running',
+            'usage' => ['cpuPercent' => 2, 'memoryBytes' => 180 * self::MB, 'diskBytes' => 310 * self::MB, 'processes' => 6],
+        ]);
+        $site->created_at = $site->updated_at = now()->subHours(5);
+        $site->save();
+        $site->domains()->create(['name' => $name, 'kind' => DomainKind::Primary, 'verification_token' => 'cf-demo', 'verified_at' => now(), 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(89)]);
+        $own = $source->replicate(['webhook_token', 'webhook_token_hash']);
+        $own->fill([
+            'website_id' => $site->id, 'branch' => 'feature/invoice-csv', 'trigger' => GitSource::MANUAL, 'secrets' => [], 'previews' => false, 'preview_domain' => null,
+            'webhook_token' => $token = Str::random(48), 'webhook_token_hash' => hash('sha256', $token),
+        ])->save();
+        // hours ago, commit subject, state, live, seconds
+        foreach ([[5, 'Add the export of invoices', Release::READY, false, 62], [2, 'Export the invoices as CSV', Release::READY, true, 58]] as [$hours, $message, $state, $live, $seconds]) {
+            $release = new Release(['website_id' => $site->id, 'ref' => 'feature/invoice-csv', 'commit' => sha1($message), 'message' => $message, 'state' => $state, 'live' => $live, 'duration_seconds' => $seconds, 'trigger' => GitSource::WEBHOOK]);
+            $release->id = $release->newUniqueId();
+            $release->document_root = 'releases/'.$release->id.'/public';
+            $release->created_at = $release->updated_at = now()->subHours($hours);
+            $release->save();
+            if ($live) {
+                $site->update(['document_root' => $release->document_root]);
+            }
+        }
+        $preview = fn (int $number, array $values, int $hours) => tap(new Preview(['website_id' => $api->id, 'number' => $number, ...$values]), function (Preview $p) use ($hours) {
+            $p->created_at = now()->subHours($hours);
+            $p->updated_at = now()->subHours(min($hours, 2));
+            $p->save();
+        });
+        $preview(42, ['preview_website_id' => $site->id, 'branch' => 'feature/invoice-csv', 'title' => 'Add the export of invoices as CSV', 'url' => 'https://github.com/acme-example/api/pull/42'], 5);
+        $preview(47, [
+            'branch' => 'dependabot/composer/laravel/framework-13.3.0', 'title' => 'Bump laravel/framework from 13.2.0 to 13.3.0', 'url' => 'https://github.com/acme-example/api/pull/47',
+            'error' => 'The limit of the previews of this website is 1. Close a pull request, or change the limit.',
+        ], 1);
+        // The preview is a member of the network of Acme, so the mesh state changed again.
+        $this->settleMesh();
     }
 
     private function jobsAndRollout(): void

@@ -87,6 +87,14 @@ Usage:
   cf deploys webhook WEBSITE                           Make a new webhook address and secret. The old ones stop at once.
   cf deploys activate WEBSITE RELEASE_ID               Go back to a release that is on the server.
   cf deploys disconnect WEBSITE
+  cf previews list WEBSITE                             The settings and the preview websites of the pull requests.
+  cf previews set WEBSITE [--on | --off] [--domain DOMAIN] [--limit N] [--copy-environment | --no-copy-environment]
+                                                       Each preview is a website pr-NUMBER.DOMAIN. Use a sub-domain of a
+                                                       verified domain. The webhook of the website gets the pull request events.
+                                                       --off removes the preview websites.
+  cf previews create WEBSITE --number N --branch BRANCH [--title TITLE] [--url URL]
+                                                       Make the preview of a pull request, or deploy it again. For a CI pipeline.
+  cf previews remove WEBSITE NUMBER                    Remove the preview website of a pull request.
   cf database-servers list [--customer ID] [--server SERVER] [--engine ENGINE]
   cf database-servers get DATABASE_SERVER
   cf database-servers engines                          The engines: mariadb, postgresql, valkey and the engines of database packs.
@@ -527,6 +535,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.cron(ctx, sub, rest)
 	case "deploys", "deploy":
 		return a.deploys(ctx, sub, rest)
+	case "previews", "preview":
+		return a.previews(ctx, sub, rest)
 	case "plugins", "plugin":
 		return a.plugins(ctx, sub, rest)
 	case "packs", "pack":
