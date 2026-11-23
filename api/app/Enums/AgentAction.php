@@ -21,6 +21,7 @@ enum AgentAction: string
     case DeleteDatabaseUser = 'DeleteDatabaseUser';
     case Backup = 'Backup';
     case Restore = 'Restore';
+    case ExportWebsite = 'ExportWebsite';
     case InstallHostUpdates = 'InstallHostUpdates';
     case Reboot = 'Reboot';
     case UpdateAgent = 'UpdateAgent';
@@ -83,6 +84,8 @@ enum AgentAction: string
             self::DeleteDatabaseUser => ['Remove user'],
             self::Backup => ['Snapshot files', 'Dump databases', 'Upload to object storage', 'Apply retention'],
             self::Restore => ['Download snapshot', 'Restore', 'Health check'],
+            // An account export: the agent sends each part to the panel while it makes it.
+            self::ExportWebsite => ['Send database dumps', 'Send files'],
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
             self::Reboot => ['Drain the edge proxy', 'Stop containers', 'Reboot', 'Start containers', 'Check all services'],
             self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],

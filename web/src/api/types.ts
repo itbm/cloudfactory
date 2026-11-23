@@ -946,7 +946,34 @@ export type TokenScope =
   | "customers:read" | "customers:write"
   | "users:read" | "users:write"
   | "audit:read"
-  | "notifications:read" | "notifications:write";
+  | "notifications:read" | "notifications:write"
+  | "exports:read" | "exports:write";
+
+/**
+ * An account export (docs/account-export.md): an archive of the account of a customer with the
+ * description of the account, the files of the websites, the dumps of the databases and the
+ * DNS zones.
+ */
+export interface AccountExport {
+  id: string;
+  customerId: string;
+  customerName: string | null;
+  /** running: the servers send the parts. ready: the user can download the archive. */
+  state: "running" | "ready" | "failed";
+  files: boolean;
+  databases: boolean;
+  /** The progress: each part is the files of a website or the dump of a database. */
+  parts: { complete: number; total: number };
+  receivedBytes: number;
+  sizeBytes: number | null;
+  /** The items that are not in the archive, for example the data of a Valkey database. */
+  warnings: { item: string; message: string }[];
+  error: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+  expiresAt: string | null;
+}
 
 export interface ApiToken {
   id: string;
@@ -1149,6 +1176,8 @@ export interface State {
   setup?: SetupChecklist;
   /** The account of the user. An administrator has none. */
   account?: Account;
+  /** The account exports that the user can see. A token with no exports scope sees none. */
+  exports: AccountExport[];
   joinToken: string;
   /** The fingerprint of the panel CA for the join command. */
   joinCaSha256?: string;

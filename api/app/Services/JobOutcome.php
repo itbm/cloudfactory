@@ -24,6 +24,7 @@ use App\Models\WebsiteCommand;
 use App\Services\Certificates\Certificates;
 use App\Services\Deploys\Deploys;
 use App\Services\Dns\Zones;
+use App\Services\Exports\AccountExports;
 use App\Services\Imports\Runner;
 use App\Services\Notifications\Notifier;
 use App\Services\Packs\Packs;
@@ -126,6 +127,10 @@ class JobOutcome
             }
             if ($job->action === AgentAction::SetPacks && $state === JobState::Succeeded) {
                 Packs::jobFinished($job, $result);
+            }
+            // A part of an account export is complete, or the export failed.
+            if ($job->action === AgentAction::ExportWebsite) {
+                AccountExports::jobFinished($job, $state === JobState::Succeeded, $error, $result);
             }
             if ($job->action === AgentAction::SetCertificates && $state === JobState::Succeeded) {
                 Certificates::jobFinished($job, $result);

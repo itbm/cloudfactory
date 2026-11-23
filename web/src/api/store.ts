@@ -10,6 +10,7 @@
 import { BUILT_IN_ENGINES } from "../lib/labels";
 import * as live from "./live";
 import type {
+  AccountExport,
   ApiToken,
   BackupPolicy,
   BrandFields,
@@ -90,7 +91,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], databaseEngines: BUILT_IN_ENGINES, dnsZones: [], certificates: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], databaseEngines: BUILT_IN_ENGINES, dnsZones: [], certificates: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], exports: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -1856,6 +1857,42 @@ export function createToken(name: string, scopes: TokenScope[], days: number, pa
     await refresh();
     const token: ApiToken = { id: String(r.id), name: name.trim(), scopes: r.scopes, createdAt: now(), expiresAt: r.expiresAt, prefix: `${r.id}|` };
     return { token, secret: r.token };
+  });
+}
+
+// Account exports (docs/account-export.md)
+
+/**
+ * Starts an export of an account. With no customer, the API exports the account of the user.
+ * An administrator or a reseller gives the customer.
+ */
+export function startExport(options: { customerId?: string; files: boolean; databases: boolean }) {
+  return call(() => live.request<AccountExport>("POST", "/exports", { ...(options.customerId ? { customerId: options.customerId } : {}), files: options.files, databases: options.databases })).then(async (e) => {
+    await refresh();
+    return e;
+  });
+}
+
+export function removeExport(exportId: string) {
+  return call(() => live.request("DELETE", `/exports/${q(exportId)}`)).then(() => refresh());
+}
+
+/**
+ * Downloads the archive of an export. The API gives a short link with a signature, so that the
+ * browser downloads the large file itself, with no token.
+ */
+export function downloadExport(exportId: string) {
+  return call(async () => {
+    const link = await live.request<{ url: string; fileName: string }>("POST", `/exports/${q(exportId)}/download-link`);
+    const a = document.createElement("a");
+    a.href = link.url;
+    a.download = link.fileName;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    void refresh();
+    return link;
   });
 }
 

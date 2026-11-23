@@ -5,6 +5,7 @@
 import { createPasskey, getPasskey } from "../lib/webauthn";
 import type {
   Account,
+  AccountExport,
   ApiToken,
   AuditEntry,
   BackupPolicy,
@@ -491,7 +492,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, databaseEngines, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, databaseEngines, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates, exports] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -530,6 +531,8 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: PluginAction[] }>("GET", "/plugin-actions").then((r) => r.data), []),
     // The certificates of the customers. A token with no websites scope gives no list.
     optional(request<{ data: ApiCertificate[] }>("GET", "/certificates").then((r) => r.data), []),
+    // The account exports. A token with no exports scope gets none.
+    optional(request<{ data: AccountExport[] }>("GET", "/exports").then((r) => r.data), []),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -605,6 +608,7 @@ export async function load(previous: State): Promise<State> {
     remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
     backupPolicy: policy,
+    exports,
     plans,
     customers: customers.map(toCustomer),
     users: users.map(toUser),

@@ -2088,6 +2088,32 @@ not keep them.
 - A snapshot from the time when all servers used one repository has a mark. The panel
   restores it from the old repository with the old password.
 
+## Account exports
+
+A user exports the account of a customer as one archive (refer to
+[account-export.md](account-export.md)). The panel writes the description of the account
+(`cf-account/1`) and the zone files itself. Only the servers have the files of the websites and
+the data of the databases, so the panel sends one `ExportWebsite` job to each server that has
+them.
+
+- The agent sends each part (the files of a website or the dump of a database) to the panel
+  while it makes it, in pieces of 4 MiB (`PUT /api/agent/v1/export-parts/{id}`). The server
+  keeps no copy. A piece names its offset in the part, and the panel keeps a piece only at the
+  end of the part, so a piece that the agent sends again is not added two times.
+- The agent does no new root work. `cf-agent site-archive` reads the files as the Unix user
+  of the website, as the file manager does. The dump command of a backup runs in the database
+  container, as the Unix user of the database server.
+- The panel keeps the parts in `CF_EXPORT_PATH` (`/data/exports`, on the volume of the panel).
+  The API, the queue worker and the scheduler share the directory.
+- When all parts are complete, the queue job `BuildAccountExport` writes the small members of
+  the archive. A download sends these members and then each part with its tar header
+  (`ArchiveStream`). The panel does not copy the parts into one file: the disk keeps one copy,
+  and the queue worker is not busy for a long time.
+- The headers of the archive have the time of the completion, so each download gives the same
+  bytes. A download can thus continue at an offset (an HTTP range).
+- The scheduler runs `cloudfactory:expire-exports` each hour. It removes the exports that
+  expired and fails an export that is not complete after a day.
+
 ## Plugins
 
 ```text

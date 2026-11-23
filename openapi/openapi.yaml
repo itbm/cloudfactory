@@ -49,6 +49,11 @@ tags:
   - name: Networks
     description: The private networks of the customers, like a VPC.
   - name: Backups
+  - name: Exports
+    description: >-
+      Account exports. An archive of the account of a customer: the description of the account,
+      the files of the websites, the dumps of the databases and the DNS zones. Refer to
+      docs/account-export.md. These routes need the exports scope. A plugin cannot have it.
   - name: Email
   - name: Usage
     description: The usage history for the graphs, and the alerts near the limits.
@@ -4089,6 +4094,159 @@ paths:
         '202': { $ref: '#/components/responses/JobOnly' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/exports:
+    get:
+      tags: [Exports]
+      summary: List account exports
+      description: The newest 100 exports of the accounts that you can see, newest first.
+      parameters:
+        - { name: customerId, in: query, required: false, schema: { type: string }, description: Only the exports of this customer. }
+      responses:
+        '200':
+          description: The exports.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/AccountExport' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Exports]
+      summary: Export an account
+      description: >-
+        Starts an export of the account of a customer. An owner exports its own account. A
+        reseller exports its own account or the account of one of its customers. An
+        administrator must give the customer. The account of a reseller does not include its
+        customers.
+
+
+        The panel sends one job to the server of each website. The agent sends the files of the
+        website and a dump of each MariaDB and PostgreSQL database to the panel. A website with
+        a database in a database server on a different server also gets a job on that server.
+        When all parts are complete, the state of the export is `ready`. An account has one
+        export in progress at a time. The panel keeps the newest 3 exports of each account, for
+        7 days.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customerId: { type: string, description: The customer of the account. The default is the customer of the user. }
+                files: { type: boolean, default: true, description: Include the files of the websites. }
+                databases: { type: boolean, default: true, description: Include a dump of each MariaDB and PostgreSQL database. }
+      responses:
+        '202':
+          description: The export is in progress.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountExport' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: >-
+            No customer, an export of the account is in progress, a database server of the
+            account moves to a different server, or the disk of the panel does not have
+            sufficient free space.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidationError' }
+
+  /v1/exports/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Exports]
+      summary: Get an account export
+      responses:
+        '200':
+          description: The export.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountExport' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Exports]
+      summary: Remove an account export
+      description: Removes the export and its archive. An export in progress stops, and its jobs fail.
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/exports/{id}/download-link:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Exports]
+      summary: Get a download link
+      description: >-
+        Gives a link that downloads the archive with no token. The link is valid for 10
+        minutes. Keep the link secret: the archive has the environment variables of the
+        websites. The audit log records each link.
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, fileName, sizeBytes, expiresAt]
+                properties:
+                  url: { type: string, description: 'A path on the panel, for example "/api/v1/export-downloads/{id}?expires=...&signature=...".' }
+                  fileName: { type: string, description: 'For example "acme-ltd-export-20261122-2103.tar".' }
+                  sizeBytes: { type: integer }
+                  expiresAt: { type: string, format: date-time }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The archive is not ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/export-downloads/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Exports]
+      summary: Download an account export
+      description: >-
+        The archive, as one tar file (format `cf-export/1`). Use the link from
+        /v1/exports/{id}/download-link. The signature in the link is the only credential. A
+        request with a range (`Range: bytes=N-`) continues a download that stopped.
+      security: []
+      parameters:
+        - { name: expires, in: query, required: true, schema: { type: integer } }
+        - { name: signature, in: query, required: true, schema: { type: string } }
+        - { name: Range, in: header, required: false, schema: { type: string }, description: 'One range of bytes, for example "bytes=1048576-".' }
+      responses:
+        '200':
+          description: The archive.
+          content:
+            application/x-tar:
+              schema: { type: string, format: binary }
+        '206':
+          description: The range of the archive.
+          content:
+            application/x-tar:
+              schema: { type: string, format: binary }
+        '403':
+          description: The signature is not correct, or the link expired.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '410':
+          description: The export is not ready, or it expired.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '416':
+          description: The range is not in the archive.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /v1/backup-policy:
     get:
       tags: [Backups]
@@ -6520,6 +6678,61 @@ paths:
                   panelCaSha256: { type: [string, 'null'], description: The SHA-256 fingerprint of the root certificate of the panel CA. The agent trusts this CA from now on. }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  /agent/v1/export-parts/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Agent]
+      summary: Send a piece of an export part
+      description: >-
+        The agent sends a part of an account export (the files of a website or the dump of a
+        database) in pieces of at most 4 MiB. The panel keeps a piece only when `offset` is 0
+        or the size of the part that it has. Offset 0 starts the part again.
+      security:
+        - agentToken: []
+      parameters:
+        - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: The panel has the piece.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sizeBytes: { type: integer, description: The size of the part that the panel has now. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The piece does not start at the end of the part. `sizeBytes` is the size of the part that the panel has.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  sizeBytes: { type: integer }
+        '410':
+          description: The export or its job is not in progress.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: The piece has more than 4 MiB.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '507':
+          description: The disk of the panel does not have sufficient free space. The agent does not try again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     token:
@@ -7951,6 +8164,39 @@ components:
         serverId: { type: string, description: The server whose repository has the snapshot. }
         mailboxes: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
+    AccountExport:
+      type: object
+      properties:
+        id: { type: string }
+        customerId: { type: string }
+        customerName: { type: [string, 'null'] }
+        state:
+          type: string
+          enum: [running, ready, failed]
+          description: '`running`: the servers send the parts. `ready`: you can download the archive. `failed`: a part did not come. Refer to `error`.'
+        files: { type: boolean, description: The archive has the files of the websites. }
+        databases: { type: boolean, description: The archive has the dumps of the databases. }
+        parts:
+          type: object
+          description: The progress. Each part is the files of a website or the dump of a database.
+          properties:
+            complete: { type: integer }
+            total: { type: integer }
+        receivedBytes: { type: integer, description: The bytes of the parts that the panel has. }
+        sizeBytes: { type: [integer, 'null'], description: The size of the archive. Null until the export is ready. }
+        warnings:
+          type: array
+          description: The items that are not in the archive, for example the data of a Valkey database.
+          items:
+            type: object
+            properties:
+              item: { type: string }
+              message: { type: string }
+        error: { type: [string, 'null'] }
+        createdBy: { type: [string, 'null'], description: The name of the user who started the export. }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time, description: The panel removes the export at this time. }
     BackupPolicy:
       type: object
       required: [daily, weekly, monthly, time, target]
