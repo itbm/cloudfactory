@@ -894,7 +894,7 @@ keeps the result (`dnssec_parent`):
 For a zone at an external DNS provider, the provider makes the key and signs the zone. The
 plugin gives the DS record in the answer to `sync`.
 
-## Files, logs, cron jobs and deploys of a website
+## Files, logs, cron jobs, commands and deploys of a website
 
 The agent does all of this work as the Unix user of the website (`runuser -u <user>`). The
 root helper permits each program as a website user, so this work adds no operation to its
@@ -934,6 +934,42 @@ and gives the answer in the same request.
 - The agent sends the exit code and the end of the output of each run in its status report.
   The panel shows them for the last run.
 - **Run now** makes the job `RunCronJob`. The job fails when the exit code is not 0.
+
+### Run a command and the command log
+
+A user can run one command line in the container of a website without a terminal, for
+example `php artisan migrate --force` or `composer install`. The web panel has the tab
+**Commands**, the CLI has `cf commands run`, and the API has
+`POST /websites/{id}/commands`.
+
+```text
+ web panel or cf ──► API ──► command log entry ──► job RunCommand ──► worker
+                                    ▲                                    │
+                                    └──── exit code and output ◄─────────┘
+```
+
+1. The API checks the command with the input rule `commandLine`: one line of 1 to 2000
+   characters. The time limit is 1 to 3600 seconds. The default is 600 seconds.
+2. The API adds an entry to the command log of the website before it sends the job. The
+   entry has the command, the user or the token, the IP address of the client and the
+   time. The API also adds an entry to the audit log.
+3. The worker runs the command as the website user, the same as a cron job:
+   `podman exec --workdir /app <container> sh -c <command>`. The command has no standard
+   input, so it cannot ask a question.
+4. The worker stops the command at its time limit. The exit code is then 124.
+5. The job succeeds when the command ran, also when its exit code is not 0. The job fails
+   when the command did not start, for example when the container does not run.
+6. The panel completes the entry with the state, the exit code, the time of the start and
+   the end, and the last 64 KiB of the output.
+
+- A website can have 2 commands that run at the same time. The API and the agent have the
+  same limit.
+- The API refuses a command when the website does not run or its customer is suspended.
+- The list of the command log has no output. `GET /websites/{id}/commands/{commandId}`
+  gives one entry with its output.
+- The command log has the same rule as the audit log for the name of a person: a customer
+  sees "Administrator" or "Your provider" in place of the name of a person of the operator
+  or of the reseller, and no IP address.
 
 ### Deploys from Git
 
