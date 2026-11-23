@@ -1,0 +1,24 @@
+{
+    "request": "GET /me/passkeys",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs801btxs80000000001",
+                "name": "iPhone",
+                "domain": "panel.cloudfactory.io",
+                "synced": true,
+                "createdAt": "2026-10-05T10:00:00+00:00",
+                "lastUsedAt": "2026-11-14T07:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs801btxs80000000002",
+                "name": "YubiKey 5C",
+                "domain": "panel.cloudfactory.io",
+                "synced": false,
+                "createdAt": "2026-11-02T10:00:00+00:00",
+                "lastUsedAt": null
+            }
+        ]
+    }
+}

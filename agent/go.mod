@@ -13,3 +13,8 @@ require golang.org/x/sys v0.44.0
 
 // zstd for the backup archives of other panels (internal/migrate).
 require github.com/klauspost/compress v1.20.4
+
+tool (
+	connectrpc.com/connect/cmd/protoc-gen-connect-go
+	google.golang.org/protobuf/cmd/protoc-gen-go
+)

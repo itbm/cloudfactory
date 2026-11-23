@@ -4,8 +4,8 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { getState } from "../api/store";
-import owner from "../test/fixtures/owner.json";
-import { panelApi, reset, signedIn } from "../test/panelApi";
+import type { Passkey } from "../api/live";
+import { fixture, panelApi, reset, signedIn } from "../test/panelApi";
 
 // FR-103: the browser part of WebAuthn. jsdom has no passkeys, so each test gives the answers of
 // the browser. The JSON is the JSON of PublicKeyCredential.toJSON().
@@ -13,7 +13,7 @@ const browser = { create: vi.fn(), get: vi.fn() };
 const credential = (json: Record<string, unknown>) => ({ toJSON: () => json });
 const CREATED = { id: "bmV3", rawId: "bmV3", type: "public-key", response: { clientDataJSON: "e30", attestationObject: "oA", transports: ["internal"] }, clientExtensionResults: {} };
 const SIGNED = { id: "a2V5", rawId: "a2V5", type: "public-key", response: { clientDataJSON: "e30", authenticatorData: "AA", signature: "AA", userHandle: "dXNlcg" }, clientExtensionResults: {} };
-const [IPHONE, YUBIKEY] = owner["GET /me/passkeys"].body.data;
+const [IPHONE, YUBIKEY] = fixture<{ data: Passkey[] }>("owner", "GET /me/passkeys").body.data;
 const PUBLIC_KEY = { challenge: "Y2hhbGxlbmdl", rpId: "localhost", userVerification: "required", timeout: 300000 };
 
 beforeEach(() => {

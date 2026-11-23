@@ -1,0 +1,27 @@
+{
+    "request": "GET /certificates/01m7cqzs806jdytz0000000003",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs806jdytz0000000003",
+        "customerId": "01m7cqzs80h56kh10000000004",
+        "source": "acme",
+        "names": [
+            "acme-outlet.example.com",
+            "*.acme-outlet.example.com"
+        ],
+        "state": "failed",
+        "issuer": null,
+        "fingerprint": null,
+        "notBefore": null,
+        "expiresAt": null,
+        "trusted": null,
+        "renewAt": null,
+        "order": null,
+        "error": "The public DNS does not send the queries for acme-outlet.example.com to the name servers of this panel, so the certificate authority cannot see the records of the panel. Give the name servers of the panel to the registrar of acme-outlet.example.com, and then check the zone on the DNS page.",
+        "nextTryAt": null,
+        "usedBy": [],
+        "certificatePem": null,
+        "createdAt": "2026-11-14T07:00:00+00:00",
+        "updatedAt": "2026-11-14T10:00:00+00:00"
+    }
+}

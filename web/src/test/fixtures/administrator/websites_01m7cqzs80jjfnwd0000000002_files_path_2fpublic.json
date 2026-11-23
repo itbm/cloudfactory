@@ -1,0 +1,46 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000002/files?path=%2Fpublic",
+    "status": 200,
+    "body": {
+        "path": "/public",
+        "entries": [
+            {
+                "name": "css",
+                "path": "/public/css",
+                "type": "directory",
+                "sizeBytes": 0,
+                "modifiedAt": "2026-04-25T12:00:00Z",
+                "mode": "0750",
+                "target": null
+            },
+            {
+                "name": "uploads",
+                "path": "/public/uploads",
+                "type": "directory",
+                "sizeBytes": 0,
+                "modifiedAt": "2026-04-25T02:00:00Z",
+                "mode": "0750",
+                "target": null
+            },
+            {
+                "name": "index.php",
+                "path": "/public/index.php",
+                "type": "file",
+                "sizeBytes": 108,
+                "modifiedAt": "2026-04-26T14:00:00Z",
+                "mode": "0640",
+                "target": null
+            },
+            {
+                "name": "robots.txt",
+                "path": "/public/robots.txt",
+                "type": "file",
+                "sizeBytes": 23,
+                "modifiedAt": "2026-04-18T20:00:00Z",
+                "mode": "0640",
+                "target": null
+            }
+        ],
+        "truncated": false
+    }
+}

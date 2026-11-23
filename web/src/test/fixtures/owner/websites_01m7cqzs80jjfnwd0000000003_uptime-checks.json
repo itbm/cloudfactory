@@ -1,0 +1,42 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000003/uptime-checks",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80ghhxm20000000004",
+                "websiteId": "01m7cqzs80jjfnwd0000000003",
+                "websiteName": "api.acme.example.com",
+                "domain": "api.acme.example.com",
+                "scheme": "https",
+                "path": "/up",
+                "url": "https://api.acme.example.com/up",
+                "intervalSeconds": 60,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 203,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:01:00+00:00",
+                "uptime": {
+                    "day": 100,
+                    "week": 99.97,
+                    "month": 99.99
+                },
+                "incident": null,
+                "createdAt": "2026-10-15T10:00:00+00:00"
+            }
+        ]
+    }
+}

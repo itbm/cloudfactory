@@ -1,0 +1,53 @@
+{
+    "request": "GET /audit?perPage=100",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 10,
+                "at": "2026-11-14T08:00:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Created DNS zone",
+                "target": "acme-outlet.example.com"
+            },
+            {
+                "id": 9,
+                "at": "2026-11-14T07:40:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Added DNS record",
+                "target": "acme.example.com TXT @"
+            },
+            {
+                "id": 8,
+                "at": "2026-11-14T07:50:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Added domain",
+                "target": "acme-outlet.example.com"
+            },
+            {
+                "id": 7,
+                "at": "2026-11-14T05:00:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Backed up website",
+                "target": "acme.example.com"
+            },
+            {
+                "id": 6,
+                "at": "2026-11-14T09:15:00+00:00",
+                "actor": "Olu Owner",
+                "ip": "203.0.113.14",
+                "action": "Created database",
+                "target": "shopacme_9e69_cache"
+            }
+        ],
+        "meta": {
+            "currentPage": 1,
+            "lastPage": 1,
+            "total": 5
+        }
+    }
+}

@@ -1,0 +1,158 @@
+{
+    "request": "GET /mail/domains",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80bccfqj0000000002",
+                "name": "cornerbakery.example.org",
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "status": "active",
+                "mailHost": "mail-1.panel.example",
+                "records": [
+                    {
+                        "type": "MX",
+                        "name": "cornerbakery.example.org",
+                        "value": "10 mail-1.panel.example.",
+                        "purpose": "mx",
+                        "found": true
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "cornerbakery.example.org",
+                        "value": "v=spf1 mx -all",
+                        "purpose": "spf",
+                        "found": true
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "v1-ed25519-20261114._domainkey.cornerbakery.example.org",
+                        "value": "v=DKIM1; k=ed25519; h=sha256; p=KvXKEwxfOi8NO1g34nz8ZcYy+ulcv4BlAwUaD5Ll6Blq",
+                        "purpose": "dkim",
+                        "found": false
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "v1-rsa-20261114._domainkey.cornerbakery.example.org",
+                        "value": "v=DKIM1; k=rsa; h=sha256; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjV+OqdLw8sp8QBVg1z574tjS/dc0Je7OfmgVVeTYkIhrcaE6j6t/9Y/4ESzfHDRB815vk2dmuipt1nk/+nsyQjJXrmpz4kktG2ZABI5dXhaWhUGVlFF3/RhuSISwBMhZbVOWq8I7H+WC4DG8/URFnErFnVt1hlvhnj5S9uWyaE94FHy6ufzI3hazZyAs0oUeCTKTTmP6udipsDbw+kxjNi3kF178LfGpwLoU5sKUyLXQnRnN8H2rGJXEcVpwRbV3gG2bahI0nwFqQDaKE/UZkjGQdPgUf0A0j8jeVdgd6pim2SwIr+oDX4yFwuFeyTkcHjf4gEwQvzzhMDYTmfO2P6d4aew6",
+                        "purpose": "dkim",
+                        "found": false
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "_dmarc.cornerbakery.example.org",
+                        "value": "v=DMARC1; p=reject; rua=mailto:postmaster@cornerbakery.example.org",
+                        "purpose": "dmarc",
+                        "found": true
+                    }
+                ],
+                "dnsReady": false,
+                "dnsCheckedAt": "2026-11-14T08:00:00+00:00",
+                "mailboxes": 2,
+                "aliases": 1,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80bccfqj0000000003",
+                "name": "harbourbooks.example.net",
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "status": "active",
+                "mailHost": "mail-1.panel.example",
+                "records": [
+                    {
+                        "type": "MX",
+                        "name": "harbourbooks.example.net",
+                        "value": "10 mail-1.panel.example.",
+                        "purpose": "mx",
+                        "found": null
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "harbourbooks.example.net",
+                        "value": "v=spf1 mx -all",
+                        "purpose": "spf",
+                        "found": null
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "v1-ed25519-20261114._domainkey.harbourbooks.example.net",
+                        "value": "v=DKIM1; k=ed25519; h=sha256; p=irvSVpEwSUkKUzMdeMKEohM18WPbMnfp09TEvcxAiKSF",
+                        "purpose": "dkim",
+                        "found": null
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "v1-rsa-20261114._domainkey.harbourbooks.example.net",
+                        "value": "v=DKIM1; k=rsa; h=sha256; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAJM1cnytzY/dHSxG4q488vw4b9Xla5W1I24zNBQ6CCXKD+WzBUQCzM8pVGpBaJa/OtX099JXzdvUJthWGn2rDwxayPWhPRO/5FGCy/lkNofO+tPWJD0k9M3iyTPF8ex4D9FUnTbblucPkSf1/e1fpDFBDYAALi1QABETut0Su0tB4FHy6ufzI3hazZyAs0oUeCTKTTmP6udipsDbw+kxjNi3kF178LfGpwLoU5sKUyLXQnRnN8H2rGJXEcVpwRbV3DDX6g2c+ip5DcgtpBK6T1TvOXb7IG2bepA7XAAnKOOuFvuvkoLqnzhTrGB9GSCbFSmQi46Q8xJEqyjVcR8oA3FZqDaGT",
+                        "purpose": "dkim",
+                        "found": null
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "_dmarc.harbourbooks.example.net",
+                        "value": "v=DMARC1; p=reject; rua=mailto:postmaster@harbourbooks.example.net",
+                        "purpose": "dmarc",
+                        "found": null
+                    }
+                ],
+                "dnsReady": false,
+                "dnsCheckedAt": null,
+                "mailboxes": 1,
+                "aliases": 0,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80bccfqj0000000004",
+                "name": "northwind.example.com",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "serverId": "01m7cqzs807rnxfq0000000004",
+                "status": "active",
+                "mailHost": "mail-1.panel.example",
+                "records": [
+                    {
+                        "type": "MX",
+                        "name": "northwind.example.com",
+                        "value": "10 mail-1.panel.example.",
+                        "purpose": "mx",
+                        "found": true
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "northwind.example.com",
+                        "value": "v=spf1 mx -all",
+                        "purpose": "spf",
+                        "found": true
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "v1-ed25519-20261114._domainkey.northwind.example.com",
+                        "value": "v=DKIM1; k=ed25519; h=sha256; p=ik7GU8ksULSz4oNxHZzHfQxShTJSHHdNwqGrVBdr785d",
+                        "purpose": "dkim",
+                        "found": true
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "v1-rsa-20261114._domainkey.northwind.example.com",
+                        "value": "v=DKIM1; k=rsa; h=sha256; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0euzuY4Gr1KQTRGA76c20ZSqf4IkbHb49X68haxakfQD6rDb679jFfOQgRWjEN3LizI4ONKS9A0HsqkM5AFDDsGXsUN6rJRr3MwwQeJHXGWM8SxNzJJ8El1ZiK+ilR8LKi3RiTEEWBDPwMscK4dPElUktaJyxOXOwTjKTwlkKt94FHy6ufzI3hazZyAs0oUeCTKTTmP6udipsDbw+kxjNi3kF178LfGpwLoU5sKUyLXQnRnN8H2rGJXEcVpwRbV3kquiz7JI+MIZznHXVqn6CRNIyWV0Ww6CQoONawicSa39R9phxVlGh8Vn73O6Twkw2Any4H4yQrCRhEUa+pkGdZnQE1pQ",
+                        "purpose": "dkim",
+                        "found": true
+                    },
+                    {
+                        "type": "TXT",
+                        "name": "_dmarc.northwind.example.com",
+                        "value": "v=DMARC1; p=reject; rua=mailto:postmaster@northwind.example.com",
+                        "purpose": "dmarc",
+                        "found": true
+                    }
+                ],
+                "dnsReady": true,
+                "dnsCheckedAt": "2026-11-14T05:00:00+00:00",
+                "mailboxes": 180,
+                "aliases": 65,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

@@ -1,0 +1,99 @@
+{
+    "request": "GET /dns-accounts",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806nsqez0000000002",
+                "name": "Acme Cloudflare",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "pluginId": "01m7cqzs80p8bxkh0000000003",
+                "provider": "cloudflare",
+                "providerName": "Cloudflare",
+                "available": true,
+                "account": "it@acme.example.com",
+                "dnssec": true,
+                "types": [
+                    "A",
+                    "AAAA",
+                    "CNAME",
+                    "MX",
+                    "TXT",
+                    "SRV",
+                    "CAA",
+                    "NS"
+                ],
+                "credentials": {
+                    "apiToken": null,
+                    "accountId": null
+                },
+                "zones": 1,
+                "checkedAt": "2026-10-25T10:00:00+00:00",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806nsqez0000000001",
+                "name": "Panel Cloudflare",
+                "customerId": null,
+                "pluginId": "01m7cqzs80p8bxkh0000000003",
+                "provider": "cloudflare",
+                "providerName": "Cloudflare",
+                "available": true,
+                "account": "Example Hosting Ltd",
+                "dnssec": true,
+                "types": [
+                    "A",
+                    "AAAA",
+                    "CNAME",
+                    "MX",
+                    "TXT",
+                    "SRV",
+                    "CAA",
+                    "NS"
+                ],
+                "credentials": {
+                    "apiToken": null,
+                    "accountId": "5f2c0a9d1e7b4c3a8d6e0f1a2b3c4d5e"
+                },
+                "zones": 1,
+                "checkedAt": "2026-11-11T10:00:00+00:00",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ],
+        "providers": [
+            {
+                "pluginId": "01m7cqzs80p8bxkh0000000003",
+                "pluginName": "Cloudflare DNS",
+                "id": "cloudflare",
+                "name": "Cloudflare",
+                "dnssec": true,
+                "types": [
+                    "A",
+                    "AAAA",
+                    "CNAME",
+                    "MX",
+                    "TXT",
+                    "SRV",
+                    "CAA",
+                    "NS"
+                ],
+                "credentials": [
+                    {
+                        "id": "apiToken",
+                        "label": "API token",
+                        "secret": true,
+                        "optional": false,
+                        "hint": "Give the token the permissions Zone: Read and DNS: Edit. To let the panel add and remove zones, also give Zone: Edit."
+                    },
+                    {
+                        "id": "accountId",
+                        "label": "Account ID",
+                        "secret": false,
+                        "optional": true,
+                        "hint": "Necessary only to add a zone that is not at Cloudflare yet. The ID is on the overview page of a zone."
+                    }
+                ]
+            }
+        ]
+    }
+}
