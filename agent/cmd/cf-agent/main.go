@@ -399,7 +399,7 @@ func panelCmd(ctx context.Context, args []string) error {
 	h := host.New(run, cfg.SitesDir)
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
 	p := quadlet.Panel{Registry: *registry, Version: version, Domain: *domain, DataDir: filepath.Join(cfg.DataDir, "panel"), Gvisor: quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
-		APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort, DatabasePort: quadlet.PanelDatabasePort}
+		APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort, DatabasePort: quadlet.PanelDatabasePort, TerminalPort: quadlet.PanelTerminalPort}
 	edge := caddy.New(cfg.CaddyAdmin)
 	deps := &actions.Deps{Host: h, Run: run, Edge: edge, Gvisor: p.Gvisor, DataDir: cfg.DataDir}
 	if err := deps.InstallPanel(ctx, p); err != nil {
@@ -420,7 +420,7 @@ func panelCmd(ctx context.Context, args []string) error {
 		}
 		method = cmp.Or(current, caddy.PanelInternal)
 	}
-	if err := edge.ApplyPanel(ctx, *domain, method, p.APIPort, p.WebPort); err != nil {
+	if err := edge.ApplyPanel(ctx, *domain, method, p.APIPort, p.WebPort, p.TerminalPort); err != nil {
 		return err
 	}
 	fmt.Printf("The panel operates at https://%s with version %s\n", *domain, version)

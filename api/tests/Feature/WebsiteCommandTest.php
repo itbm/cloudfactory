@@ -62,7 +62,7 @@ class WebsiteCommandTest extends TestCase
         $this->assertSame(['php -v', 'php artisan migrate --force'], array_column($list, 'command'));
         $this->assertArrayNotHasKey('output', $list[0]);
         $this->getJson("{$base}?q=migrate")->assertJsonCount(1, 'data')->assertJsonPath('data.0.exitCode', 1);
-        $this->getJson("{$base}?source=terminal")->assertJsonValidationErrors('source');
+        $this->getJson("{$base}?source=ssh")->assertJsonValidationErrors('source');
 
         // A later result of the same job does not change a complete entry.
         $this->finish($job->id, JobState::Succeeded, ['exitCode' => 0, 'output' => 'again']);

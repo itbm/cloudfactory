@@ -977,6 +977,72 @@ example `php artisan migrate --force` or `composer install`. The web panel has t
   sees "Administrator" or "Your provider" in place of the name of a person of the operator
   or of the reseller, and no IP address.
 
+### The web terminal
+
+A user can open a shell in the container of a website from the web panel (tab **Commands**,
+part **Terminal**). The shell runs as the website user, in `/app`, with the limits of the
+website. The command log keeps each command that the user types.
+
+```text
+ browser ── wss://<panel>/api/terminal/<session>/browser ──┐
+                                                           ▼
+                                   cf-panel-terminal (cf-terminal-relay)
+                                                           ▲
+ agent ──── wss://<panel>/api/terminal/<session>/agent ────┘
+   │
+   └── root helper ── PTY ── runuser … podman exec -it … sh -l (gVisor container)
+```
+
+1. The browser sends `POST /websites/{id}/terminal-sessions` with the size of the terminal.
+   The API makes a terminal session in the state `opening`, adds an entry to the audit log
+   and sends the job `OpenTerminal` to the agent. The answer has the path of the WebSocket
+   and a ticket for the browser.
+2. The browser connects to the relay with its ticket. The agent gets its own ticket in the
+   job, and it connects to the relay. The relay sends `{"type":"paired"}` to the two sides
+   when both are connected.
+3. The agent asks the root helper to start the shell in a PTY:
+   `runuser -u <user> -- podman exec -it --workdir /app <container> sh -c <script>`. The
+   script starts `bash -l`, or `sh -l` when the image has no bash.
+4. The relay copies each message to the other side and does not read it. A binary message
+   is keys (from the browser) or output (from the shell). A text message is JSON:
+   `{"type":"resize","cols":120,"rows":40}` from the browser, and
+   `{"type":"exit","code":0}` from the agent when the shell ends.
+5. The agent finds the command lines in the output of the PTY (`internal/termlog`). It sends
+   them to the panel each 2 seconds (`POST /api/agent/v1/terminal-sessions/{id}/commands`).
+   The panel adds each command to the command log of the website, with the source
+   `terminal`, the user and the IP address of the session.
+6. The agent also records the output in the asciicast v2 format, to 1 MiB. When the session
+   ends, the agent sends the reason, the exit code, the last commands and the recording
+   (`POST /api/agent/v1/terminal-sessions/{id}/end`).
+
+The relay is the unit `cf-panel-terminal` on the panel server. It runs `cf-terminal-relay`
+from the image of the panel API, on port 8090 in the container and on
+`169.254.77.1:19082` on the host. It reads only `APP_KEY` from `panel.env`, and it has no
+connection to the database. The edge Caddy sends `/api/terminal/*` to the relay. A remote
+agent connects to `https://<panel domain>` with the TLS settings of its connection to the
+panel. The agent on the panel server connects to `http://169.254.77.1:19082`.
+
+A ticket is `<time limit>.<HMAC>`. The HMAC is of the role, the session and the time limit,
+with a key that the API and the relay make from `APP_KEY`. A ticket is good for one
+connection. The ticket of the browser is good for 60 seconds. The ticket of the agent is good
+for 5 minutes. The panel does not keep the ticket of the agent: the agent client of the API
+adds it to the job when it sends the job.
+
+Limits:
+
+- A website can have 2 open terminals. The API and the agent have the same limit.
+- The API refuses a terminal when the website does not run or its customer is suspended.
+- The shell closes after 30 minutes with no input (`TMOUT`). The relay closes a session after
+  30 minutes with no message, and after 12 hours. The agent closes a session after 12 hours.
+- When the panel does not get the commands for 2 minutes, the agent closes the terminal.
+  Thus a user cannot type commands that the command log does not keep.
+- When the browser or the agent closes the connection, the agent sends `SIGHUP` to the shell.
+  `podman exec` does not stop the process in the container when its client stops.
+- A session with no end report after 12 hours and 10 minutes shows as closed, and it does not
+  count for the limit of 2.
+- `GET /websites/{id}/terminal-sessions/{sessionId}/recording` gives the recording as a file
+  (`application/x-asciicast`). The lists do not have the recording.
+
 ### Deploys from Git
 
 A website can have one Git source: a repository, a branch, a web directory, build commands,

@@ -209,7 +209,7 @@ describe("the cron jobs of a website", () => {
 
 describe("run a command and the command log", () => {
   const entry = (over: Partial<WebsiteCommand> = {}): WebsiteCommand => ({
-    id: "c-new", websiteId: "", source: "run", command: "php artisan migrate --force", state: "done", exitCode: 0, timedOut: false, timeoutSeconds: 600,
+    id: "c-new", websiteId: "", source: "run", sessionId: null, command: "php artisan migrate --force", state: "done", exitCode: 0, timedOut: false, timeoutSeconds: 600,
     actor: "Olu Owner", ip: "203.0.113.14", jobId: "job-1", createdAt: "2026-11-14T10:00:00+00:00", startedAt: "2026-11-14T10:00:00+00:00", finishedAt: "2026-11-14T10:00:03+00:00", ...over,
   });
 
