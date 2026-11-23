@@ -11,10 +11,13 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/itbm/cloudfactory/cli/internal/client"
 )
 
 // The protection of a website in the edge proxy: the firewall, the IP address rules, the
 // password-protected paths and the sign-in limit (docs/architecture.md#protection-of-a-website).
+// Also the malware scans of a website (docs/architecture.md#malware-scan).
 
 // wordPressSignInPaths are the sign-in paths of WordPress (WebsiteSecurity::WORDPRESS_SIGN_IN_PATHS).
 var wordPressSignInPaths = []string{"/wp-login.php", "/xmlrpc.php"}
@@ -41,6 +44,32 @@ type securityState struct {
 	} `json:"signInLimit"`
 }
 
+// malwareScans is the answer of GET /websites/{id}/malware-scans.
+type malwareScans struct {
+	Schedule   string        `json:"schedule"`
+	NextScanAt *string       `json:"nextScanAt"`
+	Scans      []malwareScan `json:"scans"`
+}
+
+type malwareScan struct {
+	ID            string `json:"id"`
+	Trigger       string `json:"trigger"`
+	State         string `json:"state"`
+	ScannedFiles  int    `json:"scannedFiles"`
+	InfectedFiles int    `json:"infectedFiles"`
+	Errors        int    `json:"errors"`
+	Signatures    int    `json:"signatures"`
+	Engine        string `json:"engine"`
+	Findings      []struct {
+		Path      string `json:"path"`
+		Signature string `json:"signature"`
+		Removed   bool   `json:"removed"`
+	} `json:"findings"`
+	Truncated bool    `json:"truncated"`
+	Error     *string `json:"error"`
+	StartedAt string  `json:"startedAt"`
+}
+
 type firewallEvent struct {
 	At       string `json:"at"`
 	ClientIP string `json:"clientIp"`
@@ -64,6 +93,7 @@ func (a *app) security(ctx context.Context, sub string, args []string) error {
 		return err
 	}
 	base := "/websites/" + w.ID + "/security"
+	scans := "/websites/" + w.ID + "/malware-scans"
 	read := func() (securityState, error) {
 		var out struct {
 			Security securityState `json:"security"`
@@ -256,6 +286,76 @@ func (a *app) security(ctx context.Context, sub string, args []string) error {
 			list = append(list, map[string]any{"path": path, "users": []map[string]any{entry}})
 		}
 		return a.change(ctx, http.MethodPatch, base, map[string]any{"protectedPaths": list})
+	case "scan":
+		// A scan waits for its job, then shows the result. Malware gives an error, so that a
+		// script can see it in the exit status.
+		var out struct {
+			Scan malwareScan `json:"scan"`
+			Job  client.Job  `json:"job"`
+		}
+		if err := a.api.Do(ctx, http.MethodPost, scans, nil, nil, &out); err != nil {
+			return err
+		}
+		// As for each change, --json gives the answer of the API and does not wait.
+		if a.json {
+			return a.printJSON(out)
+		}
+		if a.noWait {
+			fmt.Fprintf(a.out, "Job %s is in the queue: %s\n", out.Job.ID, out.Job.Title)
+			return nil
+		}
+		if err := a.wait(ctx, out.Job.ID); err != nil {
+			return err
+		}
+		var list malwareScans
+		if err := a.api.Do(ctx, http.MethodGet, scans, nil, nil, &list); err != nil {
+			return err
+		}
+		i := slices.IndexFunc(list.Scans, func(s malwareScan) bool { return s.ID == out.Scan.ID })
+		if i < 0 {
+			return errors.New("the panel does not have the result of the scan")
+		}
+		scan := list.Scans[i]
+		a.printScan(scan)
+		if scan.State == "infected" {
+			return fmt.Errorf("the scan found %d infected files", scan.InfectedFiles)
+		}
+		return nil
+	case "scans":
+		var list malwareScans
+		if err := a.api.Do(ctx, http.MethodGet, scans, nil, nil, &list); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(list)
+		}
+		next := "-"
+		if list.NextScanAt != nil {
+			next = *list.NextScanAt
+		}
+		fmt.Fprintf(a.out, "Schedule %s, next scan %s\n", list.Schedule, next)
+		if len(list.Scans) == 0 {
+			fmt.Fprintln(a.out, "The website has no scans.")
+			return nil
+		}
+		a.printScan(list.Scans[0])
+		if len(list.Scans) > 1 {
+			tw := tabwriter.NewWriter(a.out, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(tw, "\nSTARTED\tRESULT\tFILES\tINFECTED\tTRIGGER")
+			for _, s := range list.Scans[1:] {
+				fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%s\n", s.StartedAt, s.State, s.ScannedFiles, s.InfectedFiles, s.Trigger)
+			}
+			tw.Flush()
+		}
+		return nil
+	case "scan-schedule":
+		if err := need(args, 2, "a website and weekly or off"); err != nil {
+			return err
+		}
+		if args[1] != "weekly" && args[1] != "off" {
+			return fmt.Errorf("the schedule is weekly or off, not %q", args[1])
+		}
+		return a.change(ctx, http.MethodPatch, scans, map[string]any{"schedule": args[1]})
 	case "events":
 		fs := flag.NewFlagSet("events", flag.ContinueOnError)
 		limit := fs.Int("limit", 50, "the number of events, at most 200")
@@ -318,6 +418,36 @@ func (a *app) printSecurity(s securityState) {
 		fmt.Fprintf(tw, "Sign-in limit\t-\n")
 	}
 	tw.Flush()
+}
+
+func (a *app) printScan(s malwareScan) {
+	switch s.State {
+	case "running":
+		fmt.Fprintf(a.out, "The scan of %s runs.\n", s.StartedAt)
+		return
+	case "failed":
+		reason := "no error message"
+		if s.Error != nil {
+			reason = *s.Error
+		}
+		fmt.Fprintf(a.out, "The scan of %s failed: %s\n", s.StartedAt, reason)
+		return
+	}
+	fmt.Fprintf(a.out, "Scan of %s: %s. %d files scanned, %d infected, %d not read. ClamAV %s, %d signatures.\n",
+		s.StartedAt, s.State, s.ScannedFiles, s.InfectedFiles, s.Errors, s.Engine, s.Signatures)
+	for _, f := range s.Findings {
+		removed := ""
+		if f.Removed {
+			removed = " (deleted)"
+		}
+		fmt.Fprintf(a.out, "    %s: %s%s\n", f.Path, f.Signature, removed)
+	}
+	if s.Truncated {
+		fmt.Fprintf(a.out, "    The list has the first %d files.\n", len(s.Findings))
+	}
+	if s.State == "infected" {
+		fmt.Fprintln(a.out, "Delete a file with: cf files delete WEBSITE PATH")
+	}
 }
 
 // nonNil gives an empty list for nil, so that the JSON value is [] and not null.

@@ -20,6 +20,7 @@ enum NotificationEvent: string
     case UptimeDown = 'uptime.down';
     case UptimeUp = 'uptime.up';
     case PasswordReset = 'password.reset';
+    case MalwareFound = 'malware.found';
 
     public function label(): string
     {
@@ -36,6 +37,7 @@ enum NotificationEvent: string
             self::UptimeDown => 'Websites that are down',
             self::UptimeUp => 'Websites that are up again',
             self::PasswordReset => 'Password reset',
+            self::MalwareFound => 'Malware found',
         };
     }
 
@@ -54,6 +56,7 @@ enum NotificationEvent: string
             self::UptimeDown => 'An uptime check of a website failed a number of times in a row.',
             self::UptimeUp => 'A website that was down answers its uptime check again.',
             self::PasswordReset => 'Someone asked for a link to set a new password for your user.',
+            self::MalwareFound => 'A malware scan found infected files in a website.',
         };
     }
 
@@ -141,6 +144,7 @@ enum NotificationEvent: string
             self::UptimeDown => ['website' => 'shop.example.com', 'url' => 'https://shop.example.com/', 'error' => 'HTTP status 503.', 'since' => '15 Nov 2026 03:12 UTC'],
             self::UptimeUp => ['website' => 'shop.example.com', 'url' => 'https://shop.example.com/', 'downtime' => '14 minutes', 'since' => '15 Nov 2026 03:12 UTC', 'until' => '15 Nov 2026 03:26 UTC'],
             self::PasswordReset => ['resetUrl' => 'https://panel.example.com/reset-password#token=4f1c…', 'minutes' => '60', 'ip' => '203.0.113.7'],
+            self::MalwareFound => ['website' => 'shop.example.com', 'count' => '2', 'files' => "/public/wp-content/uploads/cache.php (Php.Webshell)\n/public/x.php (Php.Trojan)", 'time' => '15 Nov 2026 03:20 UTC'],
         };
     }
 
@@ -172,6 +176,7 @@ enum NotificationEvent: string
             self::UptimeDown => '{{website}} is down',
             self::UptimeUp => '{{website}} is up again',
             self::PasswordReset => 'Set a new password for {{brand}}',
+            self::MalwareFound => 'Malware found in {{website}}',
         };
     }
 
@@ -190,6 +195,7 @@ enum NotificationEvent: string
             self::UptimeDown => "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
             self::UptimeUp => "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
             self::PasswordReset => "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app or remove your passkeys.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
+            self::MalwareFound => "Hello {{name}},\n\nThe malware scan of {{website}} at {{time}} found {{count}} infected files:\n\n{{files}}\n\nThe scan did not change the files. Open the Security tab of the website to remove the files, then scan again. Also change the passwords of the website, and update its software:\n{{panelUrl}}/websites",
         };
     }
 }

@@ -36,6 +36,10 @@ const WebmailUser = "cf-webmail"
 // of the agent makes it when the server gets its first zone.
 const DnsUser = "cf-dns"
 
+// ScanUser is the Unix user of the signature updates of the malware scanner. It runs freshclam
+// in a container, and owns the signatures, which each website user can read.
+const ScanUser = "cf-scan"
+
 // AgentUser is the Unix user of the worker of the agent. The worker has the connection to
 // the panel and the jobs. It is not root: the root helper of the agent does the work that
 // needs root (package gate).

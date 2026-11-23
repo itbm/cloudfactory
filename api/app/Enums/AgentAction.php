@@ -64,6 +64,7 @@ enum AgentAction: string
     case DeleteImport = 'DeleteImport';
     case MakeArchive = 'MakeArchive';
     case ExtractArchive = 'ExtractArchive';
+    case ScanWebsite = 'ScanWebsite';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -129,6 +130,7 @@ enum AgentAction: string
             self::DeleteImport => ['Remove archive'],
             self::MakeArchive => ['Make the archive'],
             self::ExtractArchive => ['Extract the archive'],
+            self::ScanWebsite => ['Update malware signatures', 'Scan files'],
         };
     }
 

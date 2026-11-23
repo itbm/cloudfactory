@@ -24,7 +24,7 @@ class JobResource extends JsonResource
      * an error that shows the server from the inside becomes the name of the step. Other
      * errors are one line of 300 characters at most, for example "the website did not answer".
      */
-    private static function errorFor(Request $request, AgentJob $job): ?string
+    public static function errorFor(Request $request, AgentJob $job): ?string
     {
         $error = $job->error;
         if ($error === null || $request->user()?->isAdministrator()) {

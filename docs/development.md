@@ -227,8 +227,9 @@ Refer to [`api/README.md`](../api/README.md).
 
 ## Agent
 
-The Go code of the agent protocol (`agent/gen`) is not in Git. Make it after a clone, after a
-pull and after a change to `agent.proto`:
+The Go code of the agent protocol (`agent/gen`) is not in Git. Only a `doc.go` file of each
+package is in Git, so that `go mod tidy` finds the packages without the code (Dependabot runs
+it). Make the code after a clone, after a pull and after a change to `agent.proto`:
 
 ```sh
 cd agent
