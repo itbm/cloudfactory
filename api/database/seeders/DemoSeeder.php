@@ -46,6 +46,7 @@ use App\Models\Snapshot;
 use App\Models\UsageAlert;
 use App\Models\User;
 use App\Models\Website;
+use App\Models\WebsiteCommand;
 use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
 use App\Services\Certificates\Certificates;
@@ -141,6 +142,7 @@ class DemoSeeder extends Seeder
         $this->settleMesh();
         $this->backups();
         $this->cronJobsAndDeploys();
+        $this->commandLog();
         $this->mail();
         $this->jobsAndRollout();
         $this->imports();
@@ -1190,6 +1192,37 @@ class DemoSeeder extends Seeder
         ], 1);
         // The preview is a member of the network of Acme, so the mesh state changed again.
         $this->settleMesh();
+    }
+
+    /**
+     * The command log (FR-802): commands that users ran with "Run a command". The owner sees the
+     * commands of the administrator as "Administrator", with no address.
+     */
+    private function commandLog(): void
+    {
+        $owner = User::where('email', 'owner@example.com')->first();
+        $admin = User::where('email', 'admin@example.com')->first();
+        // website, user, command, minutes ago, seconds, state, exit code, output
+        $rows = [
+            ['api.acme.example.com', $owner, 'php artisan migrate --force', 1500, 3, WebsiteCommand::DONE, 0, "\n   INFO  Running migrations.\n\n  2026_11_20_101500_add_status_to_orders_table ........................ 18.42ms DONE\n"],
+            ['api.acme.example.com', $owner, 'php artisan config:cache', 1490, 1, WebsiteCommand::DONE, 0, "\n   INFO  Configuration cached successfully.\n"],
+            ['api.acme.example.com', $admin, 'du -sh storage/logs', 300, 1, WebsiteCommand::DONE, 0, "1.4G\tstorage/logs"],
+            ['api.acme.example.com', $owner, 'php artisan queue:restart', 42, 1, WebsiteCommand::DONE, 0, "\n   INFO  Broadcasting queue restart signal.\n"],
+            ['api.acme.example.com', $owner, 'php artisan orders:export --since=yesterday', 12, 4, WebsiteCommand::DONE, 1, "\n   ERROR  The export directory /app/storage/exports is not writable.\n"],
+            ['shop.acme.example.com', $owner, 'wp plugin list --update=available', 90, 2, WebsiteCommand::DONE, 0, "+-------------+--------+-----------+---------+\n| name        | status | update    | version |\n+-------------+--------+-----------+---------+\n| woocommerce | active | available | 10.3.4  |\n+-------------+--------+-----------+---------+"],
+            ['shop.acme.example.com', $owner, 'wp cache flush', 88, 1, WebsiteCommand::DONE, 0, 'Success: The cache was flushed.'],
+        ];
+        foreach ($rows as [$name, $user, $command, $minutes, $seconds, $state, $exit, $output]) {
+            $website = $this->websites[$name];
+            $entry = new WebsiteCommand([
+                'website_id' => $website->id, 'customer_id' => $website->customer_id, 'user_id' => $user->id, 'actor' => $user->name,
+                'ip' => '203.0.113.'.(10 + $user->id), 'source' => WebsiteCommand::SOURCE_RUN, 'command' => $command, 'state' => $state,
+                'exit_code' => $exit, 'timeout_seconds' => 600, 'output' => $output,
+                'started_at' => now()->subMinutes($minutes), 'finished_at' => now()->subMinutes($minutes)->addSeconds($seconds),
+            ]);
+            $entry->created_at = $entry->updated_at = now()->subMinutes($minutes);
+            $entry->save();
+        }
     }
 
     private function jobsAndRollout(): void

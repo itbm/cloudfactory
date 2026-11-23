@@ -70,6 +70,12 @@ Usage:
   cf cron set WEBSITE CRON_ID [--schedule SCHEDULE] [--command COMMAND] [--on | --off]
   cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
   cf cron delete WEBSITE CRON_ID
+  cf commands run WEBSITE [--timeout SECONDS] -- COMMAND...
+                                                       Run one command line now in the container of the website, in /app, as
+                                                       the user of the website. cf waits and shows the output. The exit code
+                                                       of cf is the exit code of the command. The panel logs each command.
+  cf commands list WEBSITE [--search TEXT]             The command log: who ran each command, when, and the exit code.
+  cf commands get WEBSITE COMMAND_ID                   One command of the log, with the end of its output.
   cf deploys show WEBSITE                              The Git repository, the deploy key, the webhook and the releases.
   cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR]
                              [--trigger manual|webhook|schedule] [--check-minutes N]
@@ -533,6 +539,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.logs(ctx, sub, rest)
 	case "cron":
 		return a.cron(ctx, sub, rest)
+	case "commands", "command":
+		return a.commands(ctx, sub, rest)
 	case "deploys", "deploy":
 		return a.deploys(ctx, sub, rest)
 	case "previews", "preview":
