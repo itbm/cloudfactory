@@ -1,0 +1,28 @@
+{
+  "contract": "cf-pack/1",
+  "kind": "runtime",
+  "slug": "php-legacy-apache",
+  "name": "Older PHP for Apache + PHP-FPM",
+  "version": "0.0.0",
+  "publisher": "Cloudfactory",
+  "description": "PHP 8.2 and 8.3 for the Apache + PHP-FPM runtime, for websites that move from a server with an older PHP, for example from cPanel. These versions get only security fixes. PHP 8.2 gets no fixes after 31 December 2026.",
+  "runtime": {
+    "contract": "cf-php/1",
+    "family": "apache-php-fpm"
+  },
+  "images": [
+    {
+      "version": "8.3",
+      "ref": "ghcr.io/itbm/apache-php8.3:0.0.0",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000083",
+      "supportEndsAt": "2027-12-31"
+    },
+    {
+      "version": "8.2",
+      "ref": "ghcr.io/itbm/apache-php8.2:0.0.0",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000082",
+      "supportEndsAt": "2026-12-31"
+    }
+  ],
+  "x-source": "https://github.com/itbm/cloudfactory/tree/main/images/apache-php-fpm"
+}

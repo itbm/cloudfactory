@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\CertificateController;
 use App\Http\Controllers\Api\CronJobController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
+use App\Http\Controllers\Api\DatabaseEngineController;
 use App\Http\Controllers\Api\DatabaseServerController;
 use App\Http\Controllers\Api\DatabaseToolController;
 use App\Http\Controllers\Api\DatabaseUserController;
@@ -208,6 +209,8 @@ Route::prefix('v1')->group(function () {
             Route::get('networks/{id}', [NetworkController::class, 'show']);
             Route::patch('networks/{id}', [NetworkController::class, 'update']);
             Route::delete('networks/{id}', [NetworkController::class, 'destroy']);
+            // The built-in database engines and the engines of the database packs.
+            Route::get('database-engines', [DatabaseEngineController::class, 'index']);
             Route::get('database-servers', [DatabaseServerController::class, 'index']);
             Route::post('database-servers', [DatabaseServerController::class, 'store']);
             Route::get('database-servers/{id}', [DatabaseServerController::class, 'show']);

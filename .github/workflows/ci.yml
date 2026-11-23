@@ -13,8 +13,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # On a pull request, a job runs only when the files that it tests change. A change to this
+  # workflow runs all jobs. A push to main runs all jobs.
+  changes:
+    name: Select the jobs
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.select.outputs.web }}
+      api: ${{ steps.select.outputs.api }}
+      agent: ${{ steps.select.outputs.agent }}
+      cli: ${{ steps.select.outputs.cli }}
+      audit: ${{ steps.select.outputs.audit }}
+      install: ${{ steps.select.outputs.install }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The merge commit of the pull request and its first parent, the base branch.
+          fetch-depth: 2
+      - name: Select the jobs with changed files
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -eu
+          if [ "$EVENT" = pull_request ]; then
+            git diff --name-only HEAD^1 HEAD >"$RUNNER_TEMP/changed"
+          else
+            echo .github/workflows/ci.yml >"$RUNNER_TEMP/changed"
+          fi
+          # want JOB PATTERN...: the job runs when a changed file matches a pattern.
+          want() {
+            job=$1
+            shift
+            if grep -qE "^(\.github/workflows/ci\.yml\$|$(IFS='|'; echo "$*"))" "$RUNNER_TEMP/changed"; then
+              echo "$job=true" >>"$GITHUB_OUTPUT"
+              echo "$job: runs"
+            else
+              echo "$job=false" >>"$GITHUB_OUTPUT"
+              echo "$job: skipped"
+            fi
+          }
+          want web 'web/' 'plugins/'
+          # The API tests read the OpenAPI document, the schema, the plugins and the web fixtures.
+          want api 'api/' 'openapi/' 'schema/' 'plugins/' 'web/src/test/fixtures/'
+          # The agent tests read the schema, the input rules of the API, install.sh and the packs.
+          want agent 'agent/' 'schema/' 'api/app/Validation/InputRules\.php$' 'install/install\.sh$' 'plugins/packs/'
+          want cli 'cli/'
+          want audit 'agent/' 'cli/' 'api/composer\.' 'web/package'
+          want install 'install/' 'images/' 'plugins/packs/'
+
   web:
     name: Web panel
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -50,6 +102,8 @@ jobs:
 
   api:
     name: Panel API (PHP ${{ matrix.php }})
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -83,9 +137,10 @@ jobs:
           extensions: pdo_sqlite, pdo_pgsql, openssl, intl
           coverage: none
       - run: composer install --no-interaction --prefer-dist
-      - run: ./vendor/bin/pint --test
-      # SQLite in memory: the fast run, and the engine of a developer.
-      - run: php artisan test
+      - run: ./vendor/bin/pint --test --parallel
+      # SQLite in memory: the fast run, and the engine of a developer. --parallel runs one test
+      # process for each CPU.
+      - run: php artisan test --parallel
       # PostgreSQL: the engine of a server. It checks the length of text, the range of numbers
       # and the case of letters in a different way.
       - name: Run the tests with PostgreSQL
@@ -96,10 +151,13 @@ jobs:
           DB_DATABASE: cloudfactory_test
           DB_USERNAME: cloudfactory
           DB_PASSWORD: cloudfactory
-        run: php artisan test
+        # Each test process makes its own database (cloudfactory_test_test_1 and so on).
+        run: php artisan test --parallel
 
   agent:
     name: Agent
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -148,6 +206,8 @@ jobs:
 
   cli:
     name: CLI
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -167,6 +227,8 @@ jobs:
   # do not see the Go binaries clearly, so the source code is checked here.
   audit:
     name: Dependency audit
+    needs: changes
+    if: needs.changes.outputs.audit == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -197,11 +259,13 @@ jobs:
 
   install:
     name: Installation script
+    needs: changes
+    if: needs.changes.outputs.install == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: shellcheck -s sh install/install.sh install/test.sh images/apache-php-fpm/start.sh images/panel-api/start.sh images/sftp/start.sh images/mariadb/cf-manage plugins/packs/golang/cf-app
+      - run: shellcheck -s sh install/install.sh install/test.sh images/apache-php-fpm/start.sh images/panel-api/start.sh images/sftp/start.sh images/mariadb/cf-manage plugins/packs/golang/cf-app plugins/packs/mysql/cf-start plugins/packs/mysql/test.sh
       - run: sh install/test.sh
       - run: dash install/test.sh

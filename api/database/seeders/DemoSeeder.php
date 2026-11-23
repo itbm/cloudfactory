@@ -58,6 +58,7 @@ use App\Services\Networks;
 use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
 use App\Services\Packs\PackManifest;
+use App\Services\Packs\Packs;
 use App\Services\PanelCertificate;
 use App\Services\Passkeys;
 use App\Services\Plugins\Manifest;
@@ -65,6 +66,7 @@ use App\Services\Plugins\Signatures;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
 use App\Services\WebsiteSecurity;
+use App\Validation\InputRules;
 use CBOR\ByteStringObject;
 use CBOR\MapObject;
 use CBOR\NegativeIntegerObject;
@@ -186,13 +188,71 @@ class DemoSeeder extends Seeder
                 'policy' => 'manual', 'default_command' => './server', 'default_install' => 'go build -o server .', 'checked_at' => now()->subHour(),
             ]);
         }
+        // A pack of Cloudfactory: PHP 8.3 and 8.2 for Apache + PHP-FPM (cf-php/1). The release
+        // key signs it. The demo has no release key, so it signs the manifest with a new key.
+        $registry = config('cloudfactory.registry');
+        $legacy = fn (string $php, string $ends) => [
+            'version' => $php, 'ref' => "{$registry}/apache-php{$php}:0.1.9",
+            'digest' => 'sha256:'.hash('sha256', "cloudfactory-demo-apache-php{$php}:0.1.9"), 'supportEndsAt' => $ends,
+        ];
+        $manifest = json_encode([
+            'contract' => PackManifest::CONTRACT, 'kind' => 'runtime', 'slug' => 'php-legacy-apache', 'name' => 'Older PHP for Apache + PHP-FPM', 'version' => '0.1.9',
+            'publisher' => 'Cloudfactory', 'description' => 'PHP 8.2 and 8.3 for the Apache + PHP-FPM runtime, for websites that move from a server with an older PHP, for example from cPanel. These versions get only security fixes. PHP 8.2 gets no fixes after 31 December 2026.',
+            'runtime' => ['contract' => PackManifest::PHP_CONTRACT, 'family' => 'apache-php-fpm'],
+            'images' => [$legacy('8.3', '2027-12-31'), $legacy('8.2', '2026-12-31')],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        $release = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        openssl_sign($manifest, $signature, $release, OPENSSL_ALGO_SHA256);
+        $spec = PackManifest::parse($manifest);
+        $php = Pack::create([
+            'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'description' => $spec['description'], 'manifest' => $manifest, 'signature' => base64_encode($signature),
+            'public_key' => openssl_pkey_get_details($release)['key'], 'plugin_key_id' => null, 'signer' => Pack::RELEASE_KEY,
+            'user_id' => User::where('email', 'admin@example.com')->value('id'),
+        ]);
+        Packs::syncImages($php, $spec);
+        // A database pack that adds MySQL (cf-database/1). Its database servers get the first
+        // block of ports.
+        $manifest = json_encode([
+            'contract' => PackManifest::CONTRACT_2, 'kind' => PackManifest::KIND_DATABASE, 'slug' => 'mysql', 'name' => 'MySQL', 'version' => '1.0.0',
+            'publisher' => 'Example Packs Ltd', 'description' => 'MySQL database servers. The image starts from the official MySQL image and adds the program /cf/manage of the contract cf-database/1.',
+            'database' => ['contract' => PackManifest::DATABASE_CONTRACT, 'port' => '3306', 'dataDir' => '/var/lib/mysql'],
+            'images' => [
+                ['version' => '8.4', 'ref' => 'ghcr.io/example-packs/cf-mysql:8.4', 'digest' => 'sha256:'.hash('sha256', 'cf-mysql 8.4'), 'supportEndsAt' => '2032-04-30'],
+                ['version' => '8.0', 'ref' => 'ghcr.io/example-packs/cf-mysql:8.0', 'digest' => 'sha256:'.hash('sha256', 'cf-mysql 8.0'), 'supportEndsAt' => '2026-04-30'],
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        openssl_sign($manifest, $signature, $private, OPENSSL_ALGO_SHA256);
+        $spec = PackManifest::parse($manifest);
+        Pack::create([
+            'slug' => $spec['slug'], 'kind' => $spec['kind'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'description' => $spec['description'], 'manifest' => $manifest, 'signature' => base64_encode($signature),
+            'public_key' => $public, 'plugin_key_id' => $key->id, 'signer' => $key->name, 'database_port' => InputRules::MIN_DATABASE_PACK_PORT,
+            'user_id' => User::where('email', 'admin@example.com')->value('id'),
+        ]);
         foreach (['web-1', 'web-2'] as $name) {
             $this->servers[$name]->update([
-                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0']],
+                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0'], ['slug' => 'php-legacy-apache', 'version' => '0.1.9'], ['slug' => 'mysql', 'version' => '1.0.0']],
                 'agent_runtimes' => ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'golang'],
+                'database_engines' => ['mariadb', 'postgresql', 'valkey', 'mysql'],
             ]);
         }
         $this->servers['web-3']->update(['packs_resync' => ['at' => now()->subMinutes(3)->toIso8601String(), 'tries' => 3]]);
+
+        // A MySQL database server of Acme, with the database of its API. The website connects
+        // to it by its network name.
+        $api = $this->websites['api.acme.example.com'];
+        $plan = $api->customer->plan;
+        $mysql = DatabaseServer::create([
+            'customer_id' => $api->customer_id, 'server_id' => $api->server_id, 'plan_id' => $plan->id, 'engine' => 'mysql', 'engine_version' => '8.4',
+            'name' => 'mysql-1', 'port' => InputRules::MIN_DATABASE_PACK_PORT, 'limits' => $plan->database_limits, 'status' => DatabaseServer::RUNNING,
+            'usage' => ['memoryBytes' => 310 * self::MB, 'diskBytes' => 230 * self::MB, 'diskSizeBytes' => $plan->database_limits['diskBytes']],
+        ]);
+        $name = $api->unix_user.'_events';
+        $database = $api->databases()->create(['engine' => 'mysql', 'name' => $name, 'size_bytes' => 164 * self::MB, 'database_server_id' => $mysql->id]);
+        $user = $api->databaseUsers()->create(['engine' => 'mysql', 'name' => $name, 'access' => 'website', 'database_server_id' => $mysql->id]);
+        $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
+        $this->settleMesh();
     }
 
     /**
@@ -876,7 +936,12 @@ class DemoSeeder extends Seeder
     {
         $now = now()->utc();
         $month = $now->format('Y-m');
-        $monthStart = $now->copy()->startOfMonth();
+        // The loops use Unix times in UTC, not Carbon objects: the history has about 100,000
+        // buckets, and a Carbon object for each bucket makes the seeder 4 times slower.
+        $end = $now->getTimestamp();
+        $endMicro = $end * 1_000_000 + (int) $now->format('u');
+        $monthStart = $now->copy()->startOfMonth()->getTimestamp();
+        $day = 86_400;
         // The traffic of each running website in one hour at the peak of the day, in MB.
         $traffic = ['acme.example.com' => 180, 'shop.acme.example.com' => 420, 'api.acme.example.com' => 60, 'storefront.acme.example.com' => 35,
             'northwind.example.com' => 90, 'cornerbakery.example.org' => 70, 'harbourbooks.example.net' => 1150, 'orders.internal' => 8];
@@ -890,17 +955,22 @@ class DemoSeeder extends Seeder
             }
         };
         // $at: the start of the bucket. $f: the factor of the day cycle, from about 0.3 to 1.
-        $add = function (string $type, string $id, int $minutes, Carbon $at, float $cpu, float $memory, float $disk, int $processes, int $bytes) use (&$rows, $flush) {
+        $add = function (string $type, string $id, int $minutes, int $at, float $cpu, float $memory, float $disk, int $processes, int $bytes) use (&$rows, $flush) {
             $samples = $minutes;
             $rows[] = [
-                'subject_type' => $type, 'subject_id' => $id, 'resolution' => $minutes, 'bucket_at' => $at->format('Y-m-d H:i:s'), 'samples' => $samples,
+                'subject_type' => $type, 'subject_id' => $id, 'resolution' => $minutes, 'bucket_at' => gmdate('Y-m-d H:i:s', $at), 'samples' => $samples,
                 'cpu_sum' => round($cpu * $samples, 2), 'cpu_max' => round($cpu * (1.2 + mt_rand(0, 60) / 100), 2), 'memory_sum' => round($memory * $samples), 'memory_max' => round($memory * (1.03 + mt_rand(0, 8) / 100)),
                 'disk' => round($disk), 'processes_max' => $processes, 'bytes_in' => (int) ($bytes * 0.08), 'bytes_out' => (int) ($bytes * 0.92),
             ];
             $flush();
         };
-        $cycle = fn (Carbon $at) => 0.65 + 0.35 * sin(($at->hour + $at->minute / 60 - 9) / 24 * 2 * M_PI) + mt_rand(-8, 8) / 100;
-        $weekday = fn (Carbon $at) => $at->isWeekend() ? 0.75 : 1.0;
+        $cycle = fn (int $at) => 0.65 + 0.35 * sin((intdiv($at % $day, 3600) + intdiv($at % 3600, 60) / 60 - 9) / 24 * 2 * M_PI) + mt_rand(-8, 8) / 100;
+        // 1 January 1970 was a Thursday: the day 0 of the week is a Sunday, and the day 6 is a Saturday.
+        $weekday = fn (int $at) => in_array((intdiv($at, $day) + 4) % 7, [0, 6], true) ? 0.75 : 1.0;
+        // The start of the first bucket of $minutes at or after the start of the minute of $from (UsageRecorder::bucket).
+        $bucket = fn (int $from, int $minutes) => intdiv($from, $minutes * 60) * $minutes * 60;
+        // The days from $at to now, with the fraction of a day (Carbon::diffInDays).
+        $daysAgo = fn (int $at) => intdiv($endMicro - $at * 1_000_000, $day * 1_000_000) + ($endMicro - $at * 1_000_000) % ($day * 1_000_000) / ($day * 1_000_000);
 
         foreach ($this->websites as $name => $website) {
             if ($website->status->value === 'failed') {
@@ -910,17 +980,16 @@ class DemoSeeder extends Seeder
             $use = $website->usage;
             $running = $website->status->value === 'running';
             $peak = ($traffic[$name] ?? 0) * self::MB;
-            $created = $website->created_at->copy()->utc();
+            $created = $website->created_at->getTimestamp();
             $monthBytes = 0;
-            foreach ([UsageRecorder::FINE => $now->copy()->subDays(2), UsageRecorder::COARSE => $now->copy()->subDays(400)] as $minutes => $from) {
-                $at = UsageRecorder::bucket($from->max($created), $minutes);
-                $span = max(1, $now->getTimestamp() - $created->getTimestamp());
-                for (; $at <= $now; $at->addMinutes($minutes)) {
+            foreach ([UsageRecorder::FINE => $end - 2 * $day, UsageRecorder::COARSE => $end - 400 * $day] as $minutes => $from) {
+                $span = max(1, $end - $created);
+                for ($at = $bucket(max($from, $created), $minutes); $at <= $end; $at += $minutes * 60) {
                     $f = max(0.2, $cycle($at)) * $weekday($at);
-                    $growth = 0.55 + 0.45 * min(1, ($at->getTimestamp() - $created->getTimestamp()) / $span);
-                    $stopped = ! $running && $at > $now->copy()->subDays(20);
+                    $growth = 0.55 + 0.45 * min(1, ($at - $created) / $span);
+                    $stopped = ! $running && $at > $end - 20 * $day;
                     $bytes = $stopped ? 0 : (int) ($peak * $f * $minutes / 60);
-                    $add(UsageAlert::WEBSITE, $website->id, $minutes, $at->copy(),
+                    $add(UsageAlert::WEBSITE, $website->id, $minutes, $at,
                         $stopped ? 0 : max(0.3, $use['cpuPercent'] * $f * 1.4 ?: 2 * $f),
                         $stopped ? 0 : max(16 * self::MB, $use['memoryBytes'] * (0.85 + 0.15 * $f) ?: 64 * self::MB * $f),
                         $use['diskBytes'] * $growth,
@@ -940,13 +1009,12 @@ class DemoSeeder extends Seeder
             }
             mt_srand(crc32($name));
             $u = $server->usage;
-            foreach ([UsageRecorder::FINE => $now->copy()->subDays(2), UsageRecorder::COARSE => $now->copy()->subDays(400)] as $minutes => $from) {
+            foreach ([UsageRecorder::FINE => $end - 2 * $day, UsageRecorder::COARSE => $end - 400 * $day] as $minutes => $from) {
                 // The sample servers are new, but their history starts a year ago.
-                $at = UsageRecorder::bucket($from, $minutes);
-                for (; $at <= $now; $at->addMinutes($minutes)) {
+                for ($at = $bucket($from, $minutes); $at <= $end; $at += $minutes * 60) {
                     $f = max(0.2, $cycle($at)) * $weekday($at);
-                    $age = 1 - min(1, $now->diffInDays($at, true) / 400);
-                    $add(UsageAlert::SERVER, $server->id, $minutes, $at->copy(), min(100, $u['cpuPercent'] * $f * 1.3), min(100, $u['memoryPercent'] * (0.85 + 0.2 * $f)),
+                    $age = 1 - min(1, $daysAgo($at) / 400);
+                    $add(UsageAlert::SERVER, $server->id, $minutes, $at, min(100, $u['cpuPercent'] * $f * 1.3), min(100, $u['memoryPercent'] * (0.85 + 0.2 * $f)),
                         $u['diskPercent'] * (0.6 + 0.4 * $age), 0, (int) (1600 * self::MB * $f * $minutes / 60 * ($u['cpuPercent'] / 20)));
                 }
             }
@@ -955,13 +1023,12 @@ class DemoSeeder extends Seeder
         foreach (DatabaseServer::all() as $databaseServer) {
             mt_srand(crc32($databaseServer->id));
             $u = $databaseServer->usage ?? [];
-            $created = ($databaseServer->created_at ?? $now)->copy()->utc()->subDays(60);
-            foreach ([UsageRecorder::FINE => $now->copy()->subDays(2), UsageRecorder::COARSE => $now->copy()->subDays(60)] as $minutes => $from) {
-                $at = UsageRecorder::bucket($from->max($created), $minutes);
-                for (; $at <= $now; $at->addMinutes($minutes)) {
+            $created = ($databaseServer->created_at ?? $now)->getTimestamp() - 60 * $day;
+            foreach ([UsageRecorder::FINE => $end - 2 * $day, UsageRecorder::COARSE => $end - 60 * $day] as $minutes => $from) {
+                for ($at = $bucket(max($from, $created), $minutes); $at <= $end; $at += $minutes * 60) {
                     $f = max(0.2, $cycle($at));
-                    $age = 1 - min(1, $now->diffInDays($at, true) / 60);
-                    $add(UsageAlert::DATABASE_SERVER, $databaseServer->id, $minutes, $at->copy(), 0, ($u['memoryBytes'] ?? 0) * (0.9 + 0.1 * $f), ($u['diskBytes'] ?? 0) * (0.8 + 0.2 * $age), 0, 0);
+                    $age = 1 - min(1, $daysAgo($at) / 60);
+                    $add(UsageAlert::DATABASE_SERVER, $databaseServer->id, $minutes, $at, 0, ($u['memoryBytes'] ?? 0) * (0.9 + 0.1 * $f), ($u['diskBytes'] ?? 0) * (0.8 + 0.2 * $age), 0, 0);
                 }
             }
         }
