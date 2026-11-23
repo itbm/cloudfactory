@@ -21,6 +21,7 @@ use App\Models\Server;
 use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Certificates\Certificates;
+use App\Services\Deploys\Deploys;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
 use App\Services\Networks;
@@ -108,6 +109,8 @@ class WebsiteMoveTest extends TestCase
         // A result of the old server does not change the status.
         app(JobOutcome::class)->finish($send, JobState::Succeeded, null, []);
         $this->assertSame(WebsiteStatus::Moving, $website->fresh()->status);
+        // A push to the Git host and a scheduled check of the branch deploy after the move.
+        $this->assertFalse(Deploys::allowed($website->fresh()));
 
         app(JobOutcome::class)->finish($receive, JobState::Succeeded, null, ['port' => 20000, 'dnsPointsHere' => true]);
         $moved = $website->fresh();

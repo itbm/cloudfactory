@@ -468,6 +468,10 @@ func (d *Deps) waitSite(ctx context.Context, w *agentv1.Website, port int, suffi
 	}
 }
 
+// healthFailed starts the error of a failed watch. The panel shows the error to the owner of
+// the website (DeployController::errorFor).
+const healthFailed = "the health check failed after the switch"
+
 // watch checks the website for some time after a change. A check passes when the website
 // gives the expected status, for example 200. The watch fails when the share of failed checks
 // is more than maxErrorRate (FR-1104, FR-1105).
@@ -505,7 +509,7 @@ func (d *Deps) watch(ctx context.Context, port int, hostname string, hc *agentv1
 		}
 	}
 	if checks > 0 && float64(failed)/float64(checks) > hc.GetMaxErrorRate() {
-		return fmt.Errorf("%d of %d health checks failed: %v", failed, checks, last)
+		return fmt.Errorf("%s: %d of %d checks failed, last error: %v", healthFailed, failed, checks, last)
 	}
 	return nil
 }
@@ -788,6 +792,13 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, v
 // a second container, checks it, sends traffic to it, and only then stops the old container.
 // If a check fails, the old container continues to serve the website (FR-1105).
 func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
+	return d.runtimeChange(req, nil)
+}
+
+// runtimeChange gives the job of SetRuntime. When keep is not nil, a health check that fails
+// after the switch does not fail the job: the website keeps the new container, and keep gets
+// the error. A deploy with a database migration uses it (FR-1009).
+func (d *Deps) runtimeChange(req *agentv1.WebsiteRequest, keep func(error)) (jobs.Job, error) {
 	w := req.GetWebsite()
 	if err := CheckWebsite(w); err != nil {
 		return jobs.Job{}, err
@@ -882,7 +893,12 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if w.GetWorker() {
 				return nil
 			}
-			return d.watch(ctx, newPort, hostname, req.GetHealthCheck())
+			err := d.watch(ctx, newPort, hostname, req.GetHealthCheck())
+			if err != nil && keep != nil && ctx.Err() == nil {
+				keep(err)
+				return nil
+			}
+			return err
 		}},
 		{Name: "Stop old container", Do: func(ctx context.Context) error {
 			if old.Stopped {
