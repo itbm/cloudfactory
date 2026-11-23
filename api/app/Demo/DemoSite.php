@@ -73,20 +73,16 @@ class DemoSite
         $dir = fn (int $h) => ['type' => 'directory', 'content' => '', 'modified' => $at($h)];
         $file = fn (string $content, int $h) => ['type' => 'file', 'content' => $content, 'modified' => $at($h)];
 
+        // One path on each line, in alphabetical order, so that two pull requests that add files do
+        // not conflict.
         return [
+            '/.env.example' => $file("APP_ENV=production\nDB_HOST=mariadb.internal\n", 190),
+            '/composer.json' => $file("{\n    \"name\": \"example/website\",\n    \"require\": {\n        \"php\": \"^8.3\"\n    }\n}\n", 190),
             '/public' => $dir(4),
-            '/public/index.php' => $file("<?php\n\nrequire __DIR__.'/../src/bootstrap.php';\n\necho render('home', ['title' => '{$website->name}']);\n", 4),
-            '/public/robots.txt' => $file("User-agent: *\nAllow: /\n", 190),
             '/public/css' => $dir(30),
             '/public/css/site.css' => $file("body {\n  font-family: system-ui, sans-serif;\n  margin: 0 auto;\n  max-width: 60rem;\n}\n", 30),
-            '/src' => $dir(12),
-            '/src/bootstrap.php' => $file("<?php\n\nfunction render(string \$view, array \$data): string\n{\n    extract(\$data);\n    ob_start();\n    require __DIR__.\"/views/{\$view}.php\";\n\n    return ob_get_clean();\n}\n", 12),
-            '/src/views' => $dir(12),
-            '/src/views/home.php' => $file("<!doctype html>\n<title><?= htmlspecialchars(\$title) ?></title>\n<link rel=\"stylesheet\" href=\"/css/site.css\">\n<h1><?= htmlspecialchars(\$title) ?></h1>\n", 12),
-            '/storage' => $dir(1),
-            '/storage/cache' => $dir(1),
-            '/composer.json' => $file("{\n    \"name\": \"example/website\",\n    \"require\": {\n        \"php\": \"^8.3\"\n    }\n}\n", 190),
-            '/.env.example' => $file("APP_ENV=production\nDB_HOST=mariadb.internal\n", 190),
+            '/public/index.php' => $file("<?php\n\nrequire __DIR__.'/../src/bootstrap.php';\n\necho render('home', ['title' => '{$website->name}']);\n", 4),
+            '/public/robots.txt' => $file("User-agent: *\nAllow: /\n", 190),
             // An archive of an earlier version, for the extract of the file manager.
             '/site-2026-10.zip' => $file(str_repeat("PK\x03\x04 demo archive\n", 180), 96) + ['entries' => [
                 'site-2026-10' => $dir(96),
@@ -94,6 +90,12 @@ class DemoSite
                 'site-2026-10/css' => $dir(96),
                 'site-2026-10/css/site.css' => $file("body {\n  font-family: Georgia, serif;\n}\n", 96),
             ]],
+            '/src' => $dir(12),
+            '/src/bootstrap.php' => $file("<?php\n\nfunction render(string \$view, array \$data): string\n{\n    extract(\$data);\n    ob_start();\n    require __DIR__.\"/views/{\$view}.php\";\n\n    return ob_get_clean();\n}\n", 12),
+            '/src/views' => $dir(12),
+            '/src/views/home.php' => $file("<!doctype html>\n<title><?= htmlspecialchars(\$title) ?></title>\n<link rel=\"stylesheet\" href=\"/css/site.css\">\n<h1><?= htmlspecialchars(\$title) ?></h1>\n", 12),
+            '/storage' => $dir(1),
+            '/storage/cache' => $dir(1),
         ] + (str_starts_with($website->name, 'shop.') ? [
             // The malware scan of the demonstration finds this file.
             '/public/uploads' => $dir(40),
@@ -315,7 +317,7 @@ class DemoSite
      * @param  list<string>  $paths
      * @return array<string, mixed>
      */
-    public static function archive(Website $website, array $paths, string $to): array
+    public static function makeArchive(Website $website, array $paths, string $to): array
     {
         $tree = self::tree($website);
         $entries = [];
