@@ -281,7 +281,7 @@ only some changes. Their data is the same as the data of `audit.recorded`.
 | `domain.added`, `domain.verified`, `domain.removed` | Added domain, Verified domain, Removed domain |
 | `database.created`, `database.removed` | Created database, Removed database |
 | `backup.started`, `restore.started` | Backed up website, Restored from backup |
-| `deploy.started` | Started deploy, Started deploy from webhook |
+| `deploy.started` | Started deploy, Started deploy from webhook, Started deploy from branch check |
 | `customer.created`, `customer.changed` | Created customer, Changed customer |
 | `user.created` | Created user |
 

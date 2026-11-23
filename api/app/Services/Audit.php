@@ -28,10 +28,14 @@ class Audit
         ]), $user?->plugin_id);
     }
 
-    /** Records a change that the panel made by itself, for example an automatic update. */
-    public static function system(string $action, string $target = ''): void
+    /**
+     * Records a change that the panel made by itself, for example an automatic update. A change
+     * of a customer, for example a deploy from a check of the branch, has the customer, so
+     * that the customer sees it in its audit log.
+     */
+    public static function system(string $action, string $target = '', ?string $customerId = null): void
     {
-        self::announce(AuditEntry::create(['actor' => 'System', 'ip' => null, 'action' => $action, 'target' => $target]), null);
+        self::announce(AuditEntry::create(['actor' => 'System', 'ip' => null, 'action' => $action, 'target' => $target, 'customer_id' => $customerId]), null);
     }
 
     /**

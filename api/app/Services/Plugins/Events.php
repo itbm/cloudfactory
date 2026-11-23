@@ -46,6 +46,7 @@ class Events
         'Restored from backup' => 'restore.started',
         'Started deploy' => 'deploy.started',
         'Started deploy from webhook' => 'deploy.started',
+        'Started deploy from branch check' => 'deploy.started',
         'Created customer' => 'customer.created',
         'Changed customer' => 'customer.changed',
         'Created user' => 'user.created',
