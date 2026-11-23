@@ -72,6 +72,13 @@ func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 		case "PATCH /websites/W1/security":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"security":{},` + job + `}`))
+		case "POST /websites/W1/malware-scans":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"scan":{"id":"S2","state":"running"},` + job + `}`))
+		case "GET /websites/W1/malware-scans", "PATCH /websites/W1/malware-scans":
+			w.Write([]byte(`{"schedule":"weekly","nextScanAt":"2026-11-29T03:00:00+00:00","scans":[` +
+				`{"id":"S2","trigger":"manual","state":"infected","scannedFiles":1204,"infectedFiles":1,"errors":0,"signatures":3627519,"engine":"1.4.4","findings":[{"path":"/public/x.php","signature":"Php.Webshell-1","removed":false}],"truncated":false,"error":null,"startedAt":"2026-11-22T21:00:00+00:00"},` +
+				`{"id":"S1","trigger":"scheduled","state":"clean","scannedFiles":1190,"infectedFiles":0,"errors":0,"signatures":3627000,"engine":"1.4.4","findings":[],"truncated":false,"error":null,"startedAt":"2026-11-15T03:00:00+00:00"}]}`))
 		case "GET /websites/W1/security/events":
 			w.Write([]byte(`{"events":[{"at":"2026-11-22T21:26:59Z","clientIp":"203.0.113.9","host":"acme.example","uri":"/?q=<script>","action":"blocked","score":20,"rules":[{"id":941100,"message":"XSS Attack Detected via libinjection","data":"Matched Data: XSS"}]}]}`))
 		case "GET /websites/W1/previews", "PUT /websites/W1/previews":
@@ -497,5 +504,39 @@ func TestPreviews(t *testing.T) {
 	}
 	if err := a.dispatch(ctx, []string{"previews", "remove", "acme.example", "main"}); err == nil {
 		t.Error("remove accepted a number that is not a number")
+	}
+}
+
+func TestMalwareScan(t *testing.T) {
+	srv, calls := sitePanel(t)
+	a, out := testApp(srv)
+	ctx := context.Background()
+	// The scan waits for its job and shows the result. Malware gives an error.
+	err := a.dispatch(ctx, []string{"security", "scan", "acme.example"})
+	if err == nil || err.Error() != "the scan found 1 infected files" {
+		t.Fatalf("err = %v", err)
+	}
+	for _, want := range []string{"Site job: complete.", "1204 files scanned, 1 infected", "/public/x.php: Php.Webshell-1", "cf files delete"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("scan does not have %q:\n%s", want, out)
+		}
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"security", "scans", "acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Schedule weekly, next scan 2026-11-29T03:00:00+00:00", "2026-11-15T03:00:00+00:00  clean"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("scans does not have %q:\n%s", want, out)
+		}
+	}
+	if err := a.dispatch(ctx, []string{"security", "scan-schedule", "acme.example", "off"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Method != "PATCH" || c.Path != "/websites/W1/malware-scans" || c.Body["schedule"] != "off" {
+		t.Errorf("call = %+v", c)
+	}
+	if err := a.dispatch(ctx, []string{"security", "scan-schedule", "acme.example", "daily"}); err == nil {
+		t.Error("a schedule that is not weekly or off gave no error")
 	}
 }

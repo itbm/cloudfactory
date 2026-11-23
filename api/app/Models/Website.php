@@ -18,10 +18,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
+    'moving_to_server_id',
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
     'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command', 'install_command', 'environment',
-    'bandwidth_month', 'bandwidth_bytes', 'security', 'moving_to_server_id',
+    'bandwidth_month', 'bandwidth_bytes', 'security', 'malware_scan_schedule',
 ])]
 // The API never gives the values of the environment variables, or the password hashes of the
 // protection (App\Services\WebsiteSecurity).
@@ -29,6 +30,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Website extends Model
 {
     use GuardsState, HasFactory, HasUlids;
+
+    /** The defaults of the table, also for a new model before the panel reads it again. */
+    protected $attributes = ['malware_scan_schedule' => 'weekly'];
 
     /** A website with domains. The edge proxy serves it. */
     public const PUBLIC = 'public';
@@ -197,6 +201,12 @@ class Website extends Model
     public function commands(): HasMany
     {
         return $this->hasMany(WebsiteCommand::class);
+    }
+
+    /** The malware scans of the website, the newest first (App\Services\MalwareScans). */
+    public function malwareScans(): HasMany
+    {
+        return $this->hasMany(MalwareScan::class)->latest()->orderByDesc('id');
     }
 
     /** The sessions of the web terminal of the website (FR-802). */

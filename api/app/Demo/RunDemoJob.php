@@ -199,6 +199,7 @@ class RunDemoJob implements ShouldQueue
             ],
             AgentAction::ImportMail => ['messages' => 140 * count($p['mailboxes'] ?? []), 'failed' => []],
             AgentAction::UpdateAgent => ['version' => config('cloudfactory.agent.latest_version')],
+            AgentAction::ScanWebsite => ($website = Website::find($job->website_id)) ? DemoSite::scan($website) : [],
             // Each peer answers through its tunnel.
             AgentAction::SetMesh => ['mesh' => [
                 'publicKey' => $job->server->mesh_public_key,
