@@ -107,6 +107,16 @@ class NotificationTemplateController extends Controller
                 $errors[$field] = 'This event has no '.implode(', ', array_map(fn ($v) => '{{'.$v.'}}', $unknown)).'. Use: '.implode(', ', array_map(fn ($v) => '{{'.$v.'}}', array_keys($e->variables()))).'.';
             }
         }
+        // A secret value is only for the text. The subject is one line in the list of sent
+        // emails, and a mail client shows it in a notification.
+        preg_match_all(Templates::VARIABLE, $subject, $inSubject);
+        if (! isset($errors['subject']) && ($secret = array_values(array_intersect($inSubject[1], $e->secretVariables())))) {
+            $errors['subject'] = 'Do not put '.implode(', ', array_map(fn ($v) => '{{'.$v.'}}', $secret)).' in the subject. Put it in the text.';
+        }
+        preg_match_all(Templates::VARIABLE, $body, $inBody);
+        if (! isset($errors['body']) && ($missing = array_values(array_diff($e->requiredVariables(), $inBody[1])))) {
+            $errors['body'] = 'The text must have '.implode(', ', array_map(fn ($v) => '{{'.$v.'}}', $missing)).'.';
+        }
         if ($errors) {
             throw ValidationException::withMessages($errors);
         }

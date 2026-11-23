@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\BrandController;
+use App\Http\Controllers\Api\CertificateController;
 use App\Http\Controllers\Api\CronJobController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
@@ -19,7 +20,9 @@ use App\Http\Controllers\Api\DnsSecondaryController;
 use App\Http\Controllers\Api\DnsZoneController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\FileController;
+use App\Http\Controllers\Api\IdentityProviderController;
 use App\Http\Controllers\Api\ImageController;
+use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\MailAliasController;
@@ -33,6 +36,8 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationTemplateController;
 use App\Http\Controllers\Api\PackController;
 use App\Http\Controllers\Api\PanelCertificateController;
+use App\Http\Controllers\Api\PasskeyController;
+use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PluginController;
 use App\Http\Controllers\Api\RolloutController;
@@ -40,6 +45,7 @@ use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
+use App\Http\Controllers\Api\SsoController;
 use App\Http\Controllers\Api\TrustedKeyController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
@@ -55,6 +61,20 @@ Route::prefix('v1')->group(function () {
     // Adversarial review, finding A1-07: the third value of a throttle is the name of its
     // counter. Without a name, all limits of one client would share one counter.
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1,post-auth-login');
+    // The ways to sign in that the sign-in page shows.
+    Route::get('auth/methods', [AuthController::class, 'methods'])->middleware('throttle:60,1,get-auth-methods');
+    // A user who does not know the password asks for an email with a link to set a new one.
+    Route::post('auth/password-reset', [PasswordResetController::class, 'request'])->middleware('throttle:5,1,post-auth-password-reset');
+    Route::post('auth/password-reset/confirm', [PasswordResetController::class, 'reset'])->middleware('throttle:10,1,post-auth-password-reset-confirm');
+    // FR-103: sign in with a passkey, in place of the password and the TOTP code.
+    Route::post('auth/passkey/options', [PasskeyController::class, 'signInOptions'])->middleware('throttle:30,1,post-auth-passkey-options');
+    Route::post('auth/passkey', [PasskeyController::class, 'signIn'])->middleware('throttle:10,1,post-auth-passkey');
+    // Single sign-on: the browser goes to the identity provider and comes back (SsoController).
+    Route::get('auth/sso/oidc/callback', [SsoController::class, 'callback'])->middleware('throttle:30,1,get-auth-sso-oidc-callback');
+    Route::post('auth/sso/saml/acs', [SsoController::class, 'acs'])->middleware('throttle:30,1,post-auth-sso-saml-acs');
+    Route::get('auth/sso/saml/metadata', [SsoController::class, 'metadata'])->middleware('throttle:60,1,get-auth-sso-saml-metadata');
+    Route::get('auth/sso/{id}', [SsoController::class, 'start'])->middleware('throttle:30,1,get-auth-sso-x');
+    Route::post('auth/sso/complete', [SsoController::class, 'complete'])->middleware('throttle:10,1,post-auth-sso-complete');
     // White label: the brand of the sign-in page, for the domain of the request.
     Route::get('brand', [BrandController::class, 'show'])->middleware('throttle:60,1,get-brand');
     // The webhook of a website: a Git host calls it after a push. The token in the address is
@@ -70,7 +90,17 @@ Route::prefix('v1')->group(function () {
             Route::post('me/totp/setup', [AuthController::class, 'setupTotp']);
             Route::post('me/totp/enable', [AuthController::class, 'enableTotp']);
             Route::post('me/totp/disable', [AuthController::class, 'disableTotp']);
+            // FR-103: the passkeys of the user.
+            Route::post('me/passkeys/options', [PasskeyController::class, 'options']);
+            Route::post('me/passkeys', [PasskeyController::class, 'store']);
+            Route::patch('me/passkeys/{id}', [PasskeyController::class, 'update']);
+            Route::delete('me/passkeys/{id}', [PasskeyController::class, 'destroy']);
+            Route::post('me/identities/{id}', [SsoController::class, 'connect']);
+            Route::delete('me/identities/{id}', [SsoController::class, 'disconnect']);
         });
+        Route::get('me/passkeys', [PasskeyController::class, 'index']);
+        // Single sign-on: the accounts of identity providers that the user connected.
+        Route::get('me/identities', [SsoController::class, 'identities']);
         Route::middleware('scope:tokens')->group(function () {
             Route::get('tokens', [AuthController::class, 'tokens']);
             Route::post('tokens', [AuthController::class, 'createToken'])->middleware('throttle:10,1,post-tokens');
@@ -97,6 +127,14 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/domains/{name}/primary', [DomainController::class, 'makePrimary']);
             Route::post('websites/{websiteId}/domains/{name}/check', [DomainController::class, 'check'])->middleware('throttle:domain-checks');
             Route::delete('websites/{websiteId}/domains/{name}', [DomainController::class, 'destroy']);
+            // The certificates of the customers: uploads, and certificates with DNS validation
+            // (docs/certificates.md). Each order uses the limits of the certificate authority.
+            Route::get('certificates', [CertificateController::class, 'index']);
+            Route::post('certificates', [CertificateController::class, 'store'])->middleware('throttle:certificate-changes');
+            Route::get('certificates/{id}', [CertificateController::class, 'show']);
+            Route::put('certificates/{id}', [CertificateController::class, 'update'])->middleware('throttle:certificate-changes');
+            Route::post('certificates/{id}/renew', [CertificateController::class, 'renew'])->middleware('throttle:certificate-changes');
+            Route::delete('certificates/{id}', [CertificateController::class, 'destroy']);
             Route::put('websites/{websiteId}/sftp', [SftpController::class, 'update']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
             Route::post('websites/{websiteId}/runtime/revert', [RuntimeController::class, 'revert']);
@@ -256,6 +294,18 @@ Route::prefix('v1')->group(function () {
             Route::get('setup', [SetupController::class, 'show']);
         });
 
+        // The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP (docs/imports.md).
+        // The import makes websites, databases, mail and DNS zones, so only an administrator
+        // imports.
+        Route::middleware(['admin', 'scope:websites'])->group(function () {
+            Route::get('imports', [ImportController::class, 'index']);
+            Route::post('imports', [ImportController::class, 'store'])->middleware('throttle:20,1,post-imports');
+            Route::get('imports/{id}', [ImportController::class, 'show']);
+            Route::put('imports/{id}/archive', [ImportController::class, 'upload']);
+            Route::post('imports/{id}/start', [ImportController::class, 'start']);
+            Route::delete('imports/{id}', [ImportController::class, 'destroy']);
+        });
+
         Route::middleware(['admin', 'scope:images'])->group(function () {
             Route::get('images', [ImageController::class, 'index']);
             Route::post('images', [ImageController::class, 'store']);
@@ -289,6 +339,13 @@ Route::prefix('v1')->group(function () {
             Route::post('users', [UserController::class, 'store'])->middleware('throttle:30,1,post-users');
             Route::post('users/{id}/reset-password', [UserController::class, 'resetPassword'])->whereNumber('id')->middleware('throttle:30,1,post-users-x-reset-password');
             Route::delete('users/{id}', [UserController::class, 'destroy'])->whereNumber('id');
+        });
+        // Single sign-on: the identity providers of the panel (IdentityProviderController).
+        Route::middleware(['admin', 'scope:users'])->group(function () {
+            Route::get('identity-providers', [IdentityProviderController::class, 'index']);
+            Route::post('identity-providers', [IdentityProviderController::class, 'store'])->middleware('throttle:10,1,post-identity-providers');
+            Route::put('identity-providers/{id}', [IdentityProviderController::class, 'update'])->middleware('throttle:10,1,put-identity-providers-x');
+            Route::delete('identity-providers/{id}', [IdentityProviderController::class, 'destroy']);
         });
 
         Route::get('audit', [AuditController::class, 'index'])->middleware('scope:audit');
@@ -363,5 +420,7 @@ Route::prefix('agent/v1')->group(function () {
     Route::middleware('agent')->group(function () {
         Route::post('jobs/{id}/events', [AgentController::class, 'jobEvent']);
         Route::post('report', [AgentController::class, 'report']);
+        // The uploaded archive of an import, for a server with a download job of the import.
+        Route::get('imports/{id}/archive', [ImportController::class, 'archive']);
     });
 });

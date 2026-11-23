@@ -2,6 +2,7 @@
 // loads the changed data again. A change that makes a job gives a promise that resolves when
 // the agent has finished the job.
 
+import { createPasskey, getPasskey } from "../lib/webauthn";
 import type {
   Account,
   ApiToken,
@@ -9,7 +10,10 @@ import type {
   BackupPolicy,
   Brand,
   BrandStatus,
+  CertificateOrderStage,
+  CertificateSource,
   Customer,
+  CustomerCertificate,
   Database,
   DatabaseGrant,
   DatabaseServer,
@@ -92,12 +96,21 @@ export function setUnauthorisedHandler(fn: () => void) {
 }
 
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return send<T>(method, path, body === undefined ? undefined : JSON.stringify(body), body === undefined ? undefined : "application/json");
+}
+
+/** Sends bytes, for example a part of the archive of an import (application/octet-stream). */
+export async function sendBytes<T>(method: string, path: string, bytes: Blob): Promise<T> {
+  return send<T>(method, path, bytes, "application/octet-stream");
+}
+
+async function send<T>(method: string, path: string, body: BodyInit | undefined, contentType: string | undefined): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (contentType) headers["Content-Type"] = contentType;
   if (token) headers.Authorization = `Bearer ${token}`;
   let res: Response;
   try {
-    res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(BASE + path, { method, headers, body });
   } catch {
     throw new LiveError("The panel API does not answer. Check your connection and try again.");
   }
@@ -153,7 +166,7 @@ interface ApiWebsite {
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; version?: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null; bandwidthBytes?: number;
-  domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
+  domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null; source?: CertificateSource; certificateId?: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
   stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
 interface ApiServer {
@@ -272,7 +285,8 @@ export function toWebsite(w: ApiWebsite): Website {
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
     bandwidthBytes: w.bandwidthBytes ?? 0,
     domains: (w.domains ?? []).map((d) => ({
-      name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
+      name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere,
+      certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined, source: d.certificate.source ?? "automatic", certificateId: d.certificate.certificateId ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
     })),
     sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
@@ -388,6 +402,32 @@ export const toDnsSecondaries = (s: ApiDnsSecondaries): DnsSecondaries => ({
 /** The zones that the user opened. Each load reads their records again. */
 const shownZones = new Set<string>();
 
+interface ApiCertificate {
+  id: string; customerId: string; source: CustomerCertificate["source"]; names: string[]; state: CustomerCertificate["state"];
+  issuer: string | null; fingerprint: string | null; notBefore: string | null; expiresAt: string | null; trusted: boolean | null; renewAt: string | null;
+  order: { stage: CertificateOrderStage; startedAt: string | null; records: { name: string; value: string }[] } | null;
+  error: string | null; nextTryAt: string | null;
+  usedBy: { domain: string; websiteId: string | null; websiteName: string | null; serverName: string }[];
+  certificatePem?: string | null;
+  createdAt: string;
+}
+
+export const toCertificate = (c: ApiCertificate): CustomerCertificate => ({
+  id: c.id, customerId: c.customerId, source: c.source, names: c.names, state: c.state,
+  issuer: c.issuer ?? undefined, fingerprint: c.fingerprint ?? undefined, notBefore: c.notBefore ?? undefined, expiresAt: c.expiresAt ?? undefined,
+  trusted: c.trusted ?? undefined, renewAt: c.renewAt ?? undefined,
+  order: c.order ? { stage: c.order.stage, startedAt: c.order.startedAt ?? undefined, records: c.order.records ?? [] } : undefined,
+  error: c.error ?? undefined, nextTryAt: c.nextTryAt ?? undefined,
+  usedBy: (c.usedBy ?? []).map((u) => ({ domain: u.domain, websiteId: u.websiteId ?? undefined, websiteName: u.websiteName ?? undefined, serverName: u.serverName })),
+  certificatePem: c.certificatePem ?? undefined,
+  createdAt: c.createdAt,
+});
+
+/** Reads one certificate with its chain. */
+export async function certificate(id: string): Promise<CustomerCertificate> {
+  return toCertificate(await request<ApiCertificate>("GET", `/certificates/${encodeURIComponent(id)}`));
+}
+
 /** Reads one zone with its records. The next loads also read the records of the zone. */
 export async function dnsZone(id: string): Promise<DnsZone> {
   shownZones.add(id);
@@ -418,6 +458,30 @@ export async function signInBrand(): Promise<Brand> {
   return request<Brand>("GET", "/brand");
 }
 
+/** The ways to sign in that the sign-in page shows, for the domain that the browser opened. */
+export interface SignInMethods {
+  /** The panel can send an email with a link to set a new password. */
+  passwordReset: boolean;
+  /** Passkeys work on this domain (FR-103). */
+  passkeys: boolean;
+  /** The identity providers for single sign-on. The list is empty on a domain that is not the panel domain. */
+  providers: { id: string; name: string }[];
+}
+
+export async function signInMethods(): Promise<SignInMethods> {
+  return request<SignInMethods>("GET", "/auth/methods");
+}
+
+/** Asks for an email with a link to set a new password. The answer is the same for each email. */
+export async function requestPasswordReset(email: string): Promise<string> {
+  return (await request<{ message: string }>("POST", "/auth/password-reset", { email })).message;
+}
+
+/** Sets a new password with the code from the link in the email. */
+export async function resetPassword(email: string, resetToken: string, password: string, confirmation: string): Promise<void> {
+  await request<void>("POST", "/auth/password-reset/confirm", { email, token: resetToken, password, password_confirmation: confirmation });
+}
+
 /** Loads the full state for the signed-in user from the API. */
 export async function load(previous: State): Promise<State> {
   const me = await request<ApiMe>("GET", "/me");
@@ -435,7 +499,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, dnsSecondaries, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, dnsSecondaries, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -472,6 +536,8 @@ export async function load(previous: State): Promise<State> {
     // The pages of the plugins for the menu. A panel API of an earlier release has no plugins.
     optional(request<{ data: PluginPage[] }>("GET", "/plugin-pages").then((r) => r.data), []),
     optional(request<{ data: PluginAction[] }>("GET", "/plugin-actions").then((r) => r.data), []),
+    // The certificates of the customers. A token with no websites scope gives no list.
+    optional(request<{ data: ApiCertificate[] }>("GET", "/certificates").then((r) => r.data), []),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -526,6 +592,12 @@ export async function load(previous: State): Promise<State> {
     dnsAccounts: dnsAccounts.data.map(toDnsAccount),
     dnsProviders: dnsAccounts.providers,
     dnsSecondaries,
+    // The chain stays from the page of the certificate, while the certificate is the same.
+    certificates: certificates.map((c) => {
+      const next = toCertificate(c);
+      const before = previous.certificates.find((x) => x.id === c.id && x.fingerprint === next.fingerprint);
+      return before?.certificatePem ? { ...next, certificatePem: before.certificatePem } : next;
+    }),
     mesh,
     networks,
     pluginPages,
@@ -618,6 +690,141 @@ export async function signIn(email: string, password: string, totp: string): Pro
   writeToken(token);
 }
 
+// Passkeys (FR-103)
+
+export interface Passkey {
+  id: string;
+  name: string;
+  /** The panel domain of the passkey. The browser uses a passkey only on its own domain. */
+  domain: string;
+  /** The passkey is in a password manager or a cloud account, so it is on more than one device. */
+  synced: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+type Ceremony = { ceremony: string; publicKey: Record<string, unknown> };
+
+/** Signs in with a passkey of this domain. The browser shows the passkeys. */
+export async function signInWithPasskey(): Promise<void> {
+  const start = await request<Ceremony>("POST", "/auth/passkey/options");
+  const credential = await getPasskey(start.publicKey);
+  const res = await request<{ token: string }>("POST", "/auth/passkey", { ceremony: start.ceremony, credential, deviceId: deviceId() });
+  token = res.token;
+  writeToken(token);
+}
+
+export async function listPasskeys(): Promise<Passkey[]> {
+  return (await request<{ data: Passkey[] }>("GET", "/me/passkeys")).data;
+}
+
+/** Adds a passkey. The panel asks for the password and, when TOTP is on, a code first. */
+export async function addPasskey(name: string, password: string, totp: string): Promise<Passkey> {
+  const start = await request<Ceremony>("POST", "/me/passkeys/options", { password, totp: totp || undefined });
+  const credential = await createPasskey(start.publicKey);
+  return request<Passkey>("POST", "/me/passkeys", { ceremony: start.ceremony, name, credential });
+}
+
+export async function renamePasskey(id: string, name: string): Promise<Passkey> {
+  return request<Passkey>("PATCH", `/me/passkeys/${encodeURIComponent(id)}`, { name });
+}
+
+export async function removePasskey(id: string, password: string, totp: string): Promise<void> {
+  await request<void>("DELETE", `/me/passkeys/${encodeURIComponent(id)}`, { password, totp: totp || undefined });
+}
+
+// Single sign-on with OpenID Connect and SAML
+
+/** The address that starts a sign-in with a provider. The browser goes to it, so it is not a request of fetch. */
+export const signOnUrl = (providerId: string) => `${BASE}/auth/sso/${encodeURIComponent(providerId)}`;
+
+/**
+ * Changes the ticket from the provider into a session. When TOTP is on for the user, the API
+ * asks for a code, as for a sign-in with a password.
+ */
+export async function completeSignOn(ticket: string, totp: string): Promise<void> {
+  const res = await request<{ token: string }>("POST", "/auth/sso/complete", { ticket, totp: totp || undefined, deviceId: deviceId() });
+  token = res.token;
+  writeToken(token);
+}
+
+/** A provider that the user can use, and the account of the user at the provider. */
+export interface UserIdentity {
+  providerId: string;
+  name: string;
+  protocol: "oidc" | "saml";
+  connected: boolean;
+  /** The email that the provider gave at the last sign-in. */
+  email: string | null;
+  connectedAt: string | null;
+  lastUsedAt: string | null;
+}
+
+export async function listIdentities(): Promise<UserIdentity[]> {
+  return (await request<{ data: UserIdentity[] }>("GET", "/me/identities")).data;
+}
+
+/** The first step to connect an account. The answer is the address for the browser. */
+export async function connectIdentity(providerId: string, password: string, totp: string): Promise<string> {
+  return (await request<{ url: string }>("POST", `/me/identities/${encodeURIComponent(providerId)}`, { password, totp: totp || undefined })).url;
+}
+
+export async function disconnectIdentity(providerId: string, password: string, totp: string): Promise<void> {
+  await request<void>("DELETE", `/me/identities/${encodeURIComponent(providerId)}`, { password, totp: totp || undefined });
+}
+
+/** An identity provider that an administrator added. */
+export interface IdentityProvider {
+  id: string;
+  name: string;
+  protocol: "oidc" | "saml";
+  enabled: boolean;
+  issuer: string | null;
+  clientId: string | null;
+  /** The panel does not show the client secret again. */
+  hasClientSecret: boolean;
+  entityId: string | null;
+  ssoUrl: string | null;
+  certificate: string | null;
+  certificateExpiresAt: string | null;
+  /** The panel connects an account to the user with the same verified email. */
+  linkByEmail: boolean;
+  emailDomains: string[];
+  /** The number of connected accounts. */
+  users: number;
+  createdAt: string;
+}
+
+export interface IdentityProviderInput {
+  name: string;
+  protocol?: "oidc" | "saml";
+  enabled: boolean;
+  issuer?: string;
+  clientId?: string;
+  /** Empty keeps the secret. */
+  clientSecret?: string;
+  entityId?: string;
+  ssoUrl?: string;
+  certificate?: string;
+  linkByEmail: boolean;
+  emailDomains: string[];
+}
+
+/** The values that the administrator gives to a provider. They are the same for all the providers. */
+export interface ServiceProvider {
+  /** OpenID Connect: the redirect URI. */
+  redirectUri: string;
+  /** SAML: the entity ID of the panel, which is also the address of its metadata. */
+  entityId: string;
+  /** SAML: the assertion consumer service. */
+  acsUrl: string;
+}
+
+export async function listIdentityProviders(): Promise<{ providers: IdentityProvider[]; serviceProvider: ServiceProvider }> {
+  const r = await request<{ data: IdentityProvider[]; serviceProvider: ServiceProvider }>("GET", "/identity-providers");
+  return { providers: r.data, serviceProvider: r.serviceProvider };
+}
+
 /**
  * Audit finding S8: the API deletes the session token, so a copy of the token does not work
  * after the sign-out. The panel does not wait for the answer.
@@ -655,4 +862,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiDatabaseServer, ApiDnsAccount, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiCertificate, ApiDatabaseServer, ApiDnsAccount, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };

@@ -68,6 +68,18 @@ job completes with no server.
 Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
 is `password`. The sample users have no TOTP.
 
+To try passkeys, open the web panel at `http://localhost:5173`, not at `127.0.0.1`. A browser
+makes a passkey only on HTTPS or on `localhost`. The passkeys of the sample data are for the
+domain `panel.cloudfactory.io`, so you cannot sign in with them. Add a new passkey in
+**Settings**. `CF_PASSKEY_LOCAL_ORIGINS` gives the other origins of `localhost` that the API
+accepts in development.
+
+Single sign-on also works on `localhost` in development, with HTTP. The providers of the
+sample data are examples: they do not work. To try single sign-on, add a provider of your own
+in **Settings > Single sign-on**, for example a Keycloak container. In development, the
+addresses of the provider can use HTTP. Register the redirect URI that the panel shows, for
+example `http://localhost:5173/api/v1/auth/sso/oidc/callback`.
+
 The sample data (`api/database/seeders/DemoSeeder.php`) has an example of each state that a
 page can show: a website that the panel could not make, a server with updates, a degraded
 server, a suspended customer, a domain that waits for its DNS record.
@@ -78,7 +90,15 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 - a new database with a name that ends with `_fail`;
 - a deploy from a repository with `fail` in its address (the build step fails);
 - a cron job with `fail` in its command, when you select **Run now**;
-- a change of a DNS zone with a name that starts with `fail.`.
+- a change of a DNS zone with a name that starts with `fail.`;
+- the download of an account import with `fail` in the name of its file or in its address.
+
+The demo agent does not read the archive of an import. Each import gets the same sample
+account (`api/app/Demo/DemoImport.php`). A file name with `directadmin`, or a file name that
+starts with `user.`, gives a DirectAdmin backup. A file name with `plesk`, or a file name that
+starts with `backup_`, gives a Plesk backup. A file name with `hestia`, or a file name of the
+form `USER.2026-11-22_05-00-00.tar`, gives a HestiaCP backup. Each other name gives a cPanel
+backup.
 
 In the demonstration mode, the file manager shows a small set of sample files for each
 website, and keeps your changes in the cache. The logs are sample lines.

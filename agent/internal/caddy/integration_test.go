@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -157,5 +158,83 @@ func testLocalWebsite(t *testing.T, c *Client, address, root string) {
 	}
 	if status, _, _ := c.do(ctx, http.MethodGet, "/id/"+localPolicyID(site.WebsiteID), nil); status == http.StatusOK {
 		t.Error("the policy of the website stays after the removal")
+	}
+}
+
+// TestRealCaddyCertificates checks the certificates from the panel with a real edge proxy:
+// the edge proxy sends a certificate from the panel for its hosts, it still gets its own
+// certificate for a different host in the same domain, and the panel route keeps its
+// connection policy. Set CF_CADDY_ADMIN and CF_CADDY_HTTPS.
+func TestRealCaddyCertificates(t *testing.T) {
+	admin, address := os.Getenv("CF_CADDY_ADMIN"), os.Getenv("CF_CADDY_HTTPS")
+	if admin == "" || address == "" {
+		t.Skip("set CF_CADDY_ADMIN and CF_CADDY_HTTPS")
+	}
+	c := New(admin)
+	ctx := context.Background()
+	if err := c.EnsureBase(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a, b := testCertificates(t)
+	owner := Site{WebsiteID: "ICERTA", Port: 20003, Hosts: []string{"example.com", "www.example.com"}, Primary: "example.com"}
+	other := Site{WebsiteID: "ICERTB", Port: 20004, Hosts: []string{"other.example.com"}, Primary: "other.example.com"}
+	for _, s := range []Site{owner, other} {
+		if err := c.Apply(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetCertificates(ctx, []Certificate{a, b}); err != nil {
+		t.Fatal(err)
+	}
+	// A second call with the same list changes nothing.
+	if err := c.SetCertificates(ctx, []Certificate{a, b}); err != nil {
+		t.Fatal(err)
+	}
+	served := func(name string) string {
+		chain, err := ServedCertificate(ctx, address, name)
+		if err != nil || len(chain) == 0 {
+			return ""
+		}
+		return LeafFingerprint(chain[0])
+	}
+	for _, h := range []string{"example.com", "www.example.com"} {
+		if got := served(h); got != Fingerprint(a.CertificatePEM) {
+			t.Errorf("%s: served %q, want the certificate from the panel", h, got)
+		}
+	}
+	if got := served("shop.example.org"); got != Fingerprint(b.CertificatePEM) {
+		t.Errorf("shop.example.org: served %q", got)
+	}
+	// The panel keeps its certificate from the panel CA.
+	if got := served("panel.localhost"); got == "" || got == Fingerprint(a.CertificatePEM) || got == Fingerprint(b.CertificatePEM) {
+		t.Errorf("panel.localhost: served %q", got)
+	}
+	// Caddy still manages the certificate of the other host in the same domain.
+	status, body, err := c.do(ctx, http.MethodGet, automaticHTTPSPath, nil)
+	if err != nil || status != http.StatusOK || !strings.Contains(string(body), `"ignore_loaded_certificates":true`) || strings.Contains(string(body), "other.example.com") {
+		t.Errorf("automatic_https = %d %s %v", status, body, err)
+	}
+	loaded, err := c.Certificates(ctx)
+	if err != nil || len(loaded) != 2 {
+		t.Fatalf("Certificates = %+v, %v", loaded, err)
+	}
+	t.Logf("loaded: %+v", loaded)
+
+	if err := c.SetCertificates(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := served("shop.example.org"); got == Fingerprint(b.CertificatePEM) {
+		t.Error("shop.example.org: the edge proxy still sends the certificate after its removal")
+	}
+	if loaded, err := c.Certificates(ctx); err != nil || len(loaded) != 0 {
+		t.Errorf("Certificates after the removal = %+v, %v", loaded, err)
+	}
+	for _, s := range []Site{owner, other} {
+		if err := c.Remove(ctx, s.WebsiteID); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

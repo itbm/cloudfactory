@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\EnsureActive;
 use App\Models\AuditEntry;
+use App\Models\IdentityProvider;
 use App\Models\User;
 use App\Services\Audit;
 use App\Services\Branding;
 use App\Services\LoginThrottle;
 use App\Services\Notifications\Devices;
 use App\Services\Notifications\Notifier;
+use App\Services\Notifications\Senders;
+use App\Services\Passkeys;
+use App\Services\Sso\SingleSignOn;
 use App\Services\Totp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -93,14 +97,43 @@ class AuthController extends Controller
         }
         LoginThrottle::clear($data['email'], $ip);
 
+        return self::startSession($request, $user, $user->totp_secret ? 'Signed in with password and TOTP' : 'Signed in with password');
+    }
+
+    /**
+     * Makes the session token of a sign-in, records the sign-in, and sends an email when the
+     * device is new. The token expires after 12 hours.
+     */
+    public static function startSession(Request $request, User $user, string $action): JsonResponse
+    {
         $token = $user->createToken(self::SESSION, ['*'], now()->addHours(12));
         $request->setUserResolver(fn () => $user);
-        Audit::record($request, $user->totp_secret ? 'Signed in with password and TOTP' : 'Signed in with password', $user->email);
+        Audit::record($request, $action, $user->email);
         if (Devices::seen($user, $request)) {
-            app(Notifier::class)->newDevice($user, Devices::label((string) $request->userAgent()), $ip);
+            app(Notifier::class)->newDevice($user, Devices::label((string) $request->userAgent()), (string) $request->ip());
         }
 
         return response()->json(['token' => $token->plainTextToken, 'expiresAt' => $token->accessToken->expires_at?->toIso8601String()]);
+    }
+
+    /**
+     * The ways to sign in that the sign-in page shows, for the domain of the request. A person
+     * who has not signed in can read it.
+     */
+    public function methods(Request $request): JsonResponse
+    {
+        // The link to set a new password needs an SMTP server: the server of the reseller that
+        // has this panel domain, else the server of the panel.
+        $reseller = Branding::resellerForHost($request->getHost());
+
+        return response()->json([
+            'passwordReset' => Senders::server($reseller) !== null,
+            // FR-103: a passkey works only on a panel domain (Passkeys::rpIds).
+            'passkeys' => Passkeys::rpIdFor($request->getHost()) !== null,
+            // Single sign-on works only on the panel domain (SingleSignOn::baseUrl).
+            'providers' => SingleSignOn::baseUrl($request) === null ? [] : IdentityProvider::where('enabled', true)->orderBy('name')->get(['id', 'name'])
+                ->map(fn (IdentityProvider $p) => ['id' => $p->id, 'name' => $p->name])->all(),
+        ])->header('Cache-Control', 'no-cache');
     }
 
     /** The name of the token of a sign-in. */
@@ -219,7 +252,7 @@ class AuthController extends Controller
      * R-01: only a sign-in session can change how the user signs in. An API token cannot, also
      * when it has all scopes.
      */
-    private static function sessionUser(Request $request): User
+    public static function sessionUser(Request $request): User
     {
         abort_unless(self::isSession($request), 403, 'Sign in to the panel to change your sign-in settings. An API token cannot change them.');
 

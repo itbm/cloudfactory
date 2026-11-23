@@ -107,10 +107,10 @@ func checkTsig(k *dnsTsig) error {
 	return nil
 }
 
-// publicAddress reports whether an address is on the public internet. An address of the
+// publicTransferAddress reports whether an address is on the public internet. An address of the
 // owner of a zone must be public, so that the DNS server does not send NOTIFY into a private
 // network.
-func publicAddress(a netip.Addr) bool {
+func publicTransferAddress(a netip.Addr) bool {
 	a = a.Unmap()
 	if a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsMulticast() || a.IsUnspecified() || a.IsInterfaceLocalMulticast() || a.IsLinkLocalMulticast() {
 		return false
@@ -137,7 +137,7 @@ func checkAddresses(addresses []string, public bool) error {
 		if a.IsUnspecified() || a.IsMulticast() {
 			return fmt.Errorf("%s is not the address of a server", s)
 		}
-		if public && !publicAddress(a) {
+		if public && !publicTransferAddress(a) {
 			return fmt.Errorf("%s is not a public address", s)
 		}
 	}

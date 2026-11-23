@@ -187,7 +187,9 @@ The product specification, section 6.4, gives the requirements.
   proxy. The user `cf-edge` owns that storage, so the root helper reads the files with no
   symbolic links, and accepts only a certificate for the host name with its own key.
 - The panel sends the bcrypt hash of a mailbox password to the agent. The panel does not keep
-  the password, and the job record has no hash after the job.
+  the password, and the job record has no hash after the job. An import from a different
+  panel keeps the hash of the old server (SHA-512-crypt, SHA-256-crypt or MD5-crypt), so that
+  the mailbox keeps its password. The mail server can check these hashes.
 - A customer adds a domain that a different customer could own only after a DNS TXT record
   shows that the customer controls the domain, as for a website domain.
 - The mail server opens connections only to the DNS and to port 25 of public addresses. It
@@ -267,6 +269,22 @@ The product specification, section 6.4, gives the requirements.
 - A website has 50 domains at most (`CF_DOMAINS_PER_WEBSITE`), because each domain starts a
   certificate order. A customer can add 30 domains in one hour and start 10 domain checks in
   one minute. An administrator has no such limit.
+
+## Certificates of the customers
+
+- The panel keeps the private key of each certificate encrypted with the application key. The
+  API never gives a private key, also not to an administrator. Refer to
+  [certificates.md](certificates.md#security).
+- The agent gets the private keys only in the `SetCertificates` job. `AgentClient` adds them
+  when it sends the job, so the job record has no keys.
+- The panel refuses a certificate that is valid for a host name of the panel, of a server, of
+  a plugin, of Adminer or of a mail server, or for the panel domain of a reseller.
+- The panel does not send a certificate to a server when it is valid for a domain on that
+  server that does not use a certificate from the panel. Thus the edge proxy cannot send the
+  certificate of one customer for the domain of a different customer.
+- A customer can have 20 certificates (`CF_CERTIFICATES_PER_CUSTOMER`), and can make 20
+  uploads, replacements, orders and renewals in one hour. The DNS validation adds TXT records
+  only in the zones of the customer.
 
 ## DNS zones
 
@@ -349,6 +367,30 @@ The product specification, section 6.4, gives the requirements.
   the transfers of all zones.
 - Only an administrator can see and change the secondaries of the panel, because they copy
   the zones of all customers.
+
+## Account imports
+
+An administrator can import the backup of an account from cPanel, DirectAdmin, Plesk or
+HestiaCP ([imports.md](imports.md)). The backup can come from the customer, so the agent does
+not trust it:
+
+- Only an administrator can import an account. The import makes each record with the API, as
+  that administrator, so each record has the checks and the plan limits of the API.
+- The worker of the agent downloads and reads the archive as a stream. It never extracts the
+  archive, and root never opens it. The worker refuses each name that goes out of the archive.
+- The worker reads the XML files of a Plesk backup with the Go decoder, which does not read
+  external entities. A file has 4 MiB, 64 levels and 500,000 elements at most.
+- A Plesk backup can have a mailbox password as text. The agent makes a SHA-512-crypt hash of
+  it, and only the hash goes to the panel.
+- The Unix user of the website extracts the files of the website. The database client in the
+  container of the database server loads a dump, as a temporary user for the one database.
+- A download from a URL connects only to public addresses, also after a redirect, and uses no
+  proxy. Thus a URL cannot reach a service of the server or of a private network.
+- Each server that downloads an upload from the panel uses the agent API with its client
+  certificate. The panel gives the archive only to a server that has a download job of the
+  import. Each server checks the SHA-256 hash of the archive.
+- The panel and each server delete the archive when the import ends. The panel keeps the
+  description of the account encrypted, because it has the mailbox password hashes.
 
 ## The edge proxy
 
@@ -559,19 +601,118 @@ directory with mode 0700:
 
 ## Users and API tokens
 
-- Users sign in with a password and a TOTP code. An administrator and a reseller must have
-  TOTP. A website owner can turn it on. A TOTP code works only one
+- Users sign in with a password and a TOTP code, with a passkey, or with a single sign-on
+  provider. An administrator and a
+  reseller must have TOTP. A website owner can turn it on. A TOTP code works only one
   time. The panel examines the password first, and asks for the code only when the password is
   correct and TOTP is on for the user. Thus a user with no TOTP does not see the code step, and
   a wrong password gives its error immediately. The request for the code shows that the
   password is correct. This is the same as for most services. The sign-in limits protect the
   password: a wrong password and a wrong code are failed attempts. A suspended account with no
   TOTP gets the same answer for a correct and an incorrect password.
-- The panel sends no email. An administrator or a reseller makes a user, and the panel shows a
-  temporary password of 20 characters one time. The first administrator from the installation
-  script has a temporary password also. With a temporary password, the API accepts only the
-  password change, the account data and the sign-out. The web panel shows only the form
-  **Set a new password**.
+- An administrator or a reseller makes a user, and the panel shows a temporary password of
+  20 characters one time. The first administrator from the installation script has a temporary
+  password also. With a temporary password, the API accepts only the password change, the
+  account data and the sign-out. The web panel shows only the form **Set a new password**.
+- A user who does not know the password can ask for an email with a link (**Forgot your
+  password?** on the sign-in page). The sign-in page shows the link only when an SMTP server
+  can send the email. Obey these rules:
+  - The answer is the same for each email, also for an email with no user. The panel checks a
+    password hash also for an unknown email, so the response time does not show which accounts
+    exist.
+  - The link goes to the panel domain of the brand of the user, not to the domain of the
+    request. A request with a different `Host` header cannot send the link to a different site.
+  - The code of the link is after `#`. The browser does not send it to a server, so no access
+    log has it. The panel keeps only a bcrypt hash of the code.
+  - A link works one time only, for 60 minutes. A new link stops the earlier link. The panel
+    sends one link in each minute for one user, and accepts 5 requests in each minute from one
+    address.
+  - The panel keeps a copy of each email in **Sent emails**, and an administrator or the
+    reseller of the user can read it. The copy has a placeholder in the place of the link. The
+    queue has the link encrypted with `APP_KEY`. Thus nobody can send the email again: the
+    user asks for a new link.
+  - A new password signs out all sessions of the user, deletes the API tokens of the user, and
+    removes the sign-in lock for the network of the request. It does not turn off TOTP: the user
+    still needs a code to sign in. A user who lost the authenticator app asks an administrator
+    or the reseller.
+  - The template of the email must have the link (`{{resetUrl}}`) in the text, and not in the
+    subject. A user cannot turn off this email.
+- A user can add passkeys in **Settings** and then sign in with a passkey, in place of the
+  password and the TOTP code (FR-103). The panel uses WebAuthn. Obey these rules:
+  - Each passkey must verify the user, with a fingerprint, a face or a PIN. Thus a passkey is
+    a sign-in with two factors: the device and the person. The panel refuses a passkey that
+    only shows that a person is present.
+  - A passkey works only on the panel domain where the user added it: the panel domain or
+    the panel domain of a reseller brand. The panel examines each answer against the domain
+    of the passkey, not against the `Host` header, and accepts only the exact HTTPS origin of
+    that domain. A different domain or a subdomain cannot use the passkey. Thus a fake site
+    cannot get a sign-in from a passkey.
+  - Passkeys do not work on the address of a website or on an IP address. The sign-in page
+    shows the passkey button only on a panel domain.
+  - To add or remove a passkey, the user gives the password and, when TOTP is on, a code. Only
+    a sign-in session can add, rename or remove a passkey, not an API token. A stolen session
+    alone cannot add a passkey. After 5 incorrect attempts, the panel refuses these changes
+    for 15 minutes.
+  - A challenge works one time only, for 5 minutes. The panel asks for no attestation, so it
+    does not know the make of the device. The panel keeps only the public key of a passkey, not a secret.
+  - At the start of a sign-in, the browser shows the passkeys of the domain. The panel does
+    not ask for an email, so the answer shows no data of a user.
+  - A passkey is in a password manager or in a cloud account when **Synced** shows next to
+    it. Then it is on more than one device.
+  - A user can have 20 passkeys. Each sign-in with a passkey is an audit event, and a new
+    device gets the email **Sign-in from a new device**.
+  - A suspended user cannot sign in with a passkey. A reset of the password by an
+    administrator or a reseller removes all passkeys of the user. A reset by email does not:
+    the user can still sign in with a passkey.
+  - An administrator or a reseller must still set up TOTP. A passkey does not replace this
+    rule, because the panel asks for TOTP to confirm changes to administrators.
+- An administrator can add OpenID Connect and SAML 2.0 identity providers in **Settings >
+  Single sign-on**. Then the sign-in page shows the button **Sign in with NAME** for each
+  provider that is on. Obey these rules:
+  - The panel signs in only a user who connected the account of the provider in **Settings**.
+    The panel does not make users: an administrator or a reseller makes the user first.
+  - An administrator can let the panel connect the user with the same email at the first
+    sign-in (**Connect users by email**). Then the panel accepts only an email that the
+    provider verified (`email_verified` in OpenID Connect), and only for the email domains in
+    the list of the provider. A SAML answer has no verified flag, so the panel trusts the
+    emails of a SAML provider when this setting is on. Turn it on only when the provider
+    controls all the email addresses of these domains. Otherwise, a person who gets an email
+    address of the domain at the provider can sign in as the user with that email.
+  - To connect or disconnect an account, the user gives the password and, when TOTP is on, a
+    code. Only a sign-in session can do this, not an API token. One account of a provider
+    connects to one user only.
+  - A sign-in with a provider does not replace TOTP. When TOTP is on for the user, the panel
+    asks for a code after the provider signs the user in. After 5 wrong codes, the sign-in
+    stops. The wrong codes count for the sign-in lock of the account.
+  - Single sign-on works only on the panel domain. It does not work on the panel domain of a
+    reseller brand, on the address of a website or on an IP address. The provider sends the
+    browser back only to the addresses that the administrator registered.
+  - OpenID Connect: the panel uses the authorization code flow with PKCE (`S256`), a state
+    and a nonce. It reads the discovery document of the issuer, and the issuer in the
+    document must be the same. The panel verifies the signature of the ID token with the
+    keys of the provider, and examines the issuer, the audience, the expiry time and the
+    nonce. It accepts only `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`,
+    `ES384` and `EdDSA`. It refuses `HS256` and `none`. Each address of the provider must
+    use HTTPS.
+  - SAML: the panel sends the request with the HTTP-Redirect binding, and the provider posts
+    the answer. The answer or its assertion must have a valid signature of the certificate
+    of the provider. The panel examines the issuer, the destination, the audience, the time
+    and the ID of the request (`InResponseTo`). It refuses an answer that it did not ask for
+    (a sign-in that starts at the provider), an encrypted assertion and a transient NameID.
+    The panel does not sign its requests.
+  - The panel addresses for the providers are the same for all providers. The state of the
+    sign-in identifies the provider. The state works one time only, for 10 minutes. A cookie
+    (`HttpOnly`, path `/api/v1/auth/sso`) binds the state to the browser that started the
+    sign-in. Thus a person cannot sign a different browser in to an account of that person.
+  - After the sign-in, the browser gets a ticket after `#` in the address. The browser does
+    not send it to a server, so no access log has it. The ticket works one time only, for
+    5 minutes.
+  - The panel keeps the client secret encrypted with `APP_KEY`, and does not show it again.
+  - Each sign-in, each connection and each change of a provider is an audit event. A new
+    device gets the email **Sign-in from a new device**.
+  - A suspended user cannot sign in with a provider. A password reset by an administrator or
+    a reseller disconnects all accounts of the user. A removal of a provider disconnects all
+    its accounts. **Sign out** signs the user out of the panel, not out of the provider.
 - An administrator or a reseller with no TOTP can sign in, but the API then accepts only the
   account data, the password change, the TOTP setup and the sign-out (the answer has the code
   `totp_setup_required`). The web panel shows only the page **Set up an authenticator app**.
@@ -588,11 +729,12 @@ directory with mode 0700:
   users of its own customers. An owner sees the list of its users only. Only a sign-in session
   of an administrator can make, reset or delete an administrator. An API token cannot. A user
   cannot reset or delete its own account in this way. A password reset signs the user out,
-  deletes the API tokens of the user and removes a sign-in lock. Each of these changes is an
-  audit event.
+  deletes the API tokens and the passkeys of the user, disconnects the single sign-on
+  accounts of the user, and removes a sign-in lock. Each of these changes is an audit event.
 - On the panel server, root can run `cf-agent panel reset-password EMAIL` and
   `cf-agent panel unlock EMAIL`. This is the procedure when no administrator can sign in.
-- In **Settings**, a user changes the password and turns TOTP on or off. Each change needs the
+- In **Settings**, a user changes the password, turns TOTP on or off, adds or removes
+  passkeys, and connects or disconnects single sign-on accounts. Each change needs the
   current password and, when TOTP is on, a code. Only a sign-in session can do this, not an API
   token. A password change signs out the other sessions of the user and deletes the API
   tokens of the user. A new password has 12 or more characters.

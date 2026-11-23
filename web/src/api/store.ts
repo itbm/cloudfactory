@@ -15,6 +15,7 @@ import type {
   Confirmation,
   CronJob,
   Customer,
+  CustomerCertificate,
   DatabaseEngine,
   DatabaseLimits,
   DatabasePrivileges,
@@ -76,7 +77,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], certificates: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -236,6 +237,47 @@ export function signIn(email: string, password: string, totp = "") {
     await refresh();
   });
 }
+
+/** Asks for an email with a link to set a new password. */
+export function requestPasswordReset(email: string) {
+  return call(() => live.requestPasswordReset(email));
+}
+
+/** Sets a new password with the code from the link in the email. The user then signs in. */
+export function resetPassword(email: string, token: string, password: string, confirmation: string) {
+  return call(() => live.resetPassword(email, token, password, confirmation));
+}
+
+/** FR-103: signs in with a passkey, in place of the password and the TOTP code. */
+export function signInWithPasskey() {
+  return call(async () => {
+    await live.signInWithPasskey();
+    session++;
+    loading = null;
+    replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
+    await refresh();
+  });
+}
+
+export const listPasskeys = () => call(() => live.listPasskeys());
+export const addPasskey = (name: string, password: string, totp: string) => call(() => live.addPasskey(name, password, totp));
+export const renamePasskey = (id: string, name: string) => call(() => live.renamePasskey(id, name));
+export const removePasskey = (id: string, password: string, totp: string) => call(() => live.removePasskey(id, password, totp));
+
+/** Single sign-on: changes the ticket from the provider into a session, with a TOTP code when TOTP is on. */
+export function completeSignOn(ticket: string, totp = "") {
+  return call(async () => {
+    await live.completeSignOn(ticket, totp);
+    session++;
+    loading = null;
+    replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
+    await refresh();
+  });
+}
+
+export const listIdentities = () => call(() => live.listIdentities());
+export const connectIdentity = (providerId: string, password: string, totp: string) => call(() => live.connectIdentity(providerId, password, totp));
+export const disconnectIdentity = (providerId: string, password: string, totp: string) => call(() => live.disconnectIdentity(providerId, password, totp));
 
 export function signOut() {
   live.signOut();
@@ -1088,6 +1130,97 @@ export function deleteNetwork(networkId: string): Promise<void> {
   });
 }
 
+// Certificates of the customers (docs/certificates.md)
+
+function putCertificate(next: CustomerCertificate) {
+  update((d) => {
+    const before = d.certificates.find((x) => x.id === next.id);
+    const keep = before?.certificatePem && before.fingerprint === next.fingerprint && !next.certificatePem ? { certificatePem: before.certificatePem } : {};
+    d.certificates = before ? d.certificates.map((x) => (x.id === next.id ? { ...next, ...keep } : x)) : [...d.certificates, next];
+  });
+}
+
+/** The certificates that the panel follows now: the timer of each one. */
+const following = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Follows an order: the panel reads the certificate again every few seconds until the order
+ * ends, for up to one hour. Then it loads all data again, because the servers get the new
+ * certificate.
+ */
+function followCertificate(id: string, started = Date.now()) {
+  clearTimeout(following.get(id));
+  following.set(id, setTimeout(() => {
+    following.delete(id);
+    void live.certificate(id).then((c) => {
+      putCertificate(c);
+      if (c.order && Date.now() - started < 3_600_000) followCertificate(id, started);
+      else void refresh();
+    }).catch(() => undefined);
+  }, 3000));
+}
+
+/** Reads a certificate with its chain. The page of the certificate calls it when it opens. */
+export async function showCertificate(id: string): Promise<void> {
+  try {
+    const c = await live.certificate(id);
+    putCertificate(c);
+    if (c.order && !following.has(id)) followCertificate(id);
+  } catch {
+    // The certificate is removed, or the API does not answer. The page shows what the panel has.
+  }
+}
+
+/** Uploads a certificate chain and its private key in PEM format. The promise gives the ID. */
+export function uploadCertificate(customerId: string, certificate: string, privateKey: string): Promise<string> {
+  return call(async () => {
+    const c = live.toCertificate(await live.request<live.ApiCertificate>("POST", "/certificates", { source: "upload", customerId: customerId || undefined, certificate, privateKey }));
+    putCertificate(c);
+    void refresh();
+    return c.id;
+  });
+}
+
+/** Asks the panel to get a certificate for the domain with DNS validation. The promise gives the ID. */
+export function requestCertificate(customerId: string, domain: string, wildcard: boolean): Promise<string> {
+  return call(async () => {
+    const c = live.toCertificate(await live.request<live.ApiCertificate>("POST", "/certificates", { source: "acme", customerId: customerId || undefined, domain: domain.trim().toLowerCase().replace(/\.$/, ""), wildcard }));
+    putCertificate(c);
+    followCertificate(c.id);
+    return c.id;
+  });
+}
+
+/** Replaces the chain and the key of an uploaded certificate. */
+export function replaceCertificate(id: string, certificate: string, privateKey: string): Promise<void> {
+  return call(async () => {
+    putCertificate(live.toCertificate(await live.request<live.ApiCertificate>("PUT", `/certificates/${id}`, { certificate, privateKey })));
+    void showCertificate(id);
+    void refresh();
+  });
+}
+
+/** Starts a new order for a certificate with DNS validation now. */
+export function renewCertificate(id: string): Promise<void> {
+  return call(async () => {
+    putCertificate(live.toCertificate(await live.request<live.ApiCertificate>("POST", `/certificates/${id}/renew`)));
+    followCertificate(id);
+  });
+}
+
+/** Removes a certificate. Its domains get a certificate from the edge proxy again. */
+export function deleteCertificate(id: string): Promise<void> {
+  return call(async () => {
+    await live.request("DELETE", `/certificates/${id}`);
+    clearTimeout(following.get(id));
+    following.delete(id);
+    update((d) => {
+      d.certificates = d.certificates.filter((x) => x.id !== id);
+    });
+    void refresh();
+  });
+}
+
 // DNS hosting
 
 type DnsJobs = { jobs: live.ApiJob[] };
@@ -1800,6 +1933,22 @@ export function testPlugin(pluginId: string): Promise<PluginDelivery> {
 
 export function retryPluginDelivery(pluginId: string, deliveryId: string): Promise<PluginDelivery> {
   return call(() => live.request<PluginDelivery>("POST", `/plugins/${pluginId}/deliveries/${deliveryId}/retry`));
+}
+
+// Single sign-on providers (administrator)
+
+export const listIdentityProviders = () => call(() => live.listIdentityProviders());
+
+export function addIdentityProvider(input: live.IdentityProviderInput, confirm: Confirmation): Promise<live.IdentityProvider> {
+  return call(() => live.request<live.IdentityProvider>("POST", "/identity-providers", { ...input, ...confirmation(confirm) }));
+}
+
+export function changeIdentityProvider(id: string, input: live.IdentityProviderInput, confirm: Confirmation): Promise<live.IdentityProvider> {
+  return call(() => live.request<live.IdentityProvider>("PUT", `/identity-providers/${encodeURIComponent(id)}`, { ...input, ...confirmation(confirm) }));
+}
+
+export function removeIdentityProvider(id: string, confirm: Confirmation): Promise<void> {
+  return call(() => live.request("DELETE", `/identity-providers/${encodeURIComponent(id)}`, confirmation(confirm)).then(() => undefined));
 }
 
 /** Trusts the public key of a publisher, for plugins and packs. */
