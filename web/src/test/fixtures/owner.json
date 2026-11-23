@@ -2651,6 +2651,17 @@
             }
         }
     },
+    "GET /websites/01m82vd8rc0j9v1hddzm6vm3bg/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m82vd8rc0j9v1hddzm6vm3bg/deploy": {
         "status": 200,
         "body": {
@@ -3239,9 +3250,10 @@
         "body": {
             "data": [
                 {
-                    "id": "01m82vqqgx0zc3m9f0x0k2ktr5",
+                    "id": "01m82vy24bhkemx9mqkvakhs1v",
                     "websiteId": "01m82vd8sbfh04zszs91bthf1y",
                     "source": "run",
+                    "sessionId": null,
                     "command": "php artisan orders:export --since=yesterday",
                     "state": "done",
                     "exitCode": 1,
@@ -3255,9 +3267,10 @@
                     "finishedAt": "2026-11-14T09:48:04+00:00"
                 },
                 {
-                    "id": "01m82vqqgx0zc3m9f0x0k2ktr4",
+                    "id": "01m82vy24bhkemx9mqkvakhs1t",
                     "websiteId": "01m82vd8sbfh04zszs91bthf1y",
                     "source": "run",
+                    "sessionId": null,
                     "command": "php artisan queue:restart",
                     "state": "done",
                     "exitCode": 0,
@@ -3271,9 +3284,78 @@
                     "finishedAt": "2026-11-14T09:18:01+00:00"
                 },
                 {
-                    "id": "01m82vqqgx0zc3m9f0x0k2ktr3",
+                    "id": "01m82vy24dvvxrtfpzvcq4csbx",
+                    "websiteId": "01m82vd8sbfh04zszs91bthf1y",
+                    "source": "terminal",
+                    "sessionId": "01m82vy24cwdt8c9s74byqkzvk",
+                    "command": "exit",
+                    "state": "done",
+                    "exitCode": null,
+                    "timedOut": false,
+                    "timeoutSeconds": null,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:00:45+00:00",
+                    "startedAt": "2026-11-14T09:00:45+00:00",
+                    "finishedAt": "2026-11-14T09:00:45+00:00"
+                },
+                {
+                    "id": "01m82vy24dvvxrtfpzvcq4csbw",
+                    "websiteId": "01m82vd8sbfh04zszs91bthf1y",
+                    "source": "terminal",
+                    "sessionId": "01m82vy24cwdt8c9s74byqkzvk",
+                    "command": "tail -n 2 laravel.log",
+                    "state": "done",
+                    "exitCode": null,
+                    "timedOut": false,
+                    "timeoutSeconds": null,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:00:24+00:00",
+                    "startedAt": "2026-11-14T09:00:24+00:00",
+                    "finishedAt": "2026-11-14T09:00:24+00:00"
+                },
+                {
+                    "id": "01m82vy24dvvxrtfpzvcq4csbv",
+                    "websiteId": "01m82vd8sbfh04zszs91bthf1y",
+                    "source": "terminal",
+                    "sessionId": "01m82vy24cwdt8c9s74byqkzvk",
+                    "command": "ls -lh",
+                    "state": "done",
+                    "exitCode": null,
+                    "timedOut": false,
+                    "timeoutSeconds": null,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:00:11+00:00",
+                    "startedAt": "2026-11-14T09:00:11+00:00",
+                    "finishedAt": "2026-11-14T09:00:11+00:00"
+                },
+                {
+                    "id": "01m82vy24dvvxrtfpzvcq4csbt",
+                    "websiteId": "01m82vd8sbfh04zszs91bthf1y",
+                    "source": "terminal",
+                    "sessionId": "01m82vy24cwdt8c9s74byqkzvk",
+                    "command": "cd storage/logs",
+                    "state": "done",
+                    "exitCode": null,
+                    "timedOut": false,
+                    "timeoutSeconds": null,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:00:06+00:00",
+                    "startedAt": "2026-11-14T09:00:06+00:00",
+                    "finishedAt": "2026-11-14T09:00:06+00:00"
+                },
+                {
+                    "id": "01m82vy24a3vb3mhczy99yavhm",
                     "websiteId": "01m82vd8sbfh04zszs91bthf1y",
                     "source": "run",
+                    "sessionId": null,
                     "command": "du -sh storage/logs",
                     "state": "done",
                     "exitCode": 0,
@@ -3287,9 +3369,10 @@
                     "finishedAt": "2026-11-14T05:00:01+00:00"
                 },
                 {
-                    "id": "01m82vqqgw8ah10xfndy9t7jyj",
+                    "id": "01m82vy24a3vb3mhczy99yavhk",
                     "websiteId": "01m82vd8sbfh04zszs91bthf1y",
                     "source": "run",
+                    "sessionId": null,
                     "command": "php artisan config:cache",
                     "state": "done",
                     "exitCode": 0,
@@ -3303,9 +3386,10 @@
                     "finishedAt": "2026-11-13T09:10:01+00:00"
                 },
                 {
-                    "id": "01m82vqqgva3k8sef7gdnmv1a9",
+                    "id": "01m82vy24a3vb3mhczy99yavhj",
                     "websiteId": "01m82vd8sbfh04zszs91bthf1y",
                     "source": "run",
+                    "sessionId": null,
                     "command": "php artisan migrate --force",
                     "state": "done",
                     "exitCode": 0,
@@ -3322,7 +3406,35 @@
             "meta": {
                 "currentPage": 1,
                 "lastPage": 1,
-                "total": 5
+                "total": 9
+            }
+        }
+    },
+    "GET /websites/01m82vd8sbfh04zszs91bthf1y/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m82vy24cwdt8c9s74byqkzvk",
+                    "websiteId": "01m82vd8sbfh04zszs91bthf1y",
+                    "state": "ended",
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "endReason": "The shell ended.",
+                    "exitCode": 0,
+                    "commandCount": 4,
+                    "hasRecording": true,
+                    "recordingCut": false,
+                    "createdAt": "2026-11-14T09:00:00+00:00",
+                    "startedAt": "2026-11-14T09:00:00+00:00",
+                    "endedAt": "2026-11-14T09:00:48+00:00"
+                }
+            ],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 1
             }
         }
     },
@@ -3999,6 +4111,17 @@
             }
         }
     },
+    "GET /websites/01m82vd8vf8wtf33ekf6jcb106/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m82vd8vf8wtf33ekf6jcb106/deploy": {
         "status": 200,
         "body": {
@@ -4549,6 +4672,17 @@
             }
         }
     },
+    "GET /websites/01m82vd8ss6spvhg09z6wcjbch/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m82vd8ss6spvhg09z6wcjbch/deploy": {
         "status": 200,
         "body": {
@@ -5079,6 +5213,17 @@
             }
         }
     },
+    "GET /websites/01m82vd8ttswbv9jkh0xh2fyw4/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m82vd8ttswbv9jkh0xh2fyw4/deploy": {
         "status": 200,
         "body": {
@@ -5568,6 +5713,17 @@
         }
     },
     "GET /websites/01m82vdbrp9pbc2scz9pabgxt2/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m82vdbrp9pbc2scz9pabgxt2/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -6127,6 +6283,17 @@
         }
     },
     "GET /websites/01m82vd8v6pfbyr12ppac4q4ef/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m82vd8v6pfbyr12ppac4q4ef/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -6756,9 +6923,10 @@
         "body": {
             "data": [
                 {
-                    "id": "01m82vqqgypdx1vxpf9r0ntk23",
+                    "id": "01m82vy24bhkemx9mqkvakhs1x",
                     "websiteId": "01m82vd8s2666x5s7vcgdnm68k",
                     "source": "run",
+                    "sessionId": null,
                     "command": "wp cache flush",
                     "state": "done",
                     "exitCode": 0,
@@ -6772,9 +6940,10 @@
                     "finishedAt": "2026-11-14T08:32:01+00:00"
                 },
                 {
-                    "id": "01m82vqqgypdx1vxpf9r0ntk22",
+                    "id": "01m82vy24bhkemx9mqkvakhs1w",
                     "websiteId": "01m82vd8s2666x5s7vcgdnm68k",
                     "source": "run",
+                    "sessionId": null,
                     "command": "wp plugin list --update=available",
                     "state": "done",
                     "exitCode": 0,
@@ -6792,6 +6961,17 @@
                 "currentPage": 1,
                 "lastPage": 1,
                 "total": 2
+            }
+        }
+    },
+    "GET /websites/01m82vd8s2666x5s7vcgdnm68k/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
             }
         }
     },
@@ -7388,6 +7568,17 @@
         }
     },
     "GET /websites/01m82vd8sh2x1x875975zp6hzj/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m82vd8sh2x1x875975zp6hzj/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],

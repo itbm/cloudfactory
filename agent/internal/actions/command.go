@@ -28,21 +28,21 @@ const (
 	commandSiteSlots = 2
 )
 
-// commandRuns limits the commands that run at the same time for each website.
+// commandRuns limits the commands (or the terminals) that run at the same time for each website.
 type commandRuns struct {
 	mu      sync.Mutex
 	running map[string]int
 }
 
-// start records one more command of a website. It gives false when the website has
-// commandSiteSlots commands that run now.
-func (c *commandRuns) start(websiteID string) bool {
+// start records one more command of a website. It gives false when the website has max
+// commands that run now.
+func (c *commandRuns) start(websiteID string, max int) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.running == nil {
 		c.running = map[string]int{}
 	}
-	if c.running[websiteID] >= commandSiteSlots {
+	if c.running[websiteID] >= max {
 		return false
 	}
 	c.running[websiteID]++
@@ -86,7 +86,7 @@ func (d *Deps) RunCommand(req *agentv1.RunCommandRequest) (jobs.Job, error) {
 			if site.Stopped {
 				return errors.New("the website is stopped; start it first")
 			}
-			if !d.commands.start(site.ID) {
+			if !d.commands.start(site.ID, commandSiteSlots) {
 				return fmt.Errorf("%d commands of this website run now; try again when one ends", commandSiteSlots)
 			}
 			defer d.commands.end(site.ID)

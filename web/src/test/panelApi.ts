@@ -44,7 +44,8 @@ export function panelApi(role: Role): PanelApi {
     const path = url.replace(/^\/api\/v1/, "");
     const key = `${method} ${path}`;
     const body = typeof init.body === "string" ? JSON.parse(init.body) as unknown : undefined;
-    const respond = (a: Answer) => new Response(a.status === 204 ? null : JSON.stringify(a.body), { status: a.status });
+    // A text body is not JSON, for example the recording of a terminal session.
+    const respond = (a: Answer) => new Response(a.status === 204 ? null : typeof a.body === "string" ? a.body : JSON.stringify(a.body), { status: a.status });
 
     const handler = [...handlers].reverse().find(([pattern]) => matches(pattern, key));
     if (method !== "GET") changes.push({ method, path, body });

@@ -17,7 +17,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
- * Run a command, and the command log of a website (FR-802).
+ * Run a command, and the command log of a website (FR-802). The log also has the commands of
+ * the web terminal (TerminalSessionController).
  *
  * The agent runs the command in the container of the website, as the Unix user of the website,
  * in the gVisor sandbox, the same as a cron job. The panel records each command before it sends
@@ -42,11 +43,13 @@ class WebsiteCommandController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         $data = $request->validate([
-            'source' => ['nullable', Rule::in([WebsiteCommand::SOURCE_RUN])],
+            'source' => ['nullable', Rule::in([WebsiteCommand::SOURCE_RUN, WebsiteCommand::SOURCE_TERMINAL])],
+            'sessionId' => ['nullable', 'string', 'size:26'],
             'q' => ['nullable', 'string', 'max:200'],
         ]);
         $page = $website->commands()
             ->when($data['source'] ?? null, fn ($q, $source) => $q->where('source', $source))
+            ->when($data['sessionId'] ?? null, fn ($q, $id) => $q->where('terminal_session_id', $id))
             ->when($data['q'] ?? null, fn ($q, $s) => $q->whereLike('command', "%{$s}%"))
             ->latest('created_at')->latest('id')
             ->paginate(self::perPage($request, 50, 200));
@@ -123,7 +126,10 @@ class WebsiteCommandController extends Controller
         return [
             'id' => $c->id,
             'websiteId' => $c->website_id,
+            // "run" (Run a command) or "terminal" (a command in the web terminal, with no exit
+            // code and no output: the recording of the session has the output).
             'source' => $c->source,
+            'sessionId' => $c->terminal_session_id,
             'command' => $c->command,
             // "running", "done" (the command ran and has an exit code) or "failed" (it did not start).
             'state' => $c->state,
