@@ -35,7 +35,8 @@ export interface Usage {
   limit: number;
 }
 
-export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "failed";
+/** "moving": the website goes to a different server. It accepts no change until the move is complete. */
+export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "failed" | "moving";
 
 /** "node" and "python": the container runs the start command of the website. */
 /** "app" is a runtime from a manifest of the agent, for example Go. It runs the start command of the website. */
@@ -178,6 +179,8 @@ export interface Website {
   application: string;
   customerId: string;
   serverId: string;
+  /** The server that receives the website, while the status is "moving". */
+  movingToServerId?: string;
   unixUser: string;
   /** The name of the website for a different website in a network with it, for example "shop-a1b2.internal". Null for a worker. */
   networkHost: string | null;
@@ -244,6 +247,23 @@ export interface Job {
   databaseServerId?: string;
   /** The DNS zone that the job sends to a DNS server. */
   dnsZoneId?: string;
+  /** The summary of an archive job that succeeded (MakeArchive and ExtractArchive). */
+  result?: ArchiveSummary;
+}
+
+/** The summary of the agent for a new archive or for an extract. */
+export interface ArchiveSummary {
+  files: number;
+  directories: number;
+  links: number;
+  /** The size of the new archive, or the size of the files that the extract wrote. */
+  sizeBytes: number;
+  /** The files that the extract did not replace, because they exist. */
+  kept: number;
+  /** The entries that the agent did not use, for example names that go out of the folder. */
+  skipped: number;
+  /** The first 20 skipped entries. */
+  skippedNames: string[];
 }
 
 export interface ActivityItem {
@@ -1031,7 +1051,34 @@ export type TokenScope =
   | "customers:read" | "customers:write"
   | "users:read" | "users:write"
   | "audit:read"
-  | "notifications:read" | "notifications:write";
+  | "notifications:read" | "notifications:write"
+  | "exports:read" | "exports:write";
+
+/**
+ * An account export (docs/account-export.md): an archive of the account of a customer with the
+ * description of the account, the files of the websites, the dumps of the databases and the
+ * DNS zones.
+ */
+export interface AccountExport {
+  id: string;
+  customerId: string;
+  customerName: string | null;
+  /** running: the servers send the parts. ready: the user can download the archive. */
+  state: "running" | "ready" | "failed";
+  files: boolean;
+  databases: boolean;
+  /** The progress: each part is the files of a website or the dump of a database. */
+  parts: { complete: number; total: number };
+  receivedBytes: number;
+  sizeBytes: number | null;
+  /** The items that are not in the archive, for example the data of a Valkey database. */
+  warnings: { item: string; message: string }[];
+  error: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+  expiresAt: string | null;
+}
 
 export interface ApiToken {
   id: string;
@@ -1236,6 +1283,8 @@ export interface State {
   setup?: SetupChecklist;
   /** The account of the user. An administrator has none. */
   account?: Account;
+  /** The account exports that the user can see. A token with no exports scope sees none. */
+  exports: AccountExport[];
   joinToken: string;
   /** The fingerprint of the panel CA for the join command. */
   joinCaSha256?: string;
@@ -1669,8 +1718,9 @@ export interface PluginPageSession {
 // Usage history and usage alerts. The panel reads the history when the user opens a graph.
 
 export type UsageRange = "24h" | "7d" | "30d" | "90d" | "1y";
-export type UsageSubject = "website" | "server" | "database_server";
-export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes";
+export type UsageSubject = "website" | "server" | "database_server" | "mailbox";
+/** "storage" is the size of a mailbox (FR-603). */
+export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes" | "storage";
 
 /** One point of a graph. A value is null when no report is in the point. */
 export interface UsagePoint {

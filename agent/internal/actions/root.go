@@ -595,6 +595,10 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		}),
 		opDBSend:    none(func(ctx context.Context, in transferIn) error { return d.sendServer(ctx, in) }),
 		opDBReceive: none(func(ctx context.Context, in transferIn) error { return d.receiveServer(ctx, in) }),
+		// The move of a website: the helper connects, and the website user reads or writes
+		// the files (sitemove.go).
+		opSiteSend:    none(func(ctx context.Context, in siteTransferIn) error { return d.sendSite(ctx, in) }),
+		opSiteReceive: none(func(ctx context.Context, in siteTransferIn) error { return d.receiveSite(ctx, in) }),
 		opDBValkeySecret: gate.Op(func(ctx context.Context, in serverIn) (string, error) {
 			if err := checkServer(in.Server); err != nil {
 				return "", err

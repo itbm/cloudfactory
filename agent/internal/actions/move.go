@@ -250,6 +250,12 @@ func (d *Deps) transferAddresses(in transferIn) (own, peer netip.Addr, err error
 	if err := checkTransfer(in); err != nil {
 		return own, peer, err
 	}
+	return d.peerAddresses(in.Peer)
+}
+
+// peerAddresses gives the mesh address of this server and the mesh address of the peer with
+// the address addr. The move of a database server and the move of a website use it.
+func (d *Deps) peerAddresses(addr string) (own, peer netip.Addr, err error) {
 	st, ok, err := d.savedMesh()
 	if err != nil {
 		return own, peer, err
@@ -261,12 +267,12 @@ func (d *Deps) transferAddresses(in transferIn) (own, peer netip.Addr, err error
 		return own, peer, err
 	}
 	for _, p := range st.Peers {
-		if p.Address == in.Peer {
+		if p.Address == addr {
 			peer, err = netip.ParseAddr(p.Address)
 			return own, peer, err
 		}
 	}
-	return own, peer, fmt.Errorf("the server with the mesh address %s is %w of this server", in.Peer, errNoPeer)
+	return own, peer, fmt.Errorf("the server with the mesh address %s is %w of this server", addr, errNoPeer)
 }
 
 // errNoPeer is the error of a move to a server that is not a peer in the mesh state.
@@ -276,10 +282,15 @@ var errNoPeer = errors.New("not a peer")
 // servers when the move starts, so the mesh state can get the other server some seconds
 // after the job starts.
 func (d *Deps) waitTransferAddresses(ctx context.Context, in transferIn) (own, peer netip.Addr, err error) {
+	return waitPeer(ctx, func() (netip.Addr, netip.Addr, error) { return d.transferAddresses(in) })
+}
+
+// waitPeer calls addresses until the other server is a peer, or until peerWait ends.
+func waitPeer(ctx context.Context, addresses func() (own, peer netip.Addr, err error)) (own, peer netip.Addr, err error) {
 	ctx, cancel := context.WithTimeout(ctx, peerWait)
 	defer cancel()
 	for {
-		own, peer, err = d.transferAddresses(in)
+		own, peer, err = addresses()
 		if !errors.Is(err, errNoPeer) {
 			return own, peer, err
 		}
@@ -489,8 +500,7 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 		return fmt.Errorf("this server does not have %s", s)
 	}
 	marker := filepath.Join(d.dbDir(s), receivedFile)
-	if b, err := os.ReadFile(marker); err == nil && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(string(b))), []byte(in.Token)) == 1 {
-		// An earlier run of the job received the data.
+	if receivedBefore(marker, in.Token) {
 		return nil
 	}
 	uid, gid, err := d.Host.FileOwner(dbUser(s))
@@ -498,8 +508,23 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 		return err
 	}
 
-	deadline := time.Now().Add(time.Duration(in.Timeout) * time.Second)
-	element := fmt.Sprintf("{ %s . %s . %d timeout %ds }", peer, own, mesh.TransferPort, in.Timeout)
+	err = d.acceptTransfer(ctx, own, peer, in.Timeout, s.String(), marker, in.Token, func(conn net.Conn) (bool, error) {
+		return d.receiveFrom(conn, in, uid, gid, record.DiskBytes)
+	})
+	if err == nil {
+		slog.Info("received a database server", "server", s.ID, "from", peer)
+	}
+	return err
+}
+
+// acceptTransfer lets the old server connect to the transfer port of this server for the time
+// of a move, and gives each connection of the old server to receive. receive gives false for a
+// connection that does not have the token of the move: such a connection does not stop the
+// move. After the data, acceptTransfer writes the token to the file marker and answers the old
+// server. what names the data in an error, for example the database server.
+func (d *Deps) acceptTransfer(ctx context.Context, own, peer netip.Addr, timeout int64, what, marker, token string, receive func(conn net.Conn) (ok bool, err error)) error {
+	deadline := time.Now().Add(time.Duration(timeout) * time.Second)
+	element := fmt.Sprintf("{ %s . %s . %d timeout %ds }", peer, own, mesh.TransferPort, timeout)
 	if _, err := d.Run.Run(ctx, "nft", "add", "element", "inet", "cloudfactory", mesh.SetTransfers, element); err != nil {
 		return fmt.Errorf("open the firewall for the move: %w", err)
 	}
@@ -524,7 +549,7 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return fmt.Errorf("the old server did not send %s: %w", s, err)
+			return fmt.Errorf("the old server did not send %s: %w", what, err)
 		}
 		remote, _ := netip.ParseAddrPort(conn.RemoteAddr().String())
 		if remote.Addr().Unmap() != peer {
@@ -533,7 +558,7 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 		}
 		// The end of the job also ends a transfer that runs (finding G4-05).
 		stopConn := context.AfterFunc(ctx, func() { conn.Close() })
-		ok, err := d.receiveFrom(conn, in, uid, gid, record.DiskBytes)
+		ok, err := receive(conn)
 		stopConn()
 		if !ok {
 			// A connection with a wrong token does not stop the move.
@@ -541,7 +566,7 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 			continue
 		}
 		if err == nil {
-			_, err = host.WriteFile(marker, in.Token+"\n", 0o600)
+			_, err = host.WriteFile(marker, token+"\n", 0o600)
 		}
 		if err == nil {
 			// The old server starts its copy again when it does not get this answer in an
@@ -555,11 +580,15 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 			_, _ = io.WriteString(conn, "error: "+err.Error()+"\n")
 		}
 		conn.Close()
-		if err == nil {
-			slog.Info("received a database server", "server", s.ID, "from", peer)
-		}
 		return err
 	}
+}
+
+// receivedBefore reports whether an earlier run of the job received the data of the move with
+// this token: the file marker has the token.
+func receivedBefore(marker, token string) bool {
+	b, err := os.ReadFile(marker)
+	return err == nil && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(string(b))), []byte(token)) == 1
 }
 
 // receiveFrom reads the token and the tar stream from one connection. ok is false when the

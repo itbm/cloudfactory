@@ -339,7 +339,8 @@ class AgentController extends Controller
     /**
      * The mail report of an agent. A mail server that stopped changes only a mail server that
      * operated: the job that starts the mail server gives its own result (JobOutcome). An
-     * agent reports only the mailboxes of the mail domains on its own server.
+     * agent reports only the mailboxes of the mail domains on its own server. The report also
+     * opens and closes the alerts of the mailboxes that are almost full (FR-603).
      *
      * @param  array<string, mixed>  $mail
      */
@@ -354,11 +355,14 @@ class AgentController extends Controller
         if ($used->isEmpty()) {
             return;
         }
-        foreach (Mailbox::with('domain')->whereIn('mail_domain_id', $server->mailDomains()->select('id'))->get() as $mailbox) {
+        $mailboxes = Mailbox::with('domain')->whereIn('mail_domain_id', $server->mailDomains()->select('id'))->get();
+        foreach ($mailboxes as $mailbox) {
             $bytes = $used->get($mailbox->address());
             if ($bytes !== null && (int) $bytes !== $mailbox->used_bytes) {
                 $mailbox->update(['used_bytes' => (int) $bytes]);
             }
         }
+        // FR-603: the warning for a mailbox that is 90% full.
+        app(UsageRecorder::class)->checkMailboxes($server, $mailboxes);
     }
 }

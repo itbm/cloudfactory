@@ -66,6 +66,9 @@ final class InputRules
     /** The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, "%", "$" or backslash. */
     public const ENVIRONMENT_VALUE = '/^(?=[\\s\\S]{0,1024}\\z)(?:^[A-Za-z0-9_.,:\\/|@+=~-]+$)/D';
 
+    /** The permission bits of a file or a directory for the file manager, as an octal number, for example "0644" or "755". The bits setuid, setgid and sticky are not permitted. */
+    public const FILE_MODE = '/^(?:^0?[0-7]{3}$)/D';
+
     /** The path of a file or a directory in the files of a website, for the file manager. "/" is the directory of the website, which the container has at /app. The path has no empty part, no "." part, no ".." part, no control characters and no "/" at the end. */
     public const FILE_PATH = '/^(?=[\\s\\S]{0,1024}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^(\\/|(\\/[^\\/\\x00-\\x1f\\x7f]+)+)$)/D';
 
@@ -189,6 +192,7 @@ final class InputRules
         'envName' => self::ENV_NAME,
         'envValue' => self::ENV_VALUE,
         'environmentValue' => self::ENVIRONMENT_VALUE,
+        'fileMode' => self::FILE_MODE,
         'filePath' => self::FILE_PATH,
         'gitBranch' => self::GIT_BRANCH,
         'gitRepository' => self::GIT_REPOSITORY,
@@ -246,6 +250,7 @@ final class InputRules
         'envName' => 'Use 1 to 64 letters, digits and underscores. Do not start with a digit. PORT, HOST, HOME, PATH, PWD, SERVER_NAME and names that start with CF_, FRANKENPHP_, CADDY_, XDG_ or APACHE_ are not available.',
         'envValue' => 'Enter a value of up to 4096 characters on one line.',
         'environmentValue' => 'Use 1 to 1024 letters, digits and the characters _ . , : / | @ + = ~ -.',
+        'fileMode' => 'Enter the permissions as 3 octal digits, for example 644 or 0755.',
         'filePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'gitBranch' => 'Enter the name of a branch, for example main. Use letters, digits, dots, underscores, hyphens and slashes.',
         'gitRepository' => 'Enter the address of a Git repository, for example https://github.com/acme/shop.git or git@github.com:acme/shop.git.',
@@ -302,6 +307,9 @@ final class InputRules
 
     /** The algorithms of a TSIG key for zone transfers. */
     public const TSIG_ALGORITHMS = ['hmac-sha256', 'hmac-sha512'];
+
+    /** The largest number of files and directories that the file manager puts in one new archive. */
+    public const MAX_ARCHIVE_PATHS = 2000;
 
     /** The largest number of build commands of a deploy. */
     public const MAX_BUILD_COMMANDS = 10;

@@ -36,6 +36,7 @@ class Fixtures
         '/dns-accounts',
         '/dns-secondaries',
         '/dns-zones',
+        '/exports',
         '/identity-providers',
         '/images',
         '/imports',

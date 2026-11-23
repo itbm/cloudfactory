@@ -141,7 +141,7 @@ func TestLimits(t *testing.T) {
 	if _, err := Do(dir, Request{Op: OpRead, Path: "/"}); code(err) != CodeInvalid {
 		t.Errorf("read of a directory = %v", err)
 	}
-	if _, err := Do(dir, Request{Op: "chmod", Path: "/big"}); code(err) != CodeInvalid {
+	if _, err := Do(dir, Request{Op: "chown", Path: "/big"}); code(err) != CodeInvalid {
 		t.Errorf("unknown operation = %v", err)
 	}
 }
