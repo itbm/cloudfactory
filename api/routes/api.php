@@ -49,6 +49,7 @@ use App\Http\Controllers\Api\SsoController;
 use App\Http\Controllers\Api\TrustedKeyController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WebsiteCommandController;
 use App\Http\Controllers\Api\WebsiteController;
 use App\Http\Controllers\Api\WordPressController;
 use Illuminate\Support\Facades\Route;
@@ -169,6 +170,10 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/wordpress/restore', [WordPressController::class, 'restore'])->middleware('throttle:10,1,post-websites-x-wordpress-restore');
             Route::post('websites/{websiteId}/wordpress/cli', [WordPressController::class, 'cli'])->middleware('throttle:30,1,post-websites-x-wordpress-cli');
             Route::get('websites/{websiteId}/wordpress/commands', [WordPressController::class, 'commands']);
+            // Run a command in the container of the website, and the command log (FR-802).
+            Route::get('websites/{websiteId}/commands', [WebsiteCommandController::class, 'index']);
+            Route::post('websites/{websiteId}/commands', [WebsiteCommandController::class, 'store'])->middleware('throttle:30,1,post-websites-x-commands');
+            Route::get('websites/{websiteId}/commands/{commandId}', [WebsiteCommandController::class, 'show']);
 
             // Deploys from a Git repository.
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);

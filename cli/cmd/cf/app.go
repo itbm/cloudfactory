@@ -86,6 +86,12 @@ Usage:
   cf wordpress cli WEBSITE -- ARGUMENTS...             Run one WP-CLI command, for example: cf wordpress cli acme.example -- plugin list.
                                                        No shell: each argument goes to WP-CLI as it is. Fails when the exit code is not 0.
   cf wordpress commands WEBSITE                        The WP-CLI commands that users ran, with no passwords.
+  cf commands run WEBSITE [--timeout SECONDS] -- COMMAND...
+                                                       Run one command line now in the container of the website, in /app, as
+                                                       the user of the website. cf waits and shows the output. The exit code
+                                                       of cf is the exit code of the command. The panel logs each command.
+  cf commands list WEBSITE [--search TEXT]             The command log: who ran each command, when, and the exit code.
+  cf commands get WEBSITE COMMAND_ID                   One command of the log, with the end of its output.
   cf deploys show WEBSITE                              The Git repository, the deploy key, the webhook and the releases.
   cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR]
                              [--trigger manual|webhook|schedule] [--check-minutes N]
@@ -549,6 +555,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.cron(ctx, sub, rest)
 	case "wordpress", "wp":
 		return a.wordpress(ctx, sub, rest)
+	case "commands", "command":
+		return a.commands(ctx, sub, rest)
 	case "deploys", "deploy":
 		return a.deploys(ctx, sub, rest)
 	case "previews", "preview":

@@ -95,6 +95,7 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 - a cron job with `fail` in its command, when you select **Run now**;
 - a WordPress update of a plugin with `fail` in its name (the health check fails, and the
   agent puts back the restore point);
+- a command with `fail` in it, in **Commands** (the command ends with exit code 1);
 - a change of a DNS zone with a name that starts with `fail.`;
 - the download of an account import with `fail` in the name of its file or in its address.
 
@@ -106,7 +107,8 @@ form `USER.2026-11-22_05-00-00.tar`, gives a HestiaCP backup. Each other name gi
 backup.
 
 In the demonstration mode, the file manager shows a small set of sample files for each
-website, and keeps your changes in the cache. The logs are sample lines.
+website, and keeps your changes in the cache. The logs are sample lines. **Run a command** gives a sample output for some usual commands,
+for example `php -v`, `php artisan migrate` and `composer install`.
 
 The demo mode does not ask the public DNS. For a DNS zone with a name that starts with
 `elsewhere.`, it answers that the domain uses the name servers of a registrar. For each other

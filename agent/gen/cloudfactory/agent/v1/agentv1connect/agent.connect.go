@@ -141,6 +141,8 @@ const (
 	AgentServiceSetCronJobsProcedure = "/cloudfactory.agent.v1.AgentService/SetCronJobs"
 	// AgentServiceRunCronJobProcedure is the fully-qualified name of the AgentService's RunCronJob RPC.
 	AgentServiceRunCronJobProcedure = "/cloudfactory.agent.v1.AgentService/RunCronJob"
+	// AgentServiceRunCommandProcedure is the fully-qualified name of the AgentService's RunCommand RPC.
+	AgentServiceRunCommandProcedure = "/cloudfactory.agent.v1.AgentService/RunCommand"
 	// AgentServiceDeployProcedure is the fully-qualified name of the AgentService's Deploy RPC.
 	AgentServiceDeployProcedure = "/cloudfactory.agent.v1.AgentService/Deploy"
 	// AgentServiceActivateReleaseProcedure is the fully-qualified name of the AgentService's
@@ -254,6 +256,11 @@ type AgentServiceClient interface {
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Runs one command now in the container of a website (the panel action "Run a command"). The
+	// command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
+	// website, the same as a cron job. The job succeeds when the command ran, also when its exit
+	// code is not 0. The result has the exit code and the end of the output.
+	RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -540,6 +547,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("RunCronJob")),
 			connect.WithClientOptions(opts...),
 		),
+		runCommand: connect.NewClient[v1.RunCommandRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceRunCommandProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RunCommand")),
+			connect.WithClientOptions(opts...),
+		),
 		deploy: connect.NewClient[v1.DeployRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceDeployProcedure,
@@ -749,6 +762,7 @@ type agentServiceClient struct {
 	deleteDnsZones        *connect.Client[v1.DeleteDnsZonesRequest, v1.JobAccepted]
 	setCronJobs           *connect.Client[v1.SetCronJobsRequest, v1.JobAccepted]
 	runCronJob            *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
+	runCommand            *connect.Client[v1.RunCommandRequest, v1.JobAccepted]
 	deploy                *connect.Client[v1.DeployRequest, v1.JobAccepted]
 	activateRelease       *connect.Client[v1.ActivateReleaseRequest, v1.JobAccepted]
 	installDependencies   *connect.Client[v1.InstallDependenciesRequest, v1.JobAccepted]
@@ -959,6 +973,11 @@ func (c *agentServiceClient) RunCronJob(ctx context.Context, req *connect.Reques
 	return c.runCronJob.CallUnary(ctx, req)
 }
 
+// RunCommand calls cloudfactory.agent.v1.AgentService.RunCommand.
+func (c *agentServiceClient) RunCommand(ctx context.Context, req *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.runCommand.CallUnary(ctx, req)
+}
+
 // Deploy calls cloudfactory.agent.v1.AgentService.Deploy.
 func (c *agentServiceClient) Deploy(ctx context.Context, req *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.deploy.CallUnary(ctx, req)
@@ -1138,6 +1157,11 @@ type AgentServiceHandler interface {
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Runs one command now in the container of a website (the panel action "Run a command"). The
+	// command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
+	// website, the same as a cron job. The job succeeds when the command ran, also when its exit
+	// code is not 0. The result has the exit code and the end of the output.
+	RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1420,6 +1444,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("RunCronJob")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceRunCommandHandler := connect.NewUnaryHandler(
+		AgentServiceRunCommandProcedure,
+		svc.RunCommand,
+		connect.WithSchema(agentServiceMethods.ByName("RunCommand")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceDeployHandler := connect.NewUnaryHandler(
 		AgentServiceDeployProcedure,
 		svc.Deploy,
@@ -1662,6 +1692,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetCronJobsHandler.ServeHTTP(w, r)
 		case AgentServiceRunCronJobProcedure:
 			agentServiceRunCronJobHandler.ServeHTTP(w, r)
+		case AgentServiceRunCommandProcedure:
+			agentServiceRunCommandHandler.ServeHTTP(w, r)
 		case AgentServiceDeployProcedure:
 			agentServiceDeployHandler.ServeHTTP(w, r)
 		case AgentServiceActivateReleaseProcedure:
@@ -1869,6 +1901,10 @@ func (UnimplementedAgentServiceHandler) SetCronJobs(context.Context, *connect.Re
 
 func (UnimplementedAgentServiceHandler) RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RunCronJob is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RunCommand is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error) {

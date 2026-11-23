@@ -178,6 +178,7 @@ class RunDemoJob implements ShouldQueue
             AgentAction::SetMailDomain => ['records' => DemoMailDns::records((string) ($p['domain'] ?? ''), (string) $job->server->mail_hostname)],
             AgentAction::InstallWordPress, AgentAction::CheckWordPress, AgentAction::UpdateWordPress, AgentAction::RestoreWordPress, AgentAction::RunWpCli => DemoWordPress::result($job),
             AgentAction::RunCronJob => ['cronJobId' => $p['cronJob']['id'] ?? '', 'exitCode' => 0, 'output' => "Running scheduled tasks.\nDone in 0.4 s.", 'ranAt' => now()->toIso8601String()],
+            AgentAction::RunCommand => DemoCommands::result((string) ($p['command'] ?? '')),
             AgentAction::Deploy => [
                 'releaseId' => $p['releaseId'] ?? '',
                 'commit' => sha1((string) ($p['releaseId'] ?? '')),
