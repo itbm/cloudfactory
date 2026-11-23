@@ -182,11 +182,13 @@ function track(job: live.ApiJob | null | undefined): Promise<Job> {
     d.jobs = [first, ...d.jobs.filter((j) => j.id !== first.id)];
   });
   void refresh();
-  // The wait updates only the job. The panel loads all data again when the job ends.
+  // The wait updates only the job. The panel loads all data again when the job ends. A sign-out
+  // or a sign-in of a different user stops the wait: the job is of the user who signed out.
+  const started = session;
   return live.waitForJob(job, (j) => update((d) => {
     d.jobs = d.jobs.map((x) => (x.id === j.id ? j : x));
-  })).then(async (done) => {
-    await refresh();
+  }), () => started === session).then(async (done) => {
+    if (started === session) await refresh();
     return done;
   });
 }
