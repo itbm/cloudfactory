@@ -233,6 +233,10 @@ func (s *Service) RunCronJob(_ context.Context, r *connect.Request[agentv1.RunCr
 	return s.submit(s.Deps.RunCronJob(r.Msg))
 }
 
+func (s *Service) RunCommand(_ context.Context, r *connect.Request[agentv1.RunCommandRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunCommand(r.Msg))
+}
+
 func (s *Service) Deploy(_ context.Context, r *connect.Request[agentv1.DeployRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.Deploy(r.Msg))
 }
@@ -374,6 +378,15 @@ func (s *Service) SetAutoresponder(ctx context.Context, r *connect.Request[agent
 		return nil, mailError(err)
 	}
 	return connect.NewResponse(a), nil
+}
+
+// CheckBranches gives the last commit of the branch of each Git source (FR-1004).
+func (s *Service) CheckBranches(ctx context.Context, r *connect.Request[agentv1.CheckBranchesRequest]) (*connect.Response[agentv1.BranchHeads], error) {
+	heads, err := s.Deps.CheckBranches(ctx, r.Msg)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return connect.NewResponse(heads), nil
 }
 
 func (s *Service) GetStatus(ctx context.Context, _ *connect.Request[agentv1.GetStatusRequest]) (*connect.Response[agentv1.HostStatus], error) {

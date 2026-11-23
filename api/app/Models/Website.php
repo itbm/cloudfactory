@@ -183,6 +183,12 @@ class Website extends Model
         return $this->hasMany(Release::class)->latest();
     }
 
+    /** The command log of the website (FR-802). */
+    public function commands(): HasMany
+    {
+        return $this->hasMany(WebsiteCommand::class);
+    }
+
     public function cronJobs(): HasMany
     {
         return $this->hasMany(CronJob::class)->oldest()->orderBy('id');
@@ -191,6 +197,18 @@ class Website extends Model
     public function gitSource(): HasOne
     {
         return $this->hasOne(GitSource::class);
+    }
+
+    /** The previews of the pull requests of the Git source of this website. */
+    public function previews(): HasMany
+    {
+        return $this->hasMany(Preview::class)->orderBy('number');
+    }
+
+    /** For a preview website: its pull request and the website of the Git source. */
+    public function previewOf(): HasOne
+    {
+        return $this->hasOne(Preview::class, 'preview_website_id');
     }
 
     public function snapshots(): HasMany

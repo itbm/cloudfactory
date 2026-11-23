@@ -14,6 +14,10 @@ Schedule::command('cloudfactory:host-updates')->everyTenMinutes()->withoutOverla
 // DNS hosting: the name servers of each zone in the public DNS.
 Schedule::command('cloudfactory:check-dns')->everyFifteenMinutes()->withoutOverlapping();
 
+// FR-1004: the deploys on a schedule. The command calls the agents, so it runs in its own
+// process and does not delay the other commands.
+Schedule::command('cloudfactory:check-branches')->everyMinute()->withoutOverlapping()->runInBackground();
+
 // Batch 1, finding 2: servers that do not report, and jobs with no result.
 Schedule::command('cloudfactory:check-jobs')->everyMinute()->withoutOverlapping();
 

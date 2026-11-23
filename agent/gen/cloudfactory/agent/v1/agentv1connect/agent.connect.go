@@ -141,6 +141,8 @@ const (
 	AgentServiceSetCronJobsProcedure = "/cloudfactory.agent.v1.AgentService/SetCronJobs"
 	// AgentServiceRunCronJobProcedure is the fully-qualified name of the AgentService's RunCronJob RPC.
 	AgentServiceRunCronJobProcedure = "/cloudfactory.agent.v1.AgentService/RunCronJob"
+	// AgentServiceRunCommandProcedure is the fully-qualified name of the AgentService's RunCommand RPC.
+	AgentServiceRunCommandProcedure = "/cloudfactory.agent.v1.AgentService/RunCommand"
 	// AgentServiceDeployProcedure is the fully-qualified name of the AgentService's Deploy RPC.
 	AgentServiceDeployProcedure = "/cloudfactory.agent.v1.AgentService/Deploy"
 	// AgentServiceActivateReleaseProcedure is the fully-qualified name of the AgentService's
@@ -202,6 +204,9 @@ const (
 	// AgentServiceSetAutoresponderProcedure is the fully-qualified name of the AgentService's
 	// SetAutoresponder RPC.
 	AgentServiceSetAutoresponderProcedure = "/cloudfactory.agent.v1.AgentService/SetAutoresponder"
+	// AgentServiceCheckBranchesProcedure is the fully-qualified name of the AgentService's
+	// CheckBranches RPC.
+	AgentServiceCheckBranchesProcedure = "/cloudfactory.agent.v1.AgentService/CheckBranches"
 )
 
 // AgentServiceClient is a client for the cloudfactory.agent.v1.AgentService service.
@@ -243,6 +248,11 @@ type AgentServiceClient interface {
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Runs one command now in the container of a website (the panel action "Run a command"). The
+	// command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
+	// website, the same as a cron job. The job succeeds when the command ran, also when its exit
+	// code is not 0. The result has the exit code and the end of the output.
+	RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -287,6 +297,10 @@ type AgentServiceClient interface {
 	// changes the same autoresponder. The job_id of the request is not used.
 	GetAutoresponder(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.Autoresponder], error)
 	SetAutoresponder(context.Context, *connect.Request[v1.SetAutoresponderRequest]) (*connect.Response[v1.Autoresponder], error)
+	// Gives the last commit of the branch of each Git source, for the deploys on a schedule
+	// (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
+	// container of each website, as for the step "Get the code" of a deploy.
+	CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error)
 }
 
 // NewAgentServiceClient constructs a client for the cloudfactory.agent.v1.AgentService service. By
@@ -516,6 +530,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("RunCronJob")),
 			connect.WithClientOptions(opts...),
 		),
+		runCommand: connect.NewClient[v1.RunCommandRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceRunCommandProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RunCommand")),
+			connect.WithClientOptions(opts...),
+		),
 		deploy: connect.NewClient[v1.DeployRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceDeployProcedure,
@@ -660,6 +680,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetAutoresponder")),
 			connect.WithClientOptions(opts...),
 		),
+		checkBranches: connect.NewClient[v1.CheckBranchesRequest, v1.BranchHeads](
+			httpClient,
+			baseURL+AgentServiceCheckBranchesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("CheckBranches")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -701,6 +727,7 @@ type agentServiceClient struct {
 	deleteDnsZones        *connect.Client[v1.DeleteDnsZonesRequest, v1.JobAccepted]
 	setCronJobs           *connect.Client[v1.SetCronJobsRequest, v1.JobAccepted]
 	runCronJob            *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
+	runCommand            *connect.Client[v1.RunCommandRequest, v1.JobAccepted]
 	deploy                *connect.Client[v1.DeployRequest, v1.JobAccepted]
 	activateRelease       *connect.Client[v1.ActivateReleaseRequest, v1.JobAccepted]
 	installDependencies   *connect.Client[v1.InstallDependenciesRequest, v1.JobAccepted]
@@ -725,6 +752,7 @@ type agentServiceClient struct {
 	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
 	getAutoresponder      *connect.Client[v1.MailAddressRequest, v1.Autoresponder]
 	setAutoresponder      *connect.Client[v1.SetAutoresponderRequest, v1.Autoresponder]
+	checkBranches         *connect.Client[v1.CheckBranchesRequest, v1.BranchHeads]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -907,6 +935,11 @@ func (c *agentServiceClient) RunCronJob(ctx context.Context, req *connect.Reques
 	return c.runCronJob.CallUnary(ctx, req)
 }
 
+// RunCommand calls cloudfactory.agent.v1.AgentService.RunCommand.
+func (c *agentServiceClient) RunCommand(ctx context.Context, req *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.runCommand.CallUnary(ctx, req)
+}
+
 // Deploy calls cloudfactory.agent.v1.AgentService.Deploy.
 func (c *agentServiceClient) Deploy(ctx context.Context, req *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.deploy.CallUnary(ctx, req)
@@ -1027,6 +1060,11 @@ func (c *agentServiceClient) SetAutoresponder(ctx context.Context, req *connect.
 	return c.setAutoresponder.CallUnary(ctx, req)
 }
 
+// CheckBranches calls cloudfactory.agent.v1.AgentService.CheckBranches.
+func (c *agentServiceClient) CheckBranches(ctx context.Context, req *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error) {
+	return c.checkBranches.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the cloudfactory.agent.v1.AgentService service.
 type AgentServiceHandler interface {
 	CreateWebsite(context.Context, *connect.Request[v1.WebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1066,6 +1104,11 @@ type AgentServiceHandler interface {
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Runs one command now in the container of a website (the panel action "Run a command"). The
+	// command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
+	// website, the same as a cron job. The job succeeds when the command ran, also when its exit
+	// code is not 0. The result has the exit code and the end of the output.
+	RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1110,6 +1153,10 @@ type AgentServiceHandler interface {
 	// changes the same autoresponder. The job_id of the request is not used.
 	GetAutoresponder(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.Autoresponder], error)
 	SetAutoresponder(context.Context, *connect.Request[v1.SetAutoresponderRequest]) (*connect.Response[v1.Autoresponder], error)
+	// Gives the last commit of the branch of each Git source, for the deploys on a schedule
+	// (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
+	// container of each website, as for the step "Get the code" of a deploy.
+	CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1335,6 +1382,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("RunCronJob")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceRunCommandHandler := connect.NewUnaryHandler(
+		AgentServiceRunCommandProcedure,
+		svc.RunCommand,
+		connect.WithSchema(agentServiceMethods.ByName("RunCommand")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceDeployHandler := connect.NewUnaryHandler(
 		AgentServiceDeployProcedure,
 		svc.Deploy,
@@ -1479,6 +1532,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetAutoresponder")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceCheckBranchesHandler := connect.NewUnaryHandler(
+		AgentServiceCheckBranchesProcedure,
+		svc.CheckBranches,
+		connect.WithSchema(agentServiceMethods.ByName("CheckBranches")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cloudfactory.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceCreateWebsiteProcedure:
@@ -1553,6 +1612,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetCronJobsHandler.ServeHTTP(w, r)
 		case AgentServiceRunCronJobProcedure:
 			agentServiceRunCronJobHandler.ServeHTTP(w, r)
+		case AgentServiceRunCommandProcedure:
+			agentServiceRunCommandHandler.ServeHTTP(w, r)
 		case AgentServiceDeployProcedure:
 			agentServiceDeployHandler.ServeHTTP(w, r)
 		case AgentServiceActivateReleaseProcedure:
@@ -1601,6 +1662,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceGetAutoresponderHandler.ServeHTTP(w, r)
 		case AgentServiceSetAutoresponderProcedure:
 			agentServiceSetAutoresponderHandler.ServeHTTP(w, r)
+		case AgentServiceCheckBranchesProcedure:
+			agentServiceCheckBranchesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1754,6 +1817,10 @@ func (UnimplementedAgentServiceHandler) RunCronJob(context.Context, *connect.Req
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RunCronJob is not implemented"))
 }
 
+func (UnimplementedAgentServiceHandler) RunCommand(context.Context, *connect.Request[v1.RunCommandRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RunCommand is not implemented"))
+}
+
 func (UnimplementedAgentServiceHandler) Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.Deploy is not implemented"))
 }
@@ -1848,4 +1915,8 @@ func (UnimplementedAgentServiceHandler) GetAutoresponder(context.Context, *conne
 
 func (UnimplementedAgentServiceHandler) SetAutoresponder(context.Context, *connect.Request[v1.SetAutoresponderRequest]) (*connect.Response[v1.Autoresponder], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetAutoresponder is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) CheckBranches(context.Context, *connect.Request[v1.CheckBranchesRequest]) (*connect.Response[v1.BranchHeads], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.CheckBranches is not implemented"))
 }
