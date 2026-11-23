@@ -56,6 +56,13 @@ func sitePanel(t *testing.T) (*httptest.Server, *[]siteCall) {
 			w.Write([]byte(`{"file":{"name":"x","type":"directory"}}`))
 		case "DELETE /websites/W1/files":
 			w.WriteHeader(http.StatusNoContent)
+		case "PUT /websites/W1/files/permissions":
+			w.Write([]byte(`{"file":{"name":"public","path":"/public","type":"directory","mode":"0755"},"changed":3}`))
+		case "POST /websites/W1/files/archives", "POST /websites/W1/files/extract":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"job":{"id":"J2","title":"Archive job","state":"queued"}}`))
+		case "GET /jobs/J2":
+			w.Write([]byte(`{"data":{"id":"J2","title":"Archive job","state":"succeeded","steps":["One"],"step":1,"error":null,"result":{"files":4,"directories":2,"links":0,"sizeBytes":900,"kept":1,"skipped":1,"skippedNames":["../evil.php"]}}}`))
 		case "GET /websites/W1/logs":
 			// Two pages, the newest entry first. Only the first page has a summary.
 			if r.URL.Query().Get("cursor") == "c2" {
@@ -180,6 +187,65 @@ func TestFiles(t *testing.T) {
 	}
 	if err := a.dispatch(ctx, []string{"files", "delete", "acme.example"}); err == nil {
 		t.Error("delete with no path gave no error")
+	}
+}
+
+func TestFilePermissionsAndArchives(t *testing.T) {
+	srv, calls := sitePanel(t)
+	a, out := testApp(srv)
+	ctx := context.Background()
+
+	if err := a.dispatch(ctx, []string{"files", "chmod", "acme.example", "/deploy.sh", "750"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Method != "PUT" || c.Path != "/websites/W1/files/permissions" || c.Body["mode"] != "750" || c.Body["recursive"] != nil {
+		t.Errorf("chmod = %+v", c)
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"files", "chmod", "acme.example", "/public", "755", "--recursive", "--file-mode", "644"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Body["recursive"] != true || c.Body["fileMode"] != "644" || !strings.Contains(out.String(), "Changed the mode of 3 directories and files in /public.") {
+		t.Errorf("recursive chmod = %+v, out = %s", c, out)
+	}
+	for _, args := range [][]string{{"/public", "755", "--recursive"}, {"/public", "755", "--file-mode", "644"}, {"/public"}} {
+		if err := a.dispatch(ctx, append([]string{"files", "chmod", "acme.example"}, args...)); err == nil {
+			t.Errorf("chmod %v gave no error", args)
+		}
+	}
+
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"files", "archive", "acme.example", "/backup.zip", "public", "/composer.json"}); err != nil {
+		t.Fatal(err)
+	}
+	c := lastSite(calls)
+	if paths, _ := json.Marshal(c.Body["paths"]); c.Path != "/websites/W1/files/archives" || c.Body["path"] != "/backup.zip" || string(paths) != `["/public","/composer.json"]` {
+		t.Errorf("archive = %+v", c)
+	}
+	if !strings.Contains(out.String(), "Made /backup.zip: 4 files, 2 directories and 0 links, 900 bytes.") {
+		t.Errorf("out = %s", out)
+	}
+	if err := a.dispatch(ctx, []string{"files", "archive", "acme.example", "/backup.zip"}); err == nil {
+		t.Error("an archive with no paths gave no error")
+	}
+
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"files", "extract", "acme.example", "/backup.zip", "--to", "restore", "--overwrite"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Path != "/websites/W1/files/extract" || c.Body["path"] != "/backup.zip" || c.Body["to"] != "/restore" || c.Body["overwrite"] != true {
+		t.Errorf("extract = %+v", c)
+	}
+	for _, want := range []string{"Extracted /backup.zip: 4 files, 2 directories and 0 links.", "1 file exists already and did not change.", "Skipped 1 entry:", "  ../evil.php"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("out = %s; want %q", out, want)
+		}
+	}
+	if err := a.dispatch(ctx, []string{"files", "extract", "acme.example", "/backup.zip"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := lastSite(calls); c.Body["to"] != nil || c.Body["overwrite"] != false {
+		t.Errorf("extract with no options = %+v", c)
 	}
 }
 

@@ -134,6 +134,7 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{id}/power', [WebsiteController::class, 'power']);
             Route::post('websites/{id}/retry', [WebsiteController::class, 'retry']);
             Route::post('websites/{id}/staging', [WebsiteController::class, 'staging']);
+            Route::post('websites/{id}/move', [WebsiteController::class, 'move']);
             // Audit finding S5: limits for each customer (AppServiceProvider).
             Route::post('websites/{websiteId}/domains', [DomainController::class, 'store'])->middleware('throttle:domain-changes');
             Route::post('websites/{websiteId}/domains/{name}/verify', [DomainController::class, 'verify'])->middleware('throttle:domain-checks');
@@ -163,6 +164,10 @@ Route::prefix('v1')->group(function () {
             Route::put('websites/{websiteId}/files/content', [FileController::class, 'store'])->middleware('throttle:site-tools');
             Route::post('websites/{websiteId}/files/directories', [FileController::class, 'makeDirectory'])->middleware('throttle:site-tools');
             Route::post('websites/{websiteId}/files/move', [FileController::class, 'move'])->middleware('throttle:site-tools');
+            Route::put('websites/{websiteId}/files/permissions', [FileController::class, 'permissions'])->middleware('throttle:site-tools');
+            // An archive is a job: the agent can need a long time for it.
+            Route::post('websites/{websiteId}/files/archives', [FileController::class, 'archive'])->middleware('throttle:site-tools');
+            Route::post('websites/{websiteId}/files/extract', [FileController::class, 'extract'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/logs', [LogController::class, 'index'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/usage', [UsageController::class, 'website']);
             // The protection of a website in the edge proxy: firewall, IP rules, protected paths, sign-in limit.

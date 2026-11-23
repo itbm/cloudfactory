@@ -1051,6 +1051,62 @@ paths:
                         databaseServerId: { type: string }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/websites/{id}/move:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Websites]
+      summary: Move a website to a different server
+      description: >-
+        Only an administrator. The website keeps its ID, its Unix user, its domains, its
+        databases, its SFTP keys, its cron jobs and its network name. Its files go through the
+        encrypted tunnel between the two servers. The website does not operate while the files
+        move, and it accepts no change. A website that was stopped stays stopped.
+
+
+        The databases stay on their database servers. After the move, the website connects to
+        a database server on a different server through a network with the network name, for
+        example `shop-db.internal`. The name of the engine, for example `mariadb.internal`, is
+        only for a database server on the server of the website. The panel changes the address
+        records of the domains in its DNS zones. For a domain in a different DNS service, change
+        the address records to the addresses of the new server. The SFTP host is the host of
+        the new server.
+
+
+        The response is 422 when: the server is the same server, the server does not have the
+        web role, a server is not healthy, an agent cannot move websites, the new server does
+        not have the runtime of the website, a database server of the website is not on the new
+        server and not in a network with the website, a database server of the website moves,
+        or the website does not operate or changes now. When the move fails, the website stays
+        on the old server and operates there.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serverId]
+              properties:
+                serverId: { type: string, description: The server that gets the website. }
+      responses:
+        '202':
+          description: >-
+            The new server receives the website, and the old server sends it. The first job is
+            the job of the new server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  website: { $ref: '#/components/schemas/Website' }
+                  jobs:
+                    type: array
+                    items: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The website moves to a different server now. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/domains:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -1465,6 +1521,107 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '503': { description: The panel cannot connect to the server of the website. }
 
+  /v1/websites/{websiteId}/files/permissions:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    put:
+      tags: [Files]
+      summary: Change the permissions of a file or a directory of a website
+      description: >-
+        Sets the permission bits. A mode has 3 octal digits, with a `0` before them or not, for
+        example `644` or `0755`. The bits setuid, setgid and sticky are not permitted. The owner
+        of a directory must keep the read and the search permission (for example `0755` or
+        `0700`). A symbolic link has no permissions of its own (422). With `recursive`, `mode`
+        is the mode of the directory and of each directory in it, and `fileMode` is the mode of
+        each file in it. The agent does not change a link and does not go through one. All
+        files of a website have the Unix user of the website as owner, so the group and the
+        other permissions do not give access to other websites.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, mode]
+              properties:
+                path: { type: string, example: /public }
+                mode: { type: string, example: '0755' }
+                recursive: { type: boolean, default: false }
+                fileMode: { type: string, example: '0644', description: Necessary with `recursive`. }
+      responses:
+        '200':
+          description: The file or the directory with its new mode.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+                  changed: { type: integer, description: The number of files and directories that the agent changed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/archives:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Make an archive of files and directories of a website
+      description: >-
+        Makes a job. The agent puts each path in the new archive with its name, at the top level.
+        The path `/` alone puts all files of the website in the archive. The end of the name of
+        the archive gives the format: `.zip`, `.tar.gz`, `.tgz` or `.tar`. The archive has the
+        links, but the agent does not go through a link. The agent does not replace a file: the
+        job fails when the archive exists. The job result has the summary of the archive
+        (`ArchiveSummary`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paths, path]
+              properties:
+                paths: { type: array, minItems: 1, maxItems: 2000, items: { type: string }, example: [/public, /composer.json] }
+                path: { type: string, example: /site.zip, description: The path of the new archive. }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/files/extract:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Extract an archive of a website
+      description: >-
+        Makes a job. The agent extracts `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2` and
+        `.tbz2` archives. It writes only in the destination directory, and makes it when it does
+        not exist. A file that exists stays, unless `overwrite` is true. The agent skips each
+        entry with a name that goes out of the destination, each device and each FIFO. It does
+        not use the owners in the archive, and it removes the bits setuid, setgid and sticky.
+        The limits are 1,000,000 entries and 64 GiB of files, and the disk limit of the website.
+        An archive with a password is not possible. The job result has the summary of the
+        extract (`ArchiveSummary`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, example: /site.zip }
+                to: { type: string, example: /public, description: The destination directory. The default is the directory of the archive. }
+                overwrite: { type: boolean, default: false, description: True replaces the files and the links that exist. }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/logs:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -1688,14 +1845,16 @@ paths:
         An alert opens when a resource of a website, a server or a database server reaches the
         warning percent of its limit, and becomes critical at the critical percent. It closes
         when the use goes 5 points below the warning percent. CPU and memory use the average of
-        the last 30 minutes. An administrator sees all alerts, also those of the servers. A
-        reseller sees the alerts of its customers, and an owner the alerts of their websites
-        and database servers. The panel does not stop a website at its limit because of an
+        the last 30 minutes. FR-603: a mailbox alert opens when a mailbox is 90% full, and
+        becomes critical at 98%. These two values do not change with the settings. An
+        administrator sees all alerts, also those of the servers. A reseller sees the alerts of
+        its customers, and an owner the alerts of their websites, database servers and
+        mailboxes. The panel does not stop a website at its limit because of an
         alert. The panel fires the Laravel events `UsageAlertRaised` and `UsageAlertResolved`
         for delivery, for example by email.
       parameters:
         - { name: state, in: query, schema: { type: string, enum: [open, resolved, all], default: open } }
-        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server] } }
+        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server, mailbox] } }
         - { name: subjectId, in: query, schema: { type: string } }
       responses:
         '200':
@@ -7355,7 +7514,10 @@ components:
         lastUsedAt: { type: [string, 'null'], format: date-time }
     WebsiteStatus:
       type: string
-      enum: [starting, running, stopping, stopped, failed]
+      enum: [starting, running, stopping, stopped, failed, moving]
+      description: >-
+        "moving": the website goes to a different server now. The website accepts no change
+        until the move is complete.
     Limits:
       type: object
       required: [vcpus, memoryBytes, diskBytes, diskIoBytesPerSecond, processes]
@@ -7468,12 +7630,12 @@ components:
       type: object
       properties:
         id: { type: string }
-        subjectType: { type: string, enum: [website, server, database_server] }
+        subjectType: { type: string, enum: [website, server, database_server, mailbox] }
         subjectId: { type: string }
-        subjectName: { type: [string, 'null'], description: Null when the subject was removed. }
+        subjectName: { type: [string, 'null'], description: 'Null when the subject was removed. The name of a mailbox is its address.' }
         customerId: { type: [string, 'null'], description: Null for a server. }
         serverId: { type: [string, 'null'] }
-        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes] }
+        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes, storage], description: '"storage" is the size of a mailbox.' }
         level: { type: string, enum: [warning, critical] }
         used: { type: number }
         limit: { type: number }
@@ -7504,6 +7666,10 @@ components:
         application: { type: string }
         customerId: { type: string }
         serverId: { type: string }
+        movingToServerId:
+          type: string
+          nullable: true
+          description: The server that receives the website, while the status is "moving".
         planId: { type: string }
         unixUser: { type: string }
         networkHost:
@@ -7783,6 +7949,16 @@ components:
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
+    ArchiveSummary:
+      type: object
+      properties:
+        files: { type: integer, description: The files in the new archive, or the files that the extract wrote. }
+        directories: { type: integer }
+        links: { type: integer }
+        sizeBytes: { type: integer, description: The size of the new archive, or the size of the files that the extract wrote. }
+        kept: { type: integer, description: The files that the extract did not replace, because they exist. }
+        skipped: { type: integer, description: 'The entries that the agent did not use: names that go out of the destination, devices, FIFOs, and names that are a directory in one place and a file in the other.' }
+        skippedNames: { type: array, items: { type: string }, description: The first 20 skipped entries. }
     WebsiteSecurity:
       type: object
       description: The protection of a website in the edge proxy.
@@ -7919,6 +8095,11 @@ components:
         steps: { type: array, items: { type: string } }
         step: { type: integer, description: The number of steps that are complete. }
         error: { type: [string, 'null'], description: An administrator gets the full error of the agent. Other users get a short text. }
+        result:
+          description: The summary of a job that succeeded, for the actions `MakeArchive` and `ExtractArchive`. Null for all other jobs.
+          oneOf:
+            - { $ref: '#/components/schemas/ArchiveSummary' }
+            - { type: 'null' }
         websiteId: { type: [string, 'null'] }
         databaseServerId: { type: [string, 'null'], description: The database server of the job. A user sees the jobs of the websites and of the database servers of its customers. }
         dnsZoneId: { type: [string, 'null'], description: The DNS zone of the job. A user sees the jobs of the DNS zones of its customers. }

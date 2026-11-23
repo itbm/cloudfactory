@@ -389,6 +389,21 @@ export function createStagingCopy(websiteId: string): Promise<{ websiteId: strin
   });
 }
 
+/**
+ * Moves a website to a different server (administrators only). The new server receives the
+ * files, and the old server sends them. The panel reads the websites again when the two jobs
+ * are complete.
+ */
+export function moveWebsite(websiteId: string, serverId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ website: live.ApiWebsite; jobs: live.ApiJob[] }>("POST", `/websites/${websiteId}/move`, { serverId });
+    update((d) => {
+      d.websites = d.websites.map((w) => (w.id === websiteId ? live.toWebsite(r.website) : w));
+    });
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh());
+  });
+}
+
 export function deleteWebsite(websiteId: string) {
   return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}`)).then((r) => track(r.job));
 }
@@ -531,6 +546,27 @@ export function moveFile(websiteId: string, from: string, to: string): Promise<F
 }
 
 /** Removes a file, or a directory with all that is in it. */
+/** Changes the permission bits. With "recursive", "mode" is for the folders and "fileMode" for the files. */
+export function setFileMode(websiteId: string, path: string, mode: string, options: { recursive?: boolean; fileMode?: string } = {}): Promise<{ file: FileEntry; changed: number }> {
+  const body = options.recursive ? { path, mode, recursive: true, fileMode: options.fileMode } : { path, mode };
+  return call(() => live.request<{ file: FileEntry; changed: number }>("PUT", `${filesOf(websiteId)}/permissions`, body));
+}
+
+/**
+ * Starts the job that makes an archive. The promise resolves when the API accepts the job. The
+ * promise "done" resolves when the agent has finished it.
+ */
+export async function makeArchive(websiteId: string, paths: string[], path: string): Promise<{ done: Promise<Job> }> {
+  const r = await call(() => live.request<JobAnswer>("POST", `${filesOf(websiteId)}/archives`, { paths, path }));
+  return { done: track(r.job) };
+}
+
+/** Starts the job that extracts an archive, as makeArchive. */
+export async function extractArchive(websiteId: string, path: string, to: string, overwrite: boolean): Promise<{ done: Promise<Job> }> {
+  const r = await call(() => live.request<JobAnswer>("POST", `${filesOf(websiteId)}/extract`, { path, to, overwrite }));
+  return { done: track(r.job) };
+}
+
 export function deleteFile(websiteId: string, path: string): Promise<void> {
   return call(() => live.request<void>("DELETE", `${filesOf(websiteId)}?path=${q(path)}`));
 }

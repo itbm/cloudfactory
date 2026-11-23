@@ -256,6 +256,19 @@ class DemoTest extends TestCase
         $this->getJson("{$base}/logs?status=4xx&method=GET")->assertOk()->assertJsonPath('entries.0.access.status', fn (int $status) => $status >= 400 && $status < 500);
         $this->getJson("{$base}/logs?sources=error&q=php")->assertOk()->assertJsonPath('entries.0.source', 'error')->assertJsonPath('entries.0.access', null);
 
+        // The archive jobs change the files and give a summary. The permissions change at once.
+        $job = $this->runJob($this->postJson("{$base}/files/archives", ['paths' => ['/public', '/composer.json'], 'path' => '/site.zip'])->assertAccepted()->json('job.id'));
+        $this->assertSame([JobState::Succeeded, 2, 4], [$job->state, $job->result['directories'], $job->result['files']]);
+        $this->getJson("{$base}/files")->assertOk()->assertJsonFragment(['name' => 'site.zip', 'path' => '/site.zip']);
+        $job = $this->runJob($this->postJson("{$base}/files/extract", ['path' => '/site.zip', 'to' => '/copy'])->assertAccepted()->json('job.id'));
+        $this->assertSame(4, $job->result['files']);
+        $this->getJson("{$base}/files/content?path=/copy/public/robots.txt")->assertOk()->assertJsonPath('content', "User-agent: *\nAllow: /\n");
+        $job = $this->runJob($this->postJson("{$base}/files/extract", ['path' => '/site-2026-10.zip'])->assertAccepted()->json('job.id'));
+        $this->assertSame([2, 2], [$job->result['files'], $job->result['directories']]);
+        $this->putJson("{$base}/files/permissions", ['path' => '/copy', 'mode' => '0755', 'recursive' => true, 'fileMode' => '0644'])->assertOk()->assertJsonPath('changed', 7);
+        $this->getJson("{$base}/files?path=/copy/public")->assertJsonPath('entries.0.mode', '0755')->assertJsonPath('entries.1.mode', '0644');
+        $this->putJson("{$base}/files/permissions", ['path' => '/copy', 'mode' => '0644'])->assertStatus(422);
+
         // "Run now" gives the cron job a result.
         $cron = $website->cronJobs()->firstOrFail();
         $job = $this->runJob($this->postJson("{$base}/cron-jobs/{$cron->id}/run")->assertAccepted()->json('job.id'));

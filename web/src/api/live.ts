@@ -172,9 +172,9 @@ interface ApiMe {
   brand?: Brand;
 }
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
-interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
+interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; result?: Job["result"] | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
-  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; installCommand?: string | null; environment?: string[]; status: Website["status"];
+  id: string; name: string; application: string; customerId: string; serverId: string; movingToServerId?: string | null; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; installCommand?: string | null; environment?: string[]; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; version?: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null; bandwidthBytes?: number;
@@ -240,7 +240,7 @@ export function toJob(j: ApiJob): Job {
   return {
     id: j.id, title: j.title, ref: j.ref ?? undefined, action: j.action ?? undefined, state: j.state, steps: j.steps ?? [], step: j.step ?? 0, error: j.error ?? undefined,
     createdAt: j.createdAt, finishedAt: j.finishedAt ?? undefined, websiteId: j.websiteId ?? undefined, serverId: j.serverId ?? undefined,
-    databaseServerId: j.databaseServerId ?? undefined, dnsZoneId: j.dnsZoneId ?? undefined,
+    databaseServerId: j.databaseServerId ?? undefined, dnsZoneId: j.dnsZoneId ?? undefined, result: j.result ?? undefined,
   };
 }
 
@@ -272,7 +272,7 @@ export function toPanelCertificate(c: ApiPanelCertificate): PanelCertificate {
 
 export function toWebsite(w: ApiWebsite): Website {
   return {
-    id: w.id, name: w.name, application: w.application || "Website", customerId: w.customerId, serverId: w.serverId, unixUser: w.unixUser,
+    id: w.id, name: w.name, application: w.application || "Website", customerId: w.customerId, serverId: w.serverId, movingToServerId: w.movingToServerId ?? undefined, unixUser: w.unixUser,
     // An API from before the networks sends no name. The name comes from the Unix user.
     networkHost: w.kind === "worker" ? null : w.networkHost ?? `${w.unixUser.replaceAll("_", "-")}.internal`, networkPort: w.kind === "worker" ? null : w.networkPort ?? 80,
     kind: w.kind ?? "public", command: w.command ?? null, installCommand: w.installCommand ?? null, environment: w.environment ?? [],

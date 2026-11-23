@@ -91,6 +91,89 @@ func TestFilesRefuseBadRequests(t *testing.T) {
 	}
 }
 
+// An archive is a job. It runs the file manager as the website user with a low CPU
+// priority, and gives the summary as the result.
+func TestArchiveJobsRunAsTheWebsiteUser(t *testing.T) {
+	d, f, _ := withSite(t)
+	answer, _ := json.Marshal(sitefiles.Response{Summary: &sitefiles.Summary{Files: 12, Directories: 3, Kept: 2, SkippedNames: []string{"/out/../x"}, Skipped: 1}})
+	f.Rules = append(f.Rules, execx.Rule{Prefix: asSite + "nice -n 10 /usr/local/bin/cf-agent site-files ", Output: string(answer)})
+
+	job, err := d.ExtractArchive(&agentv1.ExtractArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.zip", To: "/out", Overwrite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Key != "files:"+websiteID || !job.Long || len(job.Steps) != 1 || job.Steps[0].Name != "Extract the archive" {
+		t.Errorf("job = %+v", job)
+	}
+	if err := runSteps(t, job, nil); err != nil {
+		t.Fatal(err)
+	}
+	call, input := called(f, asSite)
+	if call != asSite+"nice -n 10 /usr/local/bin/cf-agent site-files "+d.Host.AppDir("acme_x7k2") || !strings.Contains(input, `"op":"extract","path":"/site.zip","to":"/out"`) || !strings.Contains(input, `"overwrite":true`) {
+		t.Errorf("call = %q, input = %q", call, input)
+	}
+	if r := job.Result(); r["files"] != 12 || r["kept"] != 2 || r["skipped"] != 1 || len(r["skippedNames"].([]string)) != 1 {
+		t.Errorf("result = %v", r)
+	}
+
+	f.Calls, f.Inputs = nil, nil
+	job, err = d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.tar.gz", Paths: []string{"/public", "/composer.json"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runSteps(t, job, nil); err != nil || job.Steps[0].Name != "Make the archive" {
+		t.Fatal(err)
+	}
+	if _, input := called(f, asSite); !strings.Contains(input, `"op":"archive","path":"/site.tar.gz"`) || !strings.Contains(input, `"paths":["/public","/composer.json"]`) {
+		t.Errorf("input = %q", input)
+	}
+
+	// An error of the file manager fails the job with its text.
+	f.Rules = append([]execx.Rule{{Prefix: asSite, Output: `{"code":"exists","error":"a file or a directory with this name exists already"}`}}, f.Rules...)
+	if err := runSteps(t, job, nil); err == nil || err.Error() != "a file or a directory with this name exists already" {
+		t.Errorf("error = %v", err)
+	}
+}
+
+func TestArchiveJobsRefuseBadRequests(t *testing.T) {
+	d, f, _ := withSite(t)
+	for _, c := range []struct {
+		name string
+		job  func() (any, error)
+	}{
+		{"path with ..", func() (any, error) {
+			return d.ExtractArchive(&agentv1.ExtractArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/../other/site.zip", To: "/"})
+		}},
+		{"bad destination", func() (any, error) {
+			return d.ExtractArchive(&agentv1.ExtractArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.zip", To: "out"})
+		}},
+		{"no paths", func() (any, error) {
+			return d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.zip"})
+		}},
+		{"bad path", func() (any, error) {
+			return d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: websiteID, Path: "/site.zip", Paths: []string{"/a/"}})
+		}},
+		{"bad website", func() (any, error) {
+			return d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: "../x", Path: "/site.zip", Paths: []string{"/a"}})
+		}},
+	} {
+		if _, err := c.job(); err == nil {
+			t.Errorf("%s: no error", c.name)
+		}
+	}
+	// A website that the agent does not know fails in the step.
+	job, err := d.MakeArchive(&agentv1.MakeArchiveRequest{JobId: jobID2, WebsiteId: jobID2, Path: "/site.zip", Paths: []string{"/a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runSteps(t, job, nil); !errors.Is(err, ErrUnknownWebsite) {
+		t.Errorf("unknown website = %v", err)
+	}
+	if len(f.Calls) != 0 {
+		t.Errorf("the agent ran commands: %v", f.Calls)
+	}
+}
+
 func TestSearchLogsMergesTheAccessLogAndTheContainers(t *testing.T) {
 	d, f, _ := deps(t)
 	d.AccessLogs = &sitelogs.Store{Dir: filepath.Join(t.TempDir(), "logs")}

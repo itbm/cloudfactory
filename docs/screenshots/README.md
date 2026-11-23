@@ -254,7 +254,7 @@ The start points for common applications.
 
 ### owner-11-website-files
 
-The file manager of a website. The server does each operation as the Unix user of the website.
+The file manager of a website, with the permissions of each file. Select files to make an archive. An archive has an **Extract** button. The server does each operation as the Unix user of the website.
 
 ![owner-11-website-files](owner-11-website-files.png)
 

@@ -10,16 +10,17 @@ import (
 	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
+	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
 	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
 // The file manager and the logs of the panel. These functions do not make a job: the panel
-// waits for the answer. Each of them runs a command as the Unix user of the website, so the
-// kernel limits it to the files of that website. The agent never opens a file of a website
-// as root or as its own user. The access log of the edge proxy is a file of the worker, not of
-// the website.
+// waits for the answer. The archives are jobs, because an archive can take a long time. Each
+// of them runs a command as the Unix user of the website, so the kernel limits it to the
+// files of that website. The agent never opens a file of a website as root or as its own
+// user. The access log of the edge proxy is a file of the worker, not of the website.
 
 // ErrUnknownWebsite is the error for a website that the agent does not have.
 var ErrUnknownWebsite = errors.New("the agent does not know this website")
@@ -56,33 +57,58 @@ func (d *Deps) knownSite(websiteID string) (*Site, error) {
 	return site, nil
 }
 
-// Files does one file operation in the directory of a website, as the Unix user of the
-// website.
-func (d *Deps) Files(ctx context.Context, websiteID string, req sitefiles.Request) (sitefiles.Response, error) {
-	var resp sitefiles.Response
-	site, err := d.knownSite(websiteID)
-	if err != nil {
-		return resp, err
-	}
+// checkFileRequest checks the paths and the size of a file operation.
+func checkFileRequest(req sitefiles.Request) error {
 	paths := []string{req.Path}
-	if req.Op == sitefiles.OpMove {
+	switch req.Op {
+	case sitefiles.OpMove, sitefiles.OpExtract:
 		paths = append(paths, req.To)
+	case sitefiles.OpArchive:
+		if len(req.Paths) == 0 || len(req.Paths) > validate.MaxArchivePaths {
+			return &FileError{Code: sitefiles.CodeInvalid, Text: fmt.Sprintf("an archive needs 1 to %d paths", validate.MaxArchivePaths)}
+		}
+		paths = append(paths, req.Paths...)
 	}
 	for _, p := range paths {
 		if err := sitefiles.CheckPath(p); err != nil {
-			return resp, &FileError{Code: sitefiles.CodeInvalid, Text: err.Error()}
+			return &FileError{Code: sitefiles.CodeInvalid, Text: err.Error()}
 		}
 	}
 	if len(req.Content) > sitefiles.MaxWrite {
-		return resp, &FileError{Code: sitefiles.CodeTooLarge, Text: "the file is too large for the file manager; use SFTP"}
+		return &FileError{Code: sitefiles.CodeTooLarge, Text: "the file is too large for the file manager; use SFTP"}
+	}
+	return nil
+}
+
+// Files does one file operation in the directory of a website, as the Unix user of the
+// website.
+func (d *Deps) Files(ctx context.Context, websiteID string, req sitefiles.Request) (sitefiles.Response, error) {
+	site, err := d.knownSite(websiteID)
+	if err != nil {
+		return sitefiles.Response{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	return d.siteFiles(ctx, site, req)
+}
+
+// siteFiles starts "cf-agent site-files" as the website user with one request. An archive
+// gets a lower CPU priority ("nice"), so that the websites on the server stay fast.
+func (d *Deps) siteFiles(ctx context.Context, site *Site, req sitefiles.Request) (sitefiles.Response, error) {
+	var resp sitefiles.Response
+	if err := checkFileRequest(req); err != nil {
+		return resp, err
 	}
 	in, err := json.Marshal(req)
 	if err != nil {
 		return resp, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	out, err := d.Run.RunInput(ctx, string(in), "runuser", "-u", site.UnixUser, "--", d.agentBinary(), "site-files", d.Host.AppDir(site.UnixUser))
+	command := []string{"runuser", "-u", site.UnixUser, "--"}
+	if req.Op == sitefiles.OpArchive || req.Op == sitefiles.OpExtract {
+		command = append(command, "nice", "-n", "10")
+	}
+	command = append(command, d.agentBinary(), "site-files", d.Host.AppDir(site.UnixUser))
+	out, err := d.Run.RunInput(ctx, string(in), command[0], command[1:]...)
 	if err != nil {
 		return resp, fmt.Errorf("the file manager did not start: %w", err)
 	}
@@ -93,6 +119,50 @@ func (d *Deps) Files(ctx context.Context, websiteID string, req sitefiles.Reques
 		return resp, &FileError{Code: resp.Code, Text: resp.Error}
 	}
 	return resp, nil
+}
+
+// MakeArchive puts files and directories of a website in a new archive, as a job.
+func (d *Deps) MakeArchive(req *agentv1.MakeArchiveRequest) (jobs.Job, error) {
+	return d.archiveJob(req.GetJobId(), req.GetWebsiteId(), "Make the archive",
+		sitefiles.Request{Op: sitefiles.OpArchive, Path: req.GetPath(), Paths: req.GetPaths()})
+}
+
+// ExtractArchive extracts an archive of a website into a directory of the website, as a job.
+func (d *Deps) ExtractArchive(req *agentv1.ExtractArchiveRequest) (jobs.Job, error) {
+	return d.archiveJob(req.GetJobId(), req.GetWebsiteId(), "Extract the archive",
+		sitefiles.Request{Op: sitefiles.OpExtract, Path: req.GetPath(), To: req.GetTo(), Overwrite: req.GetOverwrite()})
+}
+
+// archiveJob makes the job of an archive operation. The job has the long time limit. Its key
+// is not the website: an archive does not stop the other jobs of the website, but two
+// archives of one website do not run at the same time.
+func (d *Deps) archiveJob(jobID, websiteID, step string, req sitefiles.Request) (jobs.Job, error) {
+	if err := errors.Join(validate.ID(websiteID), checkFileRequest(req)); err != nil {
+		return jobs.Job{}, err
+	}
+	var summary *sitefiles.Summary
+	return jobs.Job{ID: jobID, Key: "files:" + websiteID, Long: true, Steps: []jobs.Step{
+		{Name: step, Do: func(ctx context.Context) error {
+			site, err := d.knownSite(websiteID)
+			if err != nil {
+				return err
+			}
+			resp, err := d.siteFiles(ctx, site, req)
+			if err != nil {
+				return err
+			}
+			summary = resp.Summary
+			return nil
+		}},
+	}, Result: func() map[string]any {
+		if summary == nil {
+			return nil
+		}
+		return map[string]any{
+			"files": summary.Files, "directories": summary.Directories, "links": summary.Links, "sizeBytes": summary.SizeBytes,
+			"kept": summary.Kept, "skipped": summary.Skipped, "skippedNames": summary.SkippedNames,
+		}
+	}}, nil
 }
 
 // FileEntry gives an entry of the file manager as a message for the panel.

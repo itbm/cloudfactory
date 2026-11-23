@@ -27,6 +27,12 @@ async function openPublic() {
   await screen.findAllByText("index.php");
 }
 
+/** Opens the menu of a row of the file list, and selects an item. */
+function menu(name: string, item: string) {
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${name}` }));
+  fireEvent.click(screen.getByRole("menuitem", { name: item }));
+}
+
 describe("the file manager", () => {
   it("shows the files of the website and opens a folder", async () => {
     await open("shop.acme.example.com", "files");
@@ -61,10 +67,97 @@ describe("the file manager", () => {
   it("removes a file after a confirmation", async () => {
     const { api, id } = await open("shop.acme.example.com", "files");
     await openPublic();
-    fireEvent.click(screen.getByRole("button", { name: /^Remove\s*index\.php$/ }));
+    menu("index.php", "Remove");
     api.on(`DELETE /websites/${id}/files?path=%2Fpublic%2Findex.php`, () => [204, null]);
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(api.changes.at(-1)?.method).toBe("DELETE"));
+  });
+
+  it("shows the permissions and changes them with the check boxes", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await openPublic();
+    expect(screen.getAllByText("0640").length).toBe(2);
+    menu("index.php", "Permissions");
+    const dialog = within(screen.getByRole("dialog"));
+    const octal = dialog.getByLabelText("Octal value (file)") as HTMLInputElement;
+    expect(octal.value).toBe("0640");
+    fireEvent.click(dialog.getByLabelText("Others: read (file)"));
+    expect(octal.value).toBe("0644");
+    expect(dialog.getByText("rw-r--r--")).toBeTruthy();
+    fireEvent.change(octal, { target: { value: "64" } });
+    expect(dialog.getByText("Enter 3 octal digits, for example 644 or 0755.")).toBeTruthy();
+    expect((dialog.getByRole("button", { name: "Change" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(octal, { target: { value: "600" } });
+    api.on(`PUT /websites/${id}/files/permissions`, () => ({ file: { name: "index.php", path: "/public/index.php", type: "file", sizeBytes: 103, modifiedAt: "2026-11-14T10:00:00Z", mode: "0600" }, changed: 1 }));
+    fireEvent.click(dialog.getByRole("button", { name: "Change" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toEqual({ method: "PUT", path: `/websites/${id}/files/permissions`, body: { path: "/public/index.php", mode: "600" } });
+  });
+
+  it("changes the permissions of a folder and of all files in it", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await openPublic();
+    menu("css", "Permissions");
+    const dialog = within(screen.getByRole("dialog"));
+    // A folder must keep Read and Open for the owner.
+    fireEvent.click(dialog.getByLabelText("Owner: open (folders)"));
+    expect(dialog.getByText("The owner must keep Read and Open for a folder.")).toBeTruthy();
+    fireEvent.click(dialog.getByLabelText("Owner: open (folders)"));
+    fireEvent.click(dialog.getByLabelText("Also change all folders and files in this folder"));
+    fireEvent.click(dialog.getByLabelText("Others: open (folders)"));
+    fireEvent.click(dialog.getByLabelText("Others: read (folders)"));
+    fireEvent.change(dialog.getByLabelText("Octal value (files)"), { target: { value: "0644" } });
+    api.on(`PUT /websites/${id}/files/permissions`, () => ({ file: { name: "css", path: "/public/css", type: "directory", sizeBytes: 0, modifiedAt: "2026-11-14T10:00:00Z", mode: "0755" }, changed: 7 }));
+    fireEvent.click(dialog.getByRole("button", { name: "Change" }));
+    expect(await screen.findByText("Changed the permissions of 7 files and folders in /public/css.")).toBeTruthy();
+    expect(api.changes.at(-1)?.body).toEqual({ path: "/public/css", mode: "0755", recursive: true, fileMode: "0644" });
+  });
+
+  it("makes an archive of the selected files and shows the summary of the job", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await openPublic();
+    fireEvent.click(screen.getByLabelText("Select index.php"));
+    fireEvent.click(screen.getByLabelText("Select robots.txt"));
+    expect(screen.getByText("2 items selected")).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("region", { name: "Selected files" })).getByRole("button", { name: "Make archive" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText("Name of the archive"), { target: { value: "pages" } });
+    fireEvent.change(dialog.getByLabelText("Format"), { target: { value: ".tar.gz" } });
+    expect(dialog.getByText("/public/pages.tar.gz")).toBeTruthy();
+    const job = apiJob({ websiteId: id, action: "MakeArchive", title: "Make archive", ref: "/public/pages.tar.gz", steps: ["Make the archive"], step: 1, result: { files: 2, directories: 0, links: 0, sizeBytes: 2048, kept: 0, skipped: 0, skippedNames: [] } });
+    api.on(`POST /websites/${id}/files/archives`, () => [202, { job }]);
+    fireEvent.click(dialog.getByRole("button", { name: "Make archive" }));
+    expect(await screen.findByText(/^The archive pages\.tar\.gz is ready: 2 files and 0 folders/)).toBeTruthy();
+    expect(api.changes.find((c) => c.path.endsWith("/files/archives"))?.body).toEqual({ paths: ["/public/index.php", "/public/robots.txt"], path: "/public/pages.tar.gz" });
+    expect(screen.queryByText("2 items selected")).toBeNull();
+  });
+
+  it("extracts an archive and shows the entries that the server skipped", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await screen.findAllByText("site-2026-10.zip");
+    expect(screen.queryByRole("button", { name: /^Edit\s*site-2026-10\.zip$/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Extract\s*site-2026-10\.zip$/ }));
+    const dialog = within(screen.getByRole("dialog"));
+    expect((dialog.getByLabelText("Extract to the folder") as HTMLInputElement).value).toBe("/");
+    fireEvent.change(dialog.getByLabelText("Extract to the folder"), { target: { value: "restore" } });
+    fireEvent.click(dialog.getByLabelText("Replace files that exist"));
+    expect(dialog.getByText(/You cannot undo this/)).toBeTruthy();
+    const job = apiJob({ websiteId: id, action: "ExtractArchive", title: "Extract archive", ref: "/site-2026-10.zip", result: { files: 4, directories: 2, links: 0, sizeBytes: 900, kept: 0, skipped: 1, skippedNames: ["../evil.php"] } });
+    api.on(`POST /websites/${id}/files/extract`, () => [202, { job }]);
+    fireEvent.click(dialog.getByRole("button", { name: "Extract" }));
+    expect(await screen.findByText(/^Extracted site-2026-10\.zip to \/restore: 4 files and 2 folders\. The server skipped 1 entry/)).toBeTruthy();
+    expect(screen.getByText("../evil.php")).toBeTruthy();
+    expect(api.changes.find((c) => c.path.endsWith("/files/extract"))?.body).toEqual({ path: "/site-2026-10.zip", to: "/restore", overwrite: true });
+  });
+
+  it("shows the error of a failed archive job", async () => {
+    const { api, id } = await open("shop.acme.example.com", "files");
+    await screen.findAllByText("site-2026-10.zip");
+    fireEvent.click(screen.getByRole("button", { name: /^Extract\s*site-2026-10\.zip$/ }));
+    const job = apiJob({ websiteId: id, action: "ExtractArchive", title: "Extract archive", ref: "/site-2026-10.zip", state: "failed", error: "The archive is damaged or is not a supported archive." });
+    api.on(`POST /websites/${id}/files/extract`, () => [202, { job }]);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Extract" }));
+    expect(await screen.findByText("Extract archive /site-2026-10.zip failed. The archive is damaged or is not a supported archive.")).toBeTruthy();
   });
 
   it("encodes the bytes of an upload", () => {

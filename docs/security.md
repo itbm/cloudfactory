@@ -82,6 +82,21 @@ The product specification, section 6.4, gives the requirements.
 - The file manager opens the directory of the website as a root directory (`os.Root` in
   Go). The kernel refuses a path that goes out of it, also through a symbolic link. The API
   and the agent check each path with the same rule (`filePath` in `schema/input-rules.json`).
+- An extract writes in an `os.Root` of the destination directory. An entry with `..` or an
+  absolute name, or a link that goes out of the destination, thus cannot change a file out
+  of that directory (zip slip). The agent skips these entries and shows their names in the
+  summary of the job.
+- An extract does not use the owner or the group of an entry. It removes the bits setuid,
+  setgid and sticky, and the write permission for the group and the others. It does not make
+  devices, FIFOs or sockets. It refuses an encrypted zip entry.
+- An extract stops at 1,000,000 entries or at 64 GiB of file content, also for a small
+  archive with a very large content. The disk limit of the website applies too.
+- A new archive does not go through a symbolic link: it keeps the link as a link. It does
+  not put the owner of a file in the archive.
+- A change of permissions does not change a symbolic link and does not go through a link,
+  also when it is recursive. The bits setuid, setgid and sticky are not possible. All files
+  belong to the website user, and the other websites have other Unix users. Thus the group
+  and other permissions do not give another website access to the files.
 - A cron command runs in the gVisor container of the website. A build runs in a second
   gVisor container with all capabilities dropped, a read-only root file system and the
   limits of a website. The firewall rules for the website user apply to both.
@@ -1149,6 +1164,14 @@ through the internet, so the design assumes that a person can read and change ea
   path outside the data directory, a hard link, a device file and a secret that is not of
   the engine. It writes each file with the owner of the database server, and it applies the
   disk limit of the database server.
+- **The move of a website.** The files of a website that moves use the same tunnel, port and
+  token. The root helpers never read or write the files as root (CF-05): `tar` runs as the
+  website user on the two servers, and the new server does not take the owners from the
+  stream. Thus a file of the stream cannot go outside the directories of the website user,
+  and the disk limit of the website applies. The new server accepts the files only for a
+  website that its state records as stopped and with the same Unix user. The old website
+  stays stopped, with no SFTP access, while its files move. A website never operates on the
+  two servers at the same time.
 - **Checks of the state.** The worker and the root helper examine each value of the state
   from the panel: the range is a private IPv4 network, each mesh address is in the range,
   each tunnel address is a public IP address, and each key has the correct form. The root
