@@ -27,6 +27,14 @@ The full rule is in
 - The web tests use the API answers in `web/src/test/fixtures`. After a change to the API or
   to `DemoSeeder`, run `php artisan demo:fixtures` in `api/` (with `APP_ENV=local`).
 
+## Running the tests
+
+Run only the tests of the files that you change. The CI runs the full suites.
+
+- Panel API: `php artisan test --filter=NameTest` in `api/`. For a full run, add `--parallel`.
+- Web panel: `npx vitest run src/pages/name.test.tsx` in `web/`.
+- Agent and CLI: `go test ./internal/name/...`, not `./...`.
+
 ## Writing
 
 Use British English. Write the documentation in ASD-STE100 Simplified Technical English:
