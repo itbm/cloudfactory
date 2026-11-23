@@ -1490,6 +1490,86 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '503': { description: The panel cannot connect to the server of the website. }
 
+  /v1/websites/{websiteId}/security:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Websites]
+      summary: Read the protection of a website
+      description: >-
+        The protection of the website in the edge proxy: the firewall, the IP address rules, the
+        password-protected paths and the sign-in limit. The API gives the names of the users of
+        each protected path, and never their passwords.
+      responses:
+        '200':
+          description: The protection.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  security: { $ref: '#/components/schemas/WebsiteSecurity' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Websites]
+      summary: Change the protection of a website
+      description: >-
+        Changes the parts of the protection that the request has. A part that the request does not
+        have keeps its value. The edge proxy applies the parts in this order: the IP address
+        rules (status 403), the sign-in limit (status 429), the password-protected paths (status
+        401) and the firewall (status 403 in the mode `block`). A path starts with `/`. A path that
+        ends with `/` is the directory and all paths in it. A different path is one exact path. The
+        edge proxy ignores the case of a path. The agent changes only the route of the website in
+        the edge proxy (a job `SetWebsiteSecurity`): the container does not restart. Only a
+        website with domains has protection: a private website and a worker get no requests from
+        the internet.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebsiteSecurityChange' }
+      responses:
+        '202':
+          description: The panel saved the change. The job applies it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  security: { $ref: '#/components/schemas/WebsiteSecurity' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '200': { description: Nothing changed. `job` is null. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended, the panel could not make the website, or the website has no domains (a private website or a worker). }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/security/events:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Websites]
+      summary: Read the last firewall events of a website
+      description: >-
+        The last requests that the firewall of the edge proxy blocked (mode `block`) or only
+        detected (mode `detect`, or a score below the limit of the rule set), the newest first.
+        The agent reads the end of the firewall log of the server, so an old event can be gone.
+        Use the IDs of the rules to turn off a rule that blocks a good request.
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 }, description: The largest number of events. }
+      responses:
+        '200':
+          description: The events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array, items: { $ref: '#/components/schemas/FirewallEvent' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The panel could not make the website. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
   /v1/websites/{websiteId}/usage:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -6886,6 +6966,100 @@ components:
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
+    WebsiteSecurity:
+      type: object
+      description: The protection of a website in the edge proxy.
+      properties:
+        firewall:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: ['off', detect, block]
+              description: >-
+                The firewall is Coraza with the OWASP Core Rule Set, paranoia level 1. `detect`
+                records the requests that the firewall would block, and blocks nothing.
+            excludedRules: { type: array, maxItems: 50, items: { type: integer, minimum: 1, maximum: 999999 }, description: The IDs of the rules that do not apply to the website. }
+            skippedPaths: { type: array, maxItems: 20, items: { type: string, maxLength: 200 }, description: The paths that the firewall does not examine. }
+        ipRules:
+          type: object
+          properties:
+            allow: { type: array, maxItems: 200, items: { type: string }, description: 'IP addresses and ranges, for example 203.0.113.0/24. With values, only these addresses can open the website.' }
+            block: { type: array, maxItems: 200, items: { type: string }, description: The addresses and ranges that cannot open the website. The edge proxy applies this list first. }
+        protectedPaths:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            properties:
+              path: { type: string, example: /staging/ }
+              users: { type: array, items: { type: object, properties: { name: { type: string } } } }
+        signInLimit:
+          type: object
+          properties:
+            requestsPerMinute: { type: integer, minimum: 0, maximum: 600, description: The largest number of POST requests in one minute from one IP address to the sign-in paths. 0 is no limit. }
+            paths: { type: array, maxItems: 20, items: { type: string }, example: [/wp-login.php, /xmlrpc.php] }
+    WebsiteSecurityChange:
+      type: object
+      description: The parts of the protection to change. Each part replaces the part that the website has.
+      properties:
+        firewall:
+          type: object
+          required: [mode]
+          properties:
+            mode: { type: string, enum: ['off', detect, block] }
+            excludedRules: { type: array, maxItems: 50, items: { type: integer, minimum: 1, maximum: 999999 } }
+            skippedPaths: { type: array, maxItems: 20, items: { type: string, maxLength: 200 } }
+        ipRules:
+          type: object
+          properties:
+            allow: { type: array, maxItems: 200, items: { type: string, maxLength: 64 } }
+            block: { type: array, maxItems: 200, items: { type: string, maxLength: 64 } }
+        protectedPaths:
+          type: array
+          maxItems: 20
+          description: All protected paths. A user with no password keeps the password that the same user of the same path has.
+          items:
+            type: object
+            required: [path, users]
+            properties:
+              path: { type: string, maxLength: 200 }
+              users:
+                type: array
+                minItems: 1
+                maxItems: 10
+                items:
+                  type: object
+                  required: [name]
+                  properties:
+                    name: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$' }
+                    password: { type: [string, 'null'], minLength: 8, maxLength: 72, description: The panel keeps only a bcrypt hash. }
+        signInLimit:
+          type: object
+          required: [requestsPerMinute]
+          properties:
+            requestsPerMinute: { type: integer, description: 0 for no limit, or 3 to 600. }
+            paths: { type: array, maxItems: 20, items: { type: string, maxLength: 200 } }
+      example:
+        firewall: { mode: block, excludedRules: [942100], skippedPaths: [/wp-admin/] }
+        signInLimit: { requestsPerMinute: 10, paths: [/wp-login.php, /xmlrpc.php] }
+    FirewallEvent:
+      type: object
+      properties:
+        at: { type: string, format: date-time }
+        clientIp: { type: string }
+        host: { type: [string, 'null'], description: The host of the request. Only an event that the firewall blocked has it. }
+        uri: { type: string, description: The path and the query of the request. }
+        action: { type: string, enum: [blocked, detected] }
+        score: { type: integer, description: The total anomaly score of the request. The firewall blocks a request with a score of 5 or more. }
+        rules:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, example: 942100 }
+              message: { type: string }
+              data: { type: string, description: The part of the request that the rule found. }
     Job:
       type: object
       properties:

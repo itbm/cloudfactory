@@ -1328,6 +1328,18 @@
       "valid": ["", "I am away until Monday.", "Hello,\n\nI am away.\r\n\tAnn\n", "Café ünïcode \"; discard; \"", {"repeat": [["a", 2000]]}],
       "invalid": ["Away\u0000", "Away\u001b[31m", "Away\u007f", "Away\u000c", {"repeat": [["a", 2001]]}, {"repeat": [["é", 1001]]}]
     },
+    "securityPath": {
+      "valid": ["/", "/wp-login.php", "/admin/", "/admin", "/user/login", "/a/b/c.php", "/.well-known/x", "/~me/", "/a@b:c+d,e=f-g_h"],
+      "invalid": ["", "admin", "//", "/admin//", "/./x", "/x/..", "/x/../y", "/x/./", "/a b", "/a%2e", "/a*", "/a?b", "/a#b", "/a\\b", "/a\n", {"repeat": ["/", ["a", 200]]}]
+    },
+    "pathUser": {
+      "valid": ["a", "client", "Dev.Team_1-x", {"repeat": [["a", 32]]}],
+      "invalid": ["", ".client", "-a", "a b", "a:b", "ä", {"repeat": [["a", 33]]}, "client\n"]
+    },
+    "pathPasswordHash": {
+      "valid": ["$2y$10$rwv0zN7amtbNiLIYD4lBl.AIDGf.p4y0hHxXqLDrkhORIHaBKMPuS", "$2a$14$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234"],
+      "invalid": ["", "secret", "$2y$09$rwv0zN7amtbNiLIYD4lBl.AIDGf.p4y0hHxXqLDrkhORIHaBKMPuS", "$2y$15$rwv0zN7amtbNiLIYD4lBl.AIDGf.p4y0hHxXqLDrkhORIHaBKMPuS", "$2y$10$short", "$2y$10$rwv0zN7amtbNiLIYD4lBl.AIDGf.p4y0hHxXqLDrkhORIHaBKMPuS\n"]
+    },
     "packSlug": {
       "valid": ["golang", "go", "ruby-3", "bun"],
       "invalid": ["", "g", "Go", "1go", "go_lang", "go lang", "-go", "golang\n", "abcdefghijklmnopqrstuvwxyzabcdef"]
