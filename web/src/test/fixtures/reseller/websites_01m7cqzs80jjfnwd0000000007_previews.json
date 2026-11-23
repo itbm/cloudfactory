@@ -1,0 +1,10 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000007/previews",
+    "status": 200,
+    "body": {
+        "settings": null,
+        "suggestedDomain": "preview.cornerbakery.example.org",
+        "maxLimit": 10,
+        "previews": []
+    }
+}

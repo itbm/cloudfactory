@@ -640,62 +640,64 @@ var ruleVersion = rule{
 func Version(s string) error { return ruleVersion.check(s) }
 
 // rules has each rule by its name in schema/input-rules.json.
-var rules = map[string]*rule{
-	"commandArgument":    &ruleCommandArgument,
-	"commandLine":        &ruleCommandLine,
-	"cronSchedule":       &ruleCronSchedule,
-	"databaseClientHost": &ruleDatabaseClientHost,
-	"databaseName":       &ruleDatabaseName,
-	"databaseNameSuffix": &ruleDatabaseNameSuffix,
-	"databasePassword":   &ruleDatabasePassword,
-	"digest":             &ruleDigest,
-	"dnsCaa":             &ruleDNSCaa,
-	"dnsHost":            &ruleDNSHost,
-	"dnsRecordName":      &ruleDNSRecordName,
-	"dnsSrv":             &ruleDNSSrv,
-	"dnsTxt":             &ruleDNSTxt,
-	"dnssecKey":          &ruleDNSSECKey,
-	"documentRoot":       &ruleDocumentRoot,
-	"domain":             &ruleDomain,
-	"envName":            &ruleEnvName,
-	"envValue":           &ruleEnvValue,
-	"environmentValue":   &ruleEnvironmentValue,
-	"filePath":           &ruleFilePath,
-	"gitBranch":          &ruleGitBranch,
-	"gitRepository":      &ruleGitRepository,
-	"httpMethod":         &ruleHTTPMethod,
-	"httpStatus":         &ruleHTTPStatus,
-	"id":                 &ruleID,
-	"image":              &ruleImage,
-	"imageReference":     &ruleImageReference,
-	"imageTag":           &ruleImageTag,
-	"iniKey":             &ruleIniKey,
-	"iniValue":           &ruleIniValue,
-	"ipv4":               &ruleIPv4,
-	"ipv6":               &ruleIPv6,
-	"logCursor":          &ruleLogCursor,
-	"logSearch":          &ruleLogSearch,
-	"mailAddress":        &ruleMailAddress,
-	"mailLocalPart":      &ruleMailLocalPart,
-	"mailPasswordHash":   &ruleMailPasswordHash,
-	"packDataDir":        &rulePackDataDir,
-	"packImageVersion":   &rulePackImageVersion,
-	"packPort":           &rulePackPort,
-	"packSlug":           &rulePackSlug,
-	"packVersion":        &rulePackVersion,
-	"pathPasswordHash":   &rulePathPasswordHash,
-	"pathUser":           &rulePathUser,
-	"phpExtension":       &ruleExtension,
-	"phpVersion":         &rulePHPVersion,
-	"restorePath":        &ruleRestorePath,
-	"routePath":          &ruleRoutePath,
-	"secretName":         &ruleSecretName,
-	"secretValue":        &ruleSecretValue,
-	"securityPath":       &ruleSecurityPath,
-	"sha256":             &ruleSHA256,
-	"sshKey":             &ruleSSHKey,
-	"unixUser":           &ruleUnixUser,
-	"version":            &ruleVersion,
+var rules = map[string]*rule{}
+
+func init() {
+	rules["commandArgument"] = &ruleCommandArgument
+	rules["commandLine"] = &ruleCommandLine
+	rules["cronSchedule"] = &ruleCronSchedule
+	rules["databaseClientHost"] = &ruleDatabaseClientHost
+	rules["databaseName"] = &ruleDatabaseName
+	rules["databaseNameSuffix"] = &ruleDatabaseNameSuffix
+	rules["databasePassword"] = &ruleDatabasePassword
+	rules["digest"] = &ruleDigest
+	rules["dnsCaa"] = &ruleDNSCaa
+	rules["dnsHost"] = &ruleDNSHost
+	rules["dnsRecordName"] = &ruleDNSRecordName
+	rules["dnsSrv"] = &ruleDNSSrv
+	rules["dnsTxt"] = &ruleDNSTxt
+	rules["dnssecKey"] = &ruleDNSSECKey
+	rules["documentRoot"] = &ruleDocumentRoot
+	rules["domain"] = &ruleDomain
+	rules["envName"] = &ruleEnvName
+	rules["envValue"] = &ruleEnvValue
+	rules["environmentValue"] = &ruleEnvironmentValue
+	rules["filePath"] = &ruleFilePath
+	rules["gitBranch"] = &ruleGitBranch
+	rules["gitRepository"] = &ruleGitRepository
+	rules["httpMethod"] = &ruleHTTPMethod
+	rules["httpStatus"] = &ruleHTTPStatus
+	rules["id"] = &ruleID
+	rules["image"] = &ruleImage
+	rules["imageReference"] = &ruleImageReference
+	rules["imageTag"] = &ruleImageTag
+	rules["iniKey"] = &ruleIniKey
+	rules["iniValue"] = &ruleIniValue
+	rules["ipv4"] = &ruleIPv4
+	rules["ipv6"] = &ruleIPv6
+	rules["logCursor"] = &ruleLogCursor
+	rules["logSearch"] = &ruleLogSearch
+	rules["mailAddress"] = &ruleMailAddress
+	rules["mailLocalPart"] = &ruleMailLocalPart
+	rules["mailPasswordHash"] = &ruleMailPasswordHash
+	rules["packDataDir"] = &rulePackDataDir
+	rules["packImageVersion"] = &rulePackImageVersion
+	rules["packPort"] = &rulePackPort
+	rules["packSlug"] = &rulePackSlug
+	rules["packVersion"] = &rulePackVersion
+	rules["pathPasswordHash"] = &rulePathPasswordHash
+	rules["pathUser"] = &rulePathUser
+	rules["phpExtension"] = &ruleExtension
+	rules["phpVersion"] = &rulePHPVersion
+	rules["restorePath"] = &ruleRestorePath
+	rules["routePath"] = &ruleRoutePath
+	rules["secretName"] = &ruleSecretName
+	rules["secretValue"] = &ruleSecretValue
+	rules["securityPath"] = &ruleSecurityPath
+	rules["sha256"] = &ruleSHA256
+	rules["sshKey"] = &ruleSSHKey
+	rules["unixUser"] = &ruleUnixUser
+	rules["version"] = &ruleVersion
 }
 
 // The types of DNS record that a user can make.

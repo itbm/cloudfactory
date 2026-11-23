@@ -1,0 +1,10 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000009/previews",
+    "status": 200,
+    "body": {
+        "settings": null,
+        "suggestedDomain": "preview.events.harbourbooks.example.net",
+        "maxLimit": 10,
+        "previews": []
+    }
+}

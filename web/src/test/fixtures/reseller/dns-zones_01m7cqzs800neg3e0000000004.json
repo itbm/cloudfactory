@@ -1,0 +1,99 @@
+{
+    "request": "GET /dns-zones/01m7cqzs800neg3e0000000004",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs800neg3e0000000004",
+        "name": "cornerbakery.example.org",
+        "customerId": "01m7cqzs80h56kh10000000002",
+        "status": "active",
+        "serial": 1794564000,
+        "recordCount": 6,
+        "nameServers": [
+            "ns1.northwind.example.com",
+            "ns2.northwind.example.com"
+        ],
+        "provider": null,
+        "delegation": {
+            "state": "here",
+            "nameServers": [
+                "ns1.northwind.example.com",
+                "ns2.northwind.example.com"
+            ],
+            "checkedAt": "2026-11-14T09:51:00+00:00"
+        },
+        "dnssec": {
+            "enabled": false,
+            "state": "off",
+            "ds": null,
+            "dnskey": null
+        },
+        "servers": [
+            {
+                "nameServer": "ns1.northwind.example.com",
+                "state": "ok"
+            },
+            {
+                "nameServer": "ns2.northwind.example.com",
+                "state": "ok"
+            }
+        ],
+        "websites": 1,
+        "createdAt": "2026-08-06T10:00:00+00:00",
+        "records": [
+            {
+                "id": "01m7cqzs8007vyeq000000000x",
+                "name": "@",
+                "type": "A",
+                "value": "203.0.113.20",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000y",
+                "name": "@",
+                "type": "AAAA",
+                "value": "2001:db8:20::1",
+                "ttl": 300,
+                "priority": null,
+                "managed": "website"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001c",
+                "name": "@",
+                "type": "MX",
+                "value": "mail.cornerbakery.example.org",
+                "ttl": 3600,
+                "priority": 10,
+                "managed": null
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000v",
+                "name": "@",
+                "type": "NS",
+                "value": "ns1.northwind.example.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000000w",
+                "name": "@",
+                "type": "NS",
+                "value": "ns2.northwind.example.com",
+                "ttl": 3600,
+                "priority": null,
+                "managed": "ns"
+            },
+            {
+                "id": "01m7cqzs8007vyeq000000001d",
+                "name": "mail",
+                "type": "A",
+                "value": "198.51.100.80",
+                "ttl": 3600,
+                "priority": null,
+                "managed": null
+            }
+        ]
+    }
+}

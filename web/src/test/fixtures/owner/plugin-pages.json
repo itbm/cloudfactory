@@ -1,0 +1,21 @@
+{
+    "request": "GET /plugin-pages",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "pluginId": "01m7cqzs80p8bxkh0000000001",
+                "pluginName": "Uptime monitor",
+                "id": "status",
+                "title": "Uptime",
+                "url": "http://127.0.0.1:8000/demo-plugins/uptime/panel/status",
+                "origin": "http://127.0.0.1:8000",
+                "roles": [
+                    "administrator",
+                    "reseller",
+                    "owner"
+                ]
+            }
+        ]
+    }
+}

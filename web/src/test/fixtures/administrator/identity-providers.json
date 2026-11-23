@@ -1,0 +1,49 @@
+{
+    "request": "GET /identity-providers",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs800dwhaz0000000001",
+                "name": "Google Workspace",
+                "protocol": "oidc",
+                "enabled": true,
+                "issuer": "https://accounts.google.com",
+                "clientId": "123456789012-demo.apps.googleusercontent.com",
+                "hasClientSecret": true,
+                "entityId": null,
+                "ssoUrl": null,
+                "certificate": null,
+                "certificateExpiresAt": null,
+                "linkByEmail": true,
+                "emailDomains": [
+                    "example.com"
+                ],
+                "users": 2,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs800dwhaz0000000002",
+                "name": "Microsoft Entra ID",
+                "protocol": "saml",
+                "enabled": false,
+                "issuer": null,
+                "clientId": null,
+                "hasClientSecret": false,
+                "entityId": "https://sts.windows.net/0b5c1e5e-demo-4e0a-9d8e-000000000000/",
+                "ssoUrl": "https://login.microsoftonline.com/0b5c1e5e-demo-4e0a-9d8e-000000000000/saml2",
+                "certificate": "-----BEGIN CERTIFICATE-----\nMIIBXTCCAQ+gAwIBAgIIKJPO8gTKjw8wBQYDK2VwMDQxMjAwBgNVBAMMKU1pY3Jv\nc29mdCBBenVyZSBGZWRlcmF0ZWQgU1NPIENlcnRpZmljYXRlMB4XDTI2MTExNDEw\nMDAwMFoXDTI5MTExMzEwMDAwMFowNDEyMDAGA1UEAwwpTWljcm9zb2Z0IEF6dXJl\nIEZlZGVyYXRlZCBTU08gQ2VydGlmaWNhdGUwKjAFBgMrZXADIQDpdjXMypCmt4kw\nz7/mPMnek16+ieiCH11HsVnt1yIBtKM/MD0wCwYDVR0PBAQDAgEGMA8GA1UdEwEB\n/wQFMAMBAf8wHQYDVR0OBBYEFA8ithH4/xg4s8hINwaF4EsmEVcyMAUGAytlcANB\nAKPkNdHk4AFU9hASspeTAuQIEtJDyr8dZQPvOO3HUYh0RtdHBBbe/pYH/971EBb8\nSQxudROMY/eRNzivknNTlQI=\n-----END CERTIFICATE-----\n",
+                "certificateExpiresAt": "2029-11-13T10:00:00+00:00",
+                "linkByEmail": false,
+                "emailDomains": [],
+                "users": 0,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ],
+        "serviceProvider": {
+            "redirectUri": "http://localhost/api/v1/auth/sso/oidc/callback",
+            "entityId": "http://localhost/api/v1/auth/sso/saml/metadata",
+            "acsUrl": "http://localhost/api/v1/auth/sso/saml/acs"
+        }
+    }
+}

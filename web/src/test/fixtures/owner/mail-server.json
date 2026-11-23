@@ -1,0 +1,7 @@
+{
+    "request": "GET /mail-server",
+    "status": 403,
+    "body": {
+        "message": "Only an administrator or a reseller can change the email settings."
+    }
+}

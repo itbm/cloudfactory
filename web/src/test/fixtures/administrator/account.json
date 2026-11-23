@@ -1,0 +1,14 @@
+{
+    "request": "GET /account",
+    "status": 200,
+    "body": {
+        "customer": null,
+        "provider": null,
+        "plan": null,
+        "usage": null,
+        "backups": {
+            "available": true
+        },
+        "users": []
+    }
+}

@@ -1,0 +1,74 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000004/snapshots",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806s2hhx000000000c",
+                "kind": "scheduled",
+                "sizeBytes": 235929600,
+                "databases": [],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "mailboxes": [],
+                "createdAt": "2026-11-14T03:02:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000d",
+                "kind": "scheduled",
+                "sizeBytes": 21810380,
+                "databases": [
+                    "mariadb:storefro_a970_orders"
+                ],
+                "part": "databases",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-14T03:02:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000e",
+                "kind": "scheduled",
+                "sizeBytes": 232783872,
+                "databases": [],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "mailboxes": [],
+                "createdAt": "2026-11-13T03:02:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000f",
+                "kind": "scheduled",
+                "sizeBytes": 21810380,
+                "databases": [
+                    "mariadb:storefro_a970_orders"
+                ],
+                "part": "databases",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-13T03:02:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000g",
+                "kind": "scheduled",
+                "sizeBytes": 229638144,
+                "databases": [],
+                "part": "website",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "mailboxes": [],
+                "createdAt": "2026-11-12T03:02:00+00:00"
+            },
+            {
+                "id": "01m7cqzs806s2hhx000000000h",
+                "kind": "scheduled",
+                "sizeBytes": 21810380,
+                "databases": [
+                    "mariadb:storefro_a970_orders"
+                ],
+                "part": "databases",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "mailboxes": [],
+                "createdAt": "2026-11-12T03:02:00+00:00"
+            }
+        ]
+    }
+}

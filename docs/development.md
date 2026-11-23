@@ -194,8 +194,13 @@ roles, so the web panel hides it. Do not rely on this to keep a secret.
 ### Tests of the web panel
 
 The tests use the answers of the real API for the sample data. The files are in
-`web/src/test/fixtures`, one for each role. `web/src/test/panelApi.ts` puts them in the place
-of `fetch`.
+`web/src/test/fixtures/ROLE`, with one file for each request, for example
+`owner/websites_perpage_100_page_1.json`. Each file has the request, the status and the body.
+`web/src/test/panelApi.ts` puts them in the place of `fetch`. In a test, use
+`fixture(role, request)` to read one answer.
+
+To add a request, add its path to `PATHS` or `WEBSITE_PATHS` in `api/app/Demo/Fixtures.php`,
+in alphabetical order.
 
 After you change an answer of the API or the demo seeder, write the files again:
 
@@ -222,8 +227,20 @@ Refer to [`api/README.md`](../api/README.md).
 
 ## Agent
 
+The Go code of the agent protocol (`agent/gen`) is not in Git. Make it after a clone, after a
+pull and after a change to `agent.proto`:
+
 ```sh
 cd agent
+go generate
+```
+
+The command needs [buf](https://buf.build/docs/cli/installation/), for example
+`go install github.com/bufbuild/buf/cmd/buf@latest`. The two protoc plugins are tools in
+`go.mod`, so they have the same versions as the libraries. The command also writes the input
+rules again (refer to "Input rules").
+
+```sh
 go test -race ./...
 go vet ./...
 ```
@@ -237,14 +254,8 @@ sudo apt-get install knot knot-dnsutils
 CF_TEST_KNOT=1 go test ./internal/actions -run TestKnotServer
 ```
 
-After you change `agent.proto`, make the Go code again:
-
-```sh
-buf generate
-```
-
-CI makes the code again and fails if the result is different from the files in the
-repository.
+CI makes the Go code of the protocol before the build and the tests. It does not compare the
+code with a copy, because Git has no copy.
 
 ### Root work in the agent
 
@@ -378,6 +389,32 @@ is. To fix a check that accepts a manifest that the contract does not permit:
 A new key or a new value needs a new contract, for example `cf-pack/2`. Refer to
 [packs.md](packs.md#the-stable-contract).
 
+## Parallel pull requests
+
+Many pull requests are open at the same time. When one merges, Git must merge the others
+without a conflict. GitHub does not use merge drivers from `.gitattributes`, so the layout of
+the files must prevent conflicts. Git merges two changes only when at least one line that does
+not change is between them. Obey these rules:
+
+- Do not commit generated code that the build can make. The Go code of the agent protocol is
+  not in Git (refer to "Agent").
+- A generator must not align its output, because a new long name then changes each line. For
+  example, `cf-rules` writes one statement for each rule, not a map with aligned values.
+- Give each item of data its own file when the items change separately. The web fixtures have
+  one file for each request.
+- Put one item on each line of a list. Put a new item in alphabetical order, or after the
+  item that is nearest to it in subject. Do not add all new items at the end of a list.
+- Do not write a comment that names each item of a list. Each new item then changes the
+  comment.
+- In a document, separate the items with a blank line. A Markdown table has no blank lines
+  between its rows, so do not use a table for a list that many pull requests change, for
+  example [status.md](status.md).
+- Put a new area of code in a new file when the language permits it, for example the Connect
+  methods of a new area of the agent in a new file in `agent/internal/server`.
+
+To adopt a change to the layout in an open pull request, merge `main` into the branch, accept
+the version of `main` for the generated files, and make them again.
+
 ## Continuous integration
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs for each pull request. On a pull
@@ -388,7 +425,7 @@ workflow has these jobs:
 - **web**: type check, tests and build.
 - **api**: tests and Pint on PHP 8.4. The tests run with SQLite and with
   PostgreSQL.
-- **agent**: buf generate check, input rules check, gofmt, go vet, tests with the race detector, and builds for
+- **agent**: buf lint, the generated code, input rules check, gofmt, go vet, tests with the race detector, and builds for
   x86-64 and ARM64.
 - **cli**: tests and build.
 - **install**: ShellCheck and the script tests with `sh` and `dash`.

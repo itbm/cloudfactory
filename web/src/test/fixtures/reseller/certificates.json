@@ -1,0 +1,37 @@
+{
+    "request": "GET /certificates",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs806jdytz0000000002",
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "source": "upload",
+                "names": [
+                    "cornerbakery.example.org",
+                    "www.cornerbakery.example.org"
+                ],
+                "state": "valid",
+                "issuer": "Example Trust Ltd (Example TLS CA 2026)",
+                "fingerprint": "0a66246b332736f977714ca78546fbdb46450d2cfef69691f264ca5d4c19697f",
+                "notBefore": "2025-11-26T10:00:00+00:00",
+                "expiresAt": "2026-11-26T10:00:00+00:00",
+                "trusted": true,
+                "renewAt": null,
+                "order": null,
+                "error": null,
+                "nextTryAt": null,
+                "usedBy": [
+                    {
+                        "domain": "cornerbakery.example.org",
+                        "websiteId": "01m7cqzs80jjfnwd0000000007",
+                        "websiteName": "cornerbakery.example.org",
+                        "serverName": "web-2"
+                    }
+                ],
+                "createdAt": "2025-11-26T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}
