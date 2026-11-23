@@ -109,9 +109,22 @@ The product specification, section 6.4, gives the requirements.
   host of the agent runs no Git command. The agent removes the key after the check.
 - The migration command runs in the build container, before the switch, with the build
   secrets. A customer controls this command, as it controls the build commands.
+- A preview of a pull request clones the branch from the repository of the Git source, not
+  from the fork of the pull request. The panel ignores a pull request from a fork. A pull
+  request event needs the same signature as a push. Thus a preview gets only the code of a
+  branch that a person with push access wrote.
+- A preview does not get the environment variables and the build secrets of the website,
+  unless the user turns on this setting. The code of a pull request can read them, so the
+  hint in the panel tells the user to keep live credentials out of the previews. A preview
+  does not run the migration command.
+- The domain of the previews must be in a verified domain of the customer, or in a DNS zone
+  of the customer in the panel. A customer thus cannot take a name of a different customer
+  with a preview.
+- A preview is a website of the plan of the customer. The website limit of the plan, the
+  limits of a website and the limit of the previews (at most 10) apply.
 - A user needs the token scope for websites to use these routes. An owner sees only its own
   websites. For a suspended customer, the panel refuses each change of a file, a cron job and
-  a Git source, and each deploy.
+  a Git source, each deploy and each new preview.
 - The panel records each change of a file, a cron job and a Git source in the audit log.
   It does not record the content of a file.
 - The access log of the edge proxy goes to the agent on `169.254.77.1:19514`. The firewall

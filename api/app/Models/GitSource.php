@@ -14,7 +14,8 @@ use Illuminate\Support\Str;
  * webhook token, the webhook secret and the secrets encrypted. It sends the key and the
  * secrets to the agent with each deploy job, and the agent does not keep them.
  */
-#[Fillable(['website_id', 'repository', 'branch', 'web_directory', 'trigger', 'check_minutes', 'deploy_queued', 'queued_commit', 'checked_at', 'check_error', 'build_commands', 'migration_command', 'public_key', 'private_key', 'webhook_token', 'webhook_token_hash', 'webhook_secret', 'secrets'])]
+#[Fillable(['website_id', 'repository', 'branch', 'web_directory', 'trigger', 'check_minutes', 'deploy_queued', 'queued_commit', 'checked_at', 'check_error', 'build_commands', 'migration_command', 'public_key', 'private_key', 'webhook_token', 'webhook_token_hash', 'webhook_secret', 'secrets',
+    'previews', 'preview_domain', 'preview_limit', 'preview_environment'])]
 #[Hidden(['private_key', 'webhook_token', 'webhook_token_hash', 'webhook_secret', 'secrets'])]
 class GitSource extends Model
 {
@@ -45,6 +46,9 @@ class GitSource extends Model
             'webhook_token' => 'encrypted',
             'webhook_secret' => 'encrypted',
             'secrets' => 'encrypted:array',
+            'previews' => 'boolean',
+            'preview_limit' => 'integer',
+            'preview_environment' => 'boolean',
         ];
     }
 
