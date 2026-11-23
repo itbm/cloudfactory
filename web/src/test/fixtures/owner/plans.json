@@ -1,0 +1,46 @@
+{
+    "request": "GET /plans",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80tpf66h0000000002",
+                "name": "Business",
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "websites": 10,
+                "mailboxes": 100,
+                "mailStorageBytes": 26843545600,
+                "databases": 20,
+                "phpExtensions": [
+                    "opcache",
+                    "intl",
+                    "gd",
+                    "zip",
+                    "exif",
+                    "bcmath",
+                    "mysqli",
+                    "pdo_mysql",
+                    "pdo_pgsql",
+                    "redis",
+                    "imagick",
+                    "soap"
+                ],
+                "databaseServers": 6,
+                "databaseLimits": {
+                    "vcpus": 2,
+                    "memoryBytes": 1073741824,
+                    "diskBytes": 10737418240
+                },
+                "dnsZones": 10,
+                "networks": 3
+            }
+        ]
+    }
+}

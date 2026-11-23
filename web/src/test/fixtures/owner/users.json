@@ -1,0 +1,28 @@
+{
+    "request": "GET /users",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 5,
+                "name": "Morgan Finance",
+                "email": "finance@acme.example.com",
+                "role": "owner",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": 4,
+                "name": "Olu Owner",
+                "email": "owner@example.com",
+                "role": "owner",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

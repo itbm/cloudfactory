@@ -1,0 +1,127 @@
+{
+    "request": "GET /customers",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80h56kh10000000004",
+                "name": "Acme Ltd",
+                "email": "it@acme.example.com",
+                "role": "owner",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "resellerId": null,
+                "branding": null,
+                "brandStatus": null,
+                "allowedPlanIds": null,
+                "suspended": false,
+                "suspendedBy": null,
+                "websites": 9,
+                "databaseServers": 5,
+                "createdAt": "2025-10-10T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80h56kh10000000002",
+                "name": "Corner Bakery",
+                "email": "hello@cornerbakery.example.org",
+                "role": "owner",
+                "planId": "01m7cqzs80tpf66h0000000001",
+                "resellerId": "01m7cqzs80h56kh10000000001",
+                "branding": null,
+                "brandStatus": null,
+                "allowedPlanIds": null,
+                "suspended": false,
+                "suspendedBy": null,
+                "websites": 1,
+                "databaseServers": 1,
+                "createdAt": "2026-07-17T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80h56kh10000000003",
+                "name": "Harbour Books",
+                "email": "it@harbourbooks.example.net",
+                "role": "owner",
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "resellerId": "01m7cqzs80h56kh10000000001",
+                "branding": null,
+                "brandStatus": null,
+                "allowedPlanIds": null,
+                "suspended": false,
+                "suspendedBy": null,
+                "websites": 2,
+                "databaseServers": 1,
+                "createdAt": "2026-09-30T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80h56kh10000000005",
+                "name": "Lawson & Co",
+                "email": "office@lawson.example.org",
+                "role": "owner",
+                "planId": "01m7cqzs80tpf66h0000000001",
+                "resellerId": null,
+                "branding": null,
+                "brandStatus": null,
+                "allowedPlanIds": null,
+                "suspended": true,
+                "suspendedBy": "administrator",
+                "websites": 1,
+                "databaseServers": 1,
+                "createdAt": "2026-04-28T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80h56kh10000000001",
+                "name": "Northwind Agency",
+                "email": "ops@northwind.example.com",
+                "role": "reseller",
+                "planId": "01m7cqzs80tpf66h0000000003",
+                "resellerId": null,
+                "branding": {
+                    "name": "Northwind Hosting",
+                    "colour": "#0f766e",
+                    "logo": "data:image/png;base64,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",
+                    "supportEmail": "support@northwind.example.com",
+                    "panelDomain": "panel.northwind.example.com",
+                    "nameServers": [
+                        "ns1.northwind.example.com",
+                        "ns2.northwind.example.com"
+                    ],
+                    "mailHost": "mail.northwind.example.com"
+                },
+                "brandStatus": {
+                    "certificate": {
+                        "domain": "panel.northwind.example.com",
+                        "method": "letsencrypt",
+                        "state": "valid",
+                        "expiresAt": "2027-01-24T10:00:00+00:00",
+                        "error": null,
+                        "checkedAt": "2026-11-14T09:56:00+00:00"
+                    },
+                    "panelDomain": "panel.cloudfactory.io",
+                    "panelNameServers": [
+                        "ns1.panel.example",
+                        "ns2.panel.example"
+                    ],
+                    "nameServerAddresses": {
+                        "ns1.panel.example": [
+                            "203.0.113.10",
+                            "2001:db8:10::1"
+                        ],
+                        "ns2.panel.example": [
+                            "203.0.113.20",
+                            "2001:db8:20::1"
+                        ]
+                    }
+                },
+                "allowedPlanIds": [
+                    "01m7cqzs80tpf66h0000000003",
+                    "01m7cqzs80tpf66h0000000001",
+                    "01m7cqzs80tpf66h0000000002"
+                ],
+                "suspended": false,
+                "suspendedBy": null,
+                "websites": 2,
+                "databaseServers": 1,
+                "createdAt": "2026-01-18T10:00:00+00:00"
+            }
+        ]
+    }
+}

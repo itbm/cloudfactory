@@ -1,0 +1,17 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000007/files/content?path=%2Fpublic%2Findex.php",
+    "status": 200,
+    "body": {
+        "file": {
+            "name": "index.php",
+            "path": "/public/index.php",
+            "type": "file",
+            "sizeBytes": 111,
+            "modifiedAt": "2026-08-04T14:00:00Z",
+            "mode": "0640",
+            "target": null
+        },
+        "encoding": "utf8",
+        "content": "<?php\n\nrequire __DIR__.'/../src/bootstrap.php';\n\necho render('home', ['title' => 'cornerbakery.example.org']);\n"
+    }
+}

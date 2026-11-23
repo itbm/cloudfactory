@@ -1,0 +1,473 @@
+{
+    "request": "GET /websites?perPage=100&page=1",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80jjfnwd0000000007",
+                "name": "cornerbakery.example.org",
+                "application": "WordPress",
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000001",
+                "unixUser": "cornerba_f8cd",
+                "networkHost": "cornerba-f8cd.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000003",
+                    "family": "apache-php-fpm",
+                    "image": "ghcr.io/itbm/apache-php8.4:0.1.9",
+                    "digest": "sha256:2c769f34728835f87dbb42aa4aeb6b443fd1ec20ce7100ba72602ebea79af8d2",
+                    "signatureVerified": true,
+                    "phpVersion": "8.4",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2027-01-13"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 1,
+                    "memoryBytes": 1073741824,
+                    "diskBytes": 10737418240,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 100,
+                    "bandwidthBytes": 107374182400
+                },
+                "diskLimitApplied": true,
+                "usage": {
+                    "cpuPercent": 7,
+                    "memoryBytes": 272629760,
+                    "diskBytes": 9542041600,
+                    "processes": 14
+                },
+                "bandwidthBytes": 14259718159,
+                "domains": [
+                    {
+                        "name": "cornerbakery.example.org",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2026-11-26T10:00:00+00:00",
+                            "source": "upload",
+                            "certificateId": "01m7cqzs806jdytz0000000002"
+                        }
+                    },
+                    {
+                        "name": "cornerbakery-orders.example.org",
+                        "kind": "alias",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": false,
+                        "certificate": {
+                            "state": "pending",
+                            "expiresAt": null,
+                            "source": "automatic",
+                            "certificateId": null
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": true,
+                    "host": "web-2.panel.example",
+                    "port": 2222,
+                    "username": "cornerba_f8cd",
+                    "authorizedKeys": [
+                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGh0dHBzOi8vY2xvdWRmYWN0b3J5LmV4YW1wbGUvZGVtbw olu@laptop"
+                    ]
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-07-27T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd0000000009",
+                "name": "events.harbourbooks.example.net",
+                "application": "Laravel",
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "serverId": "01m7cqzs807rnxfq0000000003",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "eventsha_08d5",
+                "networkHost": "eventsha-08d5.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "failed",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000002",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
+                    "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
+                    "signatureVerified": true,
+                    "phpVersion": "8.5",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": "public",
+                    "supportEndsAt": "2029-12-31"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": true,
+                "usage": {
+                    "cpuPercent": 0,
+                    "memoryBytes": 0,
+                    "diskBytes": 0,
+                    "processes": 0
+                },
+                "bandwidthBytes": 0,
+                "domains": [
+                    {
+                        "name": "events.harbourbooks.example.net",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": false,
+                        "certificate": {
+                            "state": "pending",
+                            "expiresAt": null,
+                            "source": "automatic",
+                            "certificateId": null
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-3.panel.example",
+                    "port": 2222,
+                    "username": "eventsha_08d5",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd0000000008",
+                "name": "harbourbooks.example.net",
+                "application": "WooCommerce",
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "unixUser": "harbourb_fe76",
+                "networkHost": "harbourb-fe76.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000001",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
+                    "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
+                    "signatureVerified": true,
+                    "phpVersion": "8.4",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2028-12-31"
+                },
+                "updateReady": true,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 2147483648,
+                    "diskBytes": 42949672960,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 200,
+                    "bandwidthBytes": 536870912000
+                },
+                "diskLimitApplied": true,
+                "usage": {
+                    "cpuPercent": 22,
+                    "memoryBytes": 671088640,
+                    "diskBytes": 13421772800,
+                    "processes": 31
+                },
+                "bandwidthBytes": 516469817344,
+                "domains": [
+                    {
+                        "name": "harbourbooks.example.net",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-21T10:00:00+00:00",
+                            "source": "automatic",
+                            "certificateId": null
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-2.panel.example",
+                    "port": 2222,
+                    "username": "harbourb_fe76",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-10-05T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd0000000006",
+                "name": "northwind.example.com",
+                "application": "WordPress",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000003",
+                "unixUser": "northwin_8223",
+                "networkHost": "northwin-8223.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": null,
+                "installCommand": null,
+                "environment": [],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000002",
+                    "family": "frankenphp",
+                    "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
+                    "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
+                    "signatureVerified": true,
+                    "phpVersion": "8.5",
+                    "version": null,
+                    "workerMode": false,
+                    "extensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip"
+                    ],
+                    "phpIni": {
+                        "memory_limit": "256M",
+                        "upload_max_filesize": "64M"
+                    },
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2029-12-31"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 4,
+                    "memoryBytes": 4294967296,
+                    "diskBytes": 107374182400,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 400,
+                    "bandwidthBytes": 2147483648000
+                },
+                "diskLimitApplied": true,
+                "usage": {
+                    "cpuPercent": 12,
+                    "memoryBytes": 398458880,
+                    "diskBytes": 3250585600,
+                    "processes": 19
+                },
+                "bandwidthBytes": 18419801769,
+                "domains": [
+                    {
+                        "name": "northwind.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-15T10:00:00+00:00",
+                            "source": "automatic",
+                            "certificateId": null
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-2.panel.example",
+                    "port": 2222,
+                    "username": "northwin_8223",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-01-28T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80jjfnwd000000000e",
+                "name": "reports.northwind.example.com",
+                "application": "Django",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "serverId": "01m7cqzs807rnxfq0000000001",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000003",
+                "unixUser": "reportsn_bc3b",
+                "networkHost": "reportsn-bc3b.internal",
+                "networkPort": 80,
+                "kind": "public",
+                "command": "gunicorn --bind 0.0.0.0:$PORT reports.wsgi",
+                "installCommand": "python -m venv .venv && .venv/bin/pip install -r requirements.txt",
+                "environment": [
+                    "DJANGO_SECRET_KEY",
+                    "DJANGO_SETTINGS_MODULE"
+                ],
+                "status": "running",
+                "runtime": {
+                    "imageId": "01m7cqzs80g1zfka0000000009",
+                    "family": "python",
+                    "image": "ghcr.io/itbm/python3.14:0.1.9",
+                    "digest": "sha256:289d83678e0d77b4871108c8d8b2039d34fb10292576080e8708592b1993f19f",
+                    "signatureVerified": true,
+                    "phpVersion": null,
+                    "version": "3.14",
+                    "workerMode": false,
+                    "extensions": [],
+                    "phpIni": [],
+                    "previousImageId": null,
+                    "documentRoot": ".",
+                    "supportEndsAt": "2030-10-31"
+                },
+                "updateReady": false,
+                "limits": {
+                    "vcpus": 4,
+                    "memoryBytes": 4294967296,
+                    "diskBytes": 107374182400,
+                    "diskIoBytesPerSecond": 52428800,
+                    "processes": 400,
+                    "bandwidthBytes": 2147483648000
+                },
+                "diskLimitApplied": false,
+                "usage": {
+                    "cpuPercent": 4,
+                    "memoryBytes": 272629760,
+                    "diskBytes": 503316480,
+                    "processes": 7
+                },
+                "bandwidthBytes": 0,
+                "domains": [
+                    {
+                        "name": "reports.northwind.example.com",
+                        "kind": "primary",
+                        "verified": true,
+                        "verification": null,
+                        "dnsPointsHere": true,
+                        "certificate": {
+                            "state": "valid",
+                            "expiresAt": "2027-01-31T10:00:00+00:00",
+                            "source": "automatic",
+                            "certificateId": null
+                        }
+                    }
+                ],
+                "sftp": {
+                    "enabled": false,
+                    "host": "web-1.panel.example",
+                    "port": 2222,
+                    "username": "reportsn_bc3b",
+                    "authorizedKeys": []
+                },
+                "stagingOf": null,
+                "previewOf": null,
+                "managedByTerraform": false,
+                "createdAt": "2026-10-15T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            }
+        ],
+        "links": {
+            "first": "http://localhost/api/v1/websites?page=1",
+            "last": "http://localhost/api/v1/websites?page=1",
+            "prev": null,
+            "next": null
+        },
+        "meta": {
+            "current_page": 1,
+            "from": 1,
+            "last_page": 1,
+            "links": [
+                {
+                    "url": null,
+                    "label": "&laquo; Previous",
+                    "page": null,
+                    "active": false
+                },
+                {
+                    "url": "http://localhost/api/v1/websites?page=1",
+                    "label": "1",
+                    "page": 1,
+                    "active": true
+                },
+                {
+                    "url": null,
+                    "label": "Next &raquo;",
+                    "page": null,
+                    "active": false
+                }
+            ],
+            "path": "http://localhost/api/v1/websites",
+            "per_page": 100,
+            "to": 5,
+            "total": 5
+        }
+    }
+}

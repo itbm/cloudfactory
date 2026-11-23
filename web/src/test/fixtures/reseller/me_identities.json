@@ -1,0 +1,17 @@
+{
+    "request": "GET /me/identities",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "providerId": "01m7cqzs800dwhaz0000000001",
+                "name": "Google Workspace",
+                "protocol": "oidc",
+                "connected": false,
+                "email": null,
+                "connectedAt": null,
+                "lastUsedAt": null
+            }
+        ]
+    }
+}

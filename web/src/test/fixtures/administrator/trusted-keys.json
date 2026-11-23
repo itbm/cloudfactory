@@ -1,0 +1,22 @@
+{
+    "request": "GET /trusted-keys",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80ykv31f0000000002",
+                "name": "Example Packs Ltd",
+                "fingerprint": "067005014690dd7fc66989ecc7cf98cb8715565d111930631d3908ebc606bb78",
+                "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEohdvDHyyv8BO70lUL1Qx5UtOBksk\nEhddL8E0NDx++ALsFsZ8cY0sOx87BgNU80w2pBCUBce/49KIYAgVZuuT4Q==\n-----END PUBLIC KEY-----\n",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80ykv31f0000000001",
+                "name": "Example Plugins Ltd",
+                "fingerprint": "7300443a10085d374b81900084cc66aff2bb1586ca655ca8e822e0a8bd75add2",
+                "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtykXrkZS87mmrVl4DZYQ48kHZIwQ\nShWUcmhRvdLsAv0tHGdR/OOF+Xl9rzZmYTF9cqTD+IcsSi4maihf2OvpfQ==\n-----END PUBLIC KEY-----\n",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

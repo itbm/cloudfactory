@@ -1,0 +1,218 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000c/logs?lines=200",
+    "status": 200,
+    "body": {
+        "lines": [
+            {
+                "at": "2026-11-14T09:47:12Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649632,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.084,\"size\":41841,\"remote_ip\":\"203.0.113.72\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:21Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649641,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.31,\"size\":4000,\"remote_ip\":\"203.0.113.233\"}"
+            },
+            {
+                "at": "2026-11-14T09:47:39Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649659,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.16,\"size\":25284,\"remote_ip\":\"203.0.113.90\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:02Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649682,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.379,\"size\":1057,\"remote_ip\":\"203.0.113.241\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:41Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649721,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.103,\"size\":30021,\"remote_ip\":\"203.0.113.40\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:43Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649723,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.375,\"size\":32650,\"remote_ip\":\"203.0.113.19\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:53Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649733,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.13,\"size\":6643,\"remote_ip\":\"203.0.113.245\"}"
+            },
+            {
+                "at": "2026-11-14T09:48:57Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649737,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.232,\"size\":19803,\"remote_ip\":\"203.0.113.128\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:23Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649763,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.004,\"size\":44832,\"remote_ip\":\"203.0.113.80\"}"
+            },
+            {
+                "at": "2026-11-14T09:49:43Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649783,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products\",\"status\":200,\"duration\":0.398,\"size\":9862,\"remote_ip\":\"203.0.113.219\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:00Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649800,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.17,\"size\":42482,\"remote_ip\":\"203.0.113.199\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:14Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649814,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.347,\"size\":9994,\"remote_ip\":\"203.0.113.121\"}"
+            },
+            {
+                "at": "2026-11-14T09:50:48Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649848,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.143,\"size\":43810,\"remote_ip\":\"203.0.113.43\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:01Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649861,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.146,\"size\":29849,\"remote_ip\":\"203.0.113.34\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:29Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649889,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.006,\"size\":22192,\"remote_ip\":\"203.0.113.99\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:54Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649914,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.185,\"size\":5870,\"remote_ip\":\"203.0.113.226\"}"
+            },
+            {
+                "at": "2026-11-14T09:51:54Z",
+                "stream": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+            },
+            {
+                "at": "2026-11-14T09:52:14Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649934,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.307,\"size\":18512,\"remote_ip\":\"203.0.113.76\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:43Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649963,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.126,\"size\":43110,\"remote_ip\":\"203.0.113.63\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:52Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649972,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.211,\"size\":30275,\"remote_ip\":\"203.0.113.158\"}"
+            },
+            {
+                "at": "2026-11-14T09:52:58Z",
+                "stream": "access",
+                "text": "{\"ts\":1794649978,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.295,\"size\":28623,\"remote_ip\":\"203.0.113.38\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:27Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650007,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.357,\"size\":32496,\"remote_ip\":\"203.0.113.57\"}"
+            },
+            {
+                "at": "2026-11-14T09:53:31Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650011,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.387,\"size\":6376,\"remote_ip\":\"203.0.113.183\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:05Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650045,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products\",\"status\":200,\"duration\":0.129,\"size\":11856,\"remote_ip\":\"203.0.113.189\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:10Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650050,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.027,\"size\":7880,\"remote_ip\":\"203.0.113.247\"}"
+            },
+            {
+                "at": "2026-11-14T09:54:39Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650079,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.23,\"size\":24572,\"remote_ip\":\"203.0.113.174\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:06Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650106,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.308,\"size\":5494,\"remote_ip\":\"203.0.113.190\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:21Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650121,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.044,\"size\":38542,\"remote_ip\":\"203.0.113.61\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:27Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650127,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/\",\"status\":200,\"duration\":0.028,\"size\":9136,\"remote_ip\":\"203.0.113.158\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:38Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650138,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.398,\"size\":13872,\"remote_ip\":\"203.0.113.192\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:54Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650154,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.183,\"size\":27260,\"remote_ip\":\"203.0.113.116\"}"
+            },
+            {
+                "at": "2026-11-14T09:55:54Z",
+                "stream": "error",
+                "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
+            },
+            {
+                "at": "2026-11-14T09:56:29Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650189,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.323,\"size\":14129,\"remote_ip\":\"203.0.113.211\"}"
+            },
+            {
+                "at": "2026-11-14T09:56:56Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650216,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.4,\"size\":21584,\"remote_ip\":\"203.0.113.5\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:18Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650238,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.291,\"size\":12472,\"remote_ip\":\"203.0.113.145\"}"
+            },
+            {
+                "at": "2026-11-14T09:57:48Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650268,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.205,\"size\":8261,\"remote_ip\":\"203.0.113.85\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:17Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650297,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products\",\"status\":200,\"duration\":0.098,\"size\":16271,\"remote_ip\":\"203.0.113.154\"}"
+            },
+            {
+                "at": "2026-11-14T09:58:56Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650336,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/products\",\"status\":200,\"duration\":0.389,\"size\":24588,\"remote_ip\":\"203.0.113.160\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:01Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650341,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.371,\"size\":29650,\"remote_ip\":\"203.0.113.54\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:36Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650376,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.354,\"size\":44621,\"remote_ip\":\"203.0.113.6\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:41Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650381,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.096,\"size\":24626,\"remote_ip\":\"203.0.113.225\"}"
+            },
+            {
+                "at": "2026-11-14T09:59:43Z",
+                "stream": "access",
+                "text": "{\"ts\":1794650383,\"method\":\"GET\",\"host\":\"queue-00b1.internal\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.077,\"size\":41250,\"remote_ip\":\"203.0.113.35\"}"
+            }
+        ]
+    }
+}

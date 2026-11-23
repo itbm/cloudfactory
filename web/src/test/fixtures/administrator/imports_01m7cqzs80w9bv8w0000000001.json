@@ -1,0 +1,192 @@
+{
+    "request": "GET /imports/01m7cqzs80w9bv8w0000000001",
+    "status": 200,
+    "body": {
+        "id": "01m7cqzs80w9bv8w0000000001",
+        "status": "ready",
+        "source": "upload",
+        "fileName": "cpmove-bakery.tar.gz",
+        "sizeBytes": 1960837120,
+        "receivedBytes": 1960837120,
+        "panel": "cpanel",
+        "panelName": "cPanel",
+        "account": "bakery",
+        "customerId": "01m7cqzs80h56kh10000000002",
+        "customerName": "Corner Bakery",
+        "serverId": "01m7cqzs807rnxfq0000000002",
+        "serverName": "web-2",
+        "error": null,
+        "counts": {
+            "websites": 3,
+            "databases": 2,
+            "mailboxes": 4,
+            "dnsZones": 2
+        },
+        "progress": {
+            "total": 0,
+            "done": 0,
+            "failed": 0
+        },
+        "createdAt": "2026-11-14T09:42:00+00:00",
+        "startedAt": null,
+        "finishedAt": null,
+        "customer": {
+            "name": "Corner Bakery",
+            "email": "hello@cornerbakery.example.org"
+        },
+        "warnings": [
+            {
+                "item": "files",
+                "message": "The import copies the document root of each website. Copy other files of the home directory with SFTP."
+            },
+            {
+                "item": "certificates",
+                "message": "The import does not copy the TLS certificates. The panel gets a certificate for each domain when its DNS points to the new server."
+            },
+            {
+                "item": "ftp",
+                "message": "The panel has no FTP accounts. Use SFTP with an SSH key in place of FTP."
+            }
+        ],
+        "plan": {
+            "websites": [
+                {
+                    "name": "bakeryclub.example.org",
+                    "domains": [
+                        {
+                            "name": "bakeryclub.example.org",
+                            "kind": "primary"
+                        },
+                        {
+                            "name": "www.bakeryclub.example.org",
+                            "kind": "alias"
+                        },
+                        {
+                            "name": "bakery-club.example.net",
+                            "kind": "redirect"
+                        }
+                    ],
+                    "phpVersion": "8.1",
+                    "imageId": "01m7cqzs80g1zfka000000000e",
+                    "imageName": "Apache + PHP-FPM · PHP 8.2",
+                    "diskBytes": 1300234240,
+                    "files": true,
+                    "databases": [
+                        {
+                            "name": "bakery_wp",
+                            "bytes": 50331648
+                        }
+                    ],
+                    "databaseUsers": 1,
+                    "cronJobs": 1,
+                    "wordpress": true,
+                    "conflict": null
+                },
+                {
+                    "name": "orders.bakeryclub.example.org",
+                    "domains": [
+                        {
+                            "name": "orders.bakeryclub.example.org",
+                            "kind": "primary"
+                        }
+                    ],
+                    "phpVersion": "7.4",
+                    "imageId": "01m7cqzs80g1zfka000000000e",
+                    "imageName": "Apache + PHP-FPM · PHP 8.2",
+                    "diskBytes": 230686720,
+                    "files": true,
+                    "databases": [
+                        {
+                            "name": "bakery_orders",
+                            "bytes": 12582912
+                        }
+                    ],
+                    "databaseUsers": 1,
+                    "cronJobs": 0,
+                    "wordpress": false,
+                    "conflict": null
+                },
+                {
+                    "name": "cornerbakery.example.org",
+                    "domains": [
+                        {
+                            "name": "cornerbakery.example.org",
+                            "kind": "primary"
+                        }
+                    ],
+                    "phpVersion": "8.2",
+                    "imageId": "01m7cqzs80g1zfka000000000e",
+                    "imageName": "Apache + PHP-FPM · PHP 8.2",
+                    "diskBytes": 325058560,
+                    "files": true,
+                    "databases": [],
+                    "databaseUsers": 0,
+                    "cronJobs": 0,
+                    "wordpress": false,
+                    "conflict": "A website with this name exists."
+                }
+            ],
+            "mailDomains": [
+                {
+                    "name": "bakeryclub.example.org",
+                    "mailboxes": 4,
+                    "quotaBytes": 2952790016,
+                    "aliases": 2,
+                    "messages": 3812,
+                    "bytes": 671088640,
+                    "newPasswords": 1,
+                    "conflict": null
+                }
+            ],
+            "mailSpace": {
+                "mailboxes": 28,
+                "bytes": 3221225472
+            },
+            "dnsZones": [
+                {
+                    "name": "bakeryclub.example.org",
+                    "exists": false,
+                    "conflict": null
+                },
+                {
+                    "name": "cornerbakery.example.org",
+                    "exists": true,
+                    "conflict": null
+                }
+            ],
+            "images": [
+                {
+                    "id": "01m7cqzs80g1zfka000000000e",
+                    "name": "Apache + PHP-FPM · PHP 8.2",
+                    "phpVersion": "8.2"
+                },
+                {
+                    "id": "01m7cqzs80g1zfka000000000d",
+                    "name": "Apache + PHP-FPM · PHP 8.3",
+                    "phpVersion": "8.3"
+                },
+                {
+                    "id": "01m7cqzs80g1zfka0000000003",
+                    "name": "Apache + PHP-FPM · PHP 8.4",
+                    "phpVersion": "8.4"
+                },
+                {
+                    "id": "01m7cqzs80g1zfka0000000004",
+                    "name": "Apache + PHP-FPM · PHP 8.5",
+                    "phpVersion": "8.5"
+                },
+                {
+                    "id": "01m7cqzs80g1zfka0000000001",
+                    "name": "FrankenPHP · PHP 8.4",
+                    "phpVersion": "8.4"
+                },
+                {
+                    "id": "01m7cqzs80g1zfka0000000002",
+                    "name": "FrankenPHP · PHP 8.5",
+                    "phpVersion": "8.5"
+                }
+            ]
+        },
+        "items": []
+    }
+}

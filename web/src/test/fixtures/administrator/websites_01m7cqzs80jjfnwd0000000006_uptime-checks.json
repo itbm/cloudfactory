@@ -1,0 +1,42 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000006/uptime-checks",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80ghhxm20000000008",
+                "websiteId": "01m7cqzs80jjfnwd0000000006",
+                "websiteName": "northwind.example.com",
+                "domain": "northwind.example.com",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://northwind.example.com/",
+                "intervalSeconds": 300,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": null,
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "up",
+                "pausedReason": null,
+                "since": "2026-11-13T04:00:00+00:00",
+                "failures": 0,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": true,
+                    "status": 200,
+                    "responseMs": 134,
+                    "error": null
+                },
+                "nextCheckAt": "2026-11-14T10:05:00+00:00",
+                "uptime": {
+                    "day": 100,
+                    "week": 100,
+                    "month": 100
+                },
+                "incident": null,
+                "createdAt": "2026-09-15T10:00:00+00:00"
+            }
+        ]
+    }
+}

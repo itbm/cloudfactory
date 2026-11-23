@@ -1,0 +1,895 @@
+{
+    "request": "GET /mail/aliases",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs802tyejp0000000001",
+                "address": "hello@acme.example.com",
+                "localPart": "hello",
+                "domainId": "01m7cqzs80bccfqj0000000001",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "kind": "alias",
+                "destinations": [
+                    "info@acme.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000002",
+                "address": "team@acme.example.com",
+                "localPart": "team",
+                "domainId": "01m7cqzs80bccfqj0000000001",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "kind": "forwarder",
+                "destinations": [
+                    "olu@acme.example.com",
+                    "finance@acme.example.com",
+                    "morgan@partner.example.net"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000003",
+                "address": "bea@cornerbakery.example.org",
+                "localPart": "bea",
+                "domainId": "01m7cqzs80bccfqj0000000002",
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "kind": "forwarder",
+                "destinations": [
+                    "bea.baker@mailbox.example.net"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000021",
+                "address": "billing@northwind.example.com",
+                "localPart": "billing",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ada.adams@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000004",
+                "address": "cadams@northwind.example.com",
+                "localPart": "cadams",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.adams@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000008",
+                "address": "cbello@northwind.example.com",
+                "localPart": "cbello",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.bello@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000c",
+                "address": "cchen@northwind.example.com",
+                "localPart": "cchen",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.chen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000g",
+                "address": "cdiaz@northwind.example.com",
+                "localPart": "cdiaz",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.diaz@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000m",
+                "address": "cevans@northwind.example.com",
+                "localPart": "cevans",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.evans@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000r",
+                "address": "cfischer@northwind.example.com",
+                "localPart": "cfischer",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.fischer@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000w",
+                "address": "cgarcia@northwind.example.com",
+                "localPart": "cgarcia",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.garcia@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000010",
+                "address": "chaddad@northwind.example.com",
+                "localPart": "chaddad",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.haddad@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000014",
+                "address": "cito@northwind.example.com",
+                "localPart": "cito",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.ito@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000018",
+                "address": "cjensen@northwind.example.com",
+                "localPart": "cjensen",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.jensen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001c",
+                "address": "ckhan@northwind.example.com",
+                "localPart": "ckhan",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.khan@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001g",
+                "address": "clopez@northwind.example.com",
+                "localPart": "clopez",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.lopez@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001m",
+                "address": "cmeyer@northwind.example.com",
+                "localPart": "cmeyer",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.meyer@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001r",
+                "address": "cnovak@northwind.example.com",
+                "localPart": "cnovak",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.novak@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001w",
+                "address": "cokoro@northwind.example.com",
+                "localPart": "cokoro",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.okoro@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000005",
+                "address": "fadams@northwind.example.com",
+                "localPart": "fadams",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.adams@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000009",
+                "address": "fbello@northwind.example.com",
+                "localPart": "fbello",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.bello@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000d",
+                "address": "fchen@northwind.example.com",
+                "localPart": "fchen",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.chen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000h",
+                "address": "fdiaz@northwind.example.com",
+                "localPart": "fdiaz",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.diaz@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000n",
+                "address": "fevans@northwind.example.com",
+                "localPart": "fevans",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.evans@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000s",
+                "address": "ffischer@northwind.example.com",
+                "localPart": "ffischer",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.fischer@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000x",
+                "address": "fgarcia@northwind.example.com",
+                "localPart": "fgarcia",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.garcia@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000011",
+                "address": "fhaddad@northwind.example.com",
+                "localPart": "fhaddad",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.haddad@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000015",
+                "address": "fito@northwind.example.com",
+                "localPart": "fito",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.ito@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000019",
+                "address": "fjensen@northwind.example.com",
+                "localPart": "fjensen",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.jensen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001d",
+                "address": "fkhan@northwind.example.com",
+                "localPart": "fkhan",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.khan@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001h",
+                "address": "flopez@northwind.example.com",
+                "localPart": "flopez",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.lopez@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001n",
+                "address": "fmeyer@northwind.example.com",
+                "localPart": "fmeyer",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.meyer@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001s",
+                "address": "fnovak@northwind.example.com",
+                "localPart": "fnovak",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.novak@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001x",
+                "address": "fokoro@northwind.example.com",
+                "localPart": "fokoro",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "femi.okoro@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000006",
+                "address": "iadams@northwind.example.com",
+                "localPart": "iadams",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.adams@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000a",
+                "address": "ibello@northwind.example.com",
+                "localPart": "ibello",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.bello@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000e",
+                "address": "ichen@northwind.example.com",
+                "localPart": "ichen",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.chen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000j",
+                "address": "idiaz@northwind.example.com",
+                "localPart": "idiaz",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.diaz@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000p",
+                "address": "ievans@northwind.example.com",
+                "localPart": "ievans",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.evans@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000t",
+                "address": "ifischer@northwind.example.com",
+                "localPart": "ifischer",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.fischer@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000y",
+                "address": "igarcia@northwind.example.com",
+                "localPart": "igarcia",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.garcia@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000012",
+                "address": "ihaddad@northwind.example.com",
+                "localPart": "ihaddad",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.haddad@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000016",
+                "address": "iito@northwind.example.com",
+                "localPart": "iito",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.ito@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001a",
+                "address": "ijensen@northwind.example.com",
+                "localPart": "ijensen",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.jensen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001e",
+                "address": "ikhan@northwind.example.com",
+                "localPart": "ikhan",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.khan@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001j",
+                "address": "ilopez@northwind.example.com",
+                "localPart": "ilopez",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.lopez@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001p",
+                "address": "imeyer@northwind.example.com",
+                "localPart": "imeyer",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.meyer@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001t",
+                "address": "inovak@northwind.example.com",
+                "localPart": "inovak",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.novak@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001y",
+                "address": "iokoro@northwind.example.com",
+                "localPart": "iokoro",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ines.okoro@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000023",
+                "address": "jobs@northwind.example.com",
+                "localPart": "jobs",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "chloe.chen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000007",
+                "address": "ladams@northwind.example.com",
+                "localPart": "ladams",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.adams@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000b",
+                "address": "lbello@northwind.example.com",
+                "localPart": "lbello",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.bello@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000f",
+                "address": "lchen@northwind.example.com",
+                "localPart": "lchen",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.chen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000k",
+                "address": "ldiaz@northwind.example.com",
+                "localPart": "ldiaz",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.diaz@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000q",
+                "address": "levans@northwind.example.com",
+                "localPart": "levans",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.evans@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000v",
+                "address": "lfischer@northwind.example.com",
+                "localPart": "lfischer",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.fischer@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000000z",
+                "address": "lgarcia@northwind.example.com",
+                "localPart": "lgarcia",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.garcia@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000013",
+                "address": "lhaddad@northwind.example.com",
+                "localPart": "lhaddad",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.haddad@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000017",
+                "address": "lito@northwind.example.com",
+                "localPart": "lito",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.ito@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001b",
+                "address": "ljensen@northwind.example.com",
+                "localPart": "ljensen",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.jensen@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001f",
+                "address": "lkhan@northwind.example.com",
+                "localPart": "lkhan",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.khan@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001k",
+                "address": "llopez@northwind.example.com",
+                "localPart": "llopez",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.lopez@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001q",
+                "address": "lmeyer@northwind.example.com",
+                "localPart": "lmeyer",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.meyer@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001v",
+                "address": "lnovak@northwind.example.com",
+                "localPart": "lnovak",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.novak@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp000000001z",
+                "address": "lokoro@northwind.example.com",
+                "localPart": "lokoro",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "lena.okoro@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000024",
+                "address": "partners@northwind.example.com",
+                "localPart": "partners",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "forwarder",
+                "destinations": [
+                    "alliances@partner.example.net",
+                    "deals@reseller.example.org"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000022",
+                "address": "press@northwind.example.com",
+                "localPart": "press",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ben.bello@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs802tyejp0000000020",
+                "address": "support@northwind.example.com",
+                "localPart": "support",
+                "domainId": "01m7cqzs80bccfqj0000000004",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "kind": "alias",
+                "destinations": [
+                    "ada.adams@northwind.example.com"
+                ],
+                "status": "active",
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

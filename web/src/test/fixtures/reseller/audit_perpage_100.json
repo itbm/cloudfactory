@@ -1,0 +1,29 @@
+{
+    "request": "GET /audit?perPage=100",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 5,
+                "at": "2026-11-14T09:35:00+00:00",
+                "actor": "Sam Reseller",
+                "ip": "203.0.113.13",
+                "action": "Created website",
+                "target": "events.harbourbooks.example.net"
+            },
+            {
+                "id": 4,
+                "at": "2026-09-30T10:00:00+00:00",
+                "actor": "Sam Reseller",
+                "ip": "203.0.113.13",
+                "action": "Created customer",
+                "target": "Harbour Books"
+            }
+        ],
+        "meta": {
+            "currentPage": 1,
+            "lastPage": 1,
+            "total": 2
+        }
+    }
+}

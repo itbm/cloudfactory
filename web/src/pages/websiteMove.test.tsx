@@ -5,8 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { getState } from "../api/store";
 import type { Role } from "../api/types";
-import administrator from "../test/fixtures/administrator.json";
-import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelApi";
+import { apiJob, fixture, reset, signedIn, website, type PanelApi } from "../test/panelApi";
 
 afterEach(() => {
   cleanup();
@@ -23,7 +22,7 @@ const open = async (role: Role): Promise<PanelApi> => {
 const items = () => screen.getAllByRole("menuitem").map((b) => b.textContent);
 const server = (name: string) => getState().servers.find((s) => s.name === name)!;
 // The websites as the API gives them.
-const fixture = (administrator as unknown as Record<string, { body: { data: { id: string }[] } }>)["GET /websites?perPage=100&page=1"].body.data;
+const websites = fixture<{ data: { id: string }[] }>("administrator", "GET /websites?perPage=100&page=1").body.data;
 
 describe("the move of a website", () => {
   it("is only for an administrator", async () => {
@@ -35,7 +34,7 @@ describe("the move of a website", () => {
     const api = await open("administrator");
     const site = website("acme.example.com");
     api.on(`POST /websites/${site.id}/move`, () => [202, {
-      website: { ...fixture.find((w) => w.id === site.id), status: "moving", movingToServerId: server("web-2").id },
+      website: { ...websites.find((w) => w.id === site.id), status: "moving", movingToServerId: server("web-2").id },
       jobs: [apiJob({ action: "ReceiveWebsite", websiteId: site.id, state: "running" }), apiJob({ id: "job-2", action: "SendWebsite", websiteId: site.id, state: "running" })],
     }]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Move to a different server" }));
