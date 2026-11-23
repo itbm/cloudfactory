@@ -98,9 +98,9 @@ func set(values ...string) object {
 }
 
 // managementUsing are the capabilities of the method calls of the management API. The
-// autoresponder needs vacationresponse and sieve, and the mailbox backups need mail.
+// autoresponder needs vacationresponse and sieve. The mail methods use mailUsing (mailCall).
 var managementUsing = []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap", "urn:ietf:params:jmap:filenode",
-	"urn:ietf:params:jmap:vacationresponse", "urn:ietf:params:jmap:sieve", "urn:ietf:params:jmap:mail"}
+	"urn:ietf:params:jmap:vacationresponse", "urn:ietf:params:jmap:sieve"}
 
 // call sends one method call and gives its result.
 func (c *Client) call(ctx context.Context, method string, args object) (object, error) {
@@ -909,16 +909,9 @@ func (e *ErrKey) Error() string { return "the mail server refused the public key
 // only the private key can decrypt it. Messages that the mailbox has do not change. An empty
 // key turns off the encryption: new messages are then not encrypted.
 func (c *Client) SetEncryption(ctx context.Context, domain, localPart, publicKey string) (*Key, error) {
-	domainID, err := c.existingDomain(ctx, domain)
+	id, err := c.MailAccount(ctx, domain, localPart)
 	if err != nil {
 		return nil, err
-	}
-	id, err := c.accountID(ctx, domainID, localPart)
-	if err != nil {
-		return nil, err
-	}
-	if id == "" {
-		return nil, fmt.Errorf("the mail server does not have the mailbox %s@%s", localPart, domain)
 	}
 	// The keys of a mailbox are objects of its account, not of the administrator.
 	listed, err := c.call(ctx, "x:PublicKey/get", object{"accountId": id, "properties": []string{"description"}})

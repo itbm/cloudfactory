@@ -110,11 +110,11 @@ func (m *mailCopy) mailbox(ctx context.Context, b *agentv1.ImportMailbox) (copie
 		if err != nil {
 			return err
 		}
-		blob, err := m.c.Upload(ctx, account, bytes.NewReader(content))
+		blob, err := m.c.Upload(ctx, account, bytes.NewReader(content), int64(len(content)))
 		if err != nil {
 			return err
 		}
-		batch = append(batch, pending{name: msg.Name, email: stalwart.Email{BlobID: blob, FolderID: folder, Keywords: msg.Keywords, Received: msg.Received}})
+		batch = append(batch, pending{name: msg.Name, email: stalwart.Email{BlobID: blob, Folders: []string{folder}, Keywords: msg.Keywords, Received: msg.Received}})
 		if len(batch) >= importBatch {
 			return flush()
 		}

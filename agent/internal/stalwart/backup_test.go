@@ -12,7 +12,7 @@ import (
 )
 
 func TestTheFoldersOfABackupHaveTheirParentsFirst(t *testing.T) {
-	folders := parentsFirst([]BackupFolder{
+	folders := parentsFirst([]Folder{
 		{ID: "c", Name: "Client A", ParentID: "p"},
 		{ID: "x", Name: "Lost", ParentID: "gone"},
 		{ID: "p", Name: "Projects"},
@@ -34,11 +34,11 @@ func TestTheFoldersOfABackupHaveTheirParentsFirst(t *testing.T) {
 // testMailboxBackup runs in TestRealServer, on a domain with the mailbox "info".
 func testMailboxBackup(ctx context.Context, t *testing.T, c *Client, domain string) {
 	t.Helper()
-	account, err := c.mailboxAccount(ctx, domain, "info")
+	account, err := c.MailAccount(ctx, domain, "info")
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, err := c.folders(ctx, account)
+	current, err := c.Folders(ctx, account)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func testMailboxBackup(ctx context.Context, t *testing.T, c *Client, domain stri
 	for _, f := range current {
 		role[f.Role] = f.ID
 	}
-	made, err := c.call(ctx, "Mailbox/set", object{"accountId": account, "create": object{"p": object{"name": "Projects", "parentId": nil}, "c": object{"name": "Client A", "parentId": "#p"}}})
+	made, err := c.mailCall(ctx, "Mailbox/set", object{"accountId": account, "create": object{"p": object{"name": "Projects", "parentId": nil}, "c": object{"name": "Client A", "parentId": "#p"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,11 +59,11 @@ func testMailboxBackup(ctx context.Context, t *testing.T, c *Client, domain stri
 	messages := []message{{role["inbox"], object{"$seen": true}}, {clientA, object{"$flagged": true}}, {role["sent"], object{"$seen": true}}, {role["inbox"], object{}}}
 	ids := []string{}
 	for i, m := range messages {
-		blob, err := c.uploadMessage(ctx, account, strings.NewReader(testMessage(i)), int64(len(testMessage(i))))
+		blob, err := c.Upload(ctx, account, strings.NewReader(testMessage(i)), int64(len(testMessage(i))))
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := c.call(ctx, "Email/import", object{"accountId": account, "emails": object{"m": object{"blobId": blob, "mailboxIds": object{m.folder: true}, "keywords": m.keywords, "receivedAt": fmt.Sprintf("2026-03-0%dT10:00:00Z", i+1)}}})
+		r, err := c.mailCall(ctx, "Email/import", object{"accountId": account, "emails": object{"m": object{"blobId": blob, "mailboxIds": object{m.folder: true}, "keywords": m.keywords, "receivedAt": fmt.Sprintf("2026-03-0%dT10:00:00Z", i+1)}}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,11 +87,11 @@ func testMailboxBackup(ctx context.Context, t *testing.T, c *Client, domain stri
 	}
 
 	// The owner deletes two messages and the folder "Projects".
-	if _, err := c.call(ctx, "Email/set", object{"accountId": account, "destroy": []string{ids[1], ids[3]}}); err != nil {
+	if _, err := c.mailCall(ctx, "Email/set", object{"accountId": account, "destroy": []string{ids[1], ids[3]}}); err != nil {
 		t.Fatal(err)
 	}
 	projects, _ := created["p"].(object)["id"].(string)
-	if _, err := c.call(ctx, "Mailbox/set", object{"accountId": account, "destroy": []string{clientA, projects}}); err != nil {
+	if _, err := c.mailCall(ctx, "Mailbox/set", object{"accountId": account, "destroy": []string{clientA, projects}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.ImportMailbox(ctx, domain, "other", bytes.NewReader(backup.Bytes())); !errors.Is(err, ErrNoMailbox) {
@@ -108,7 +108,7 @@ func testMailboxBackup(ctx context.Context, t *testing.T, c *Client, domain stri
 	if err != nil || len(listed) != 4 {
 		t.Fatalf("after the restore: %d messages, err %v", len(listed), err)
 	}
-	folders, err := c.folders(ctx, account)
+	folders, err := c.Folders(ctx, account)
 	if err != nil {
 		t.Fatal(err)
 	}

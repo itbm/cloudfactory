@@ -1,15 +1,9 @@
 package stalwart
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"strings"
-	"time"
 )
 
 // KeyFolder and KeyFile name the file with the private keys of a mailbox, in the files of the
@@ -25,16 +19,9 @@ const (
 // files of the mailbox. The file is not changed when it has the same keys. Empty keys remove
 // the file.
 func (c *Client) SetKeyFile(ctx context.Context, domain, localPart, privateKeys string) error {
-	domainID, err := c.existingDomain(ctx, domain)
+	account, err := c.MailAccount(ctx, domain, localPart)
 	if err != nil {
 		return err
-	}
-	account, err := c.accountID(ctx, domainID, localPart)
-	if err != nil {
-		return err
-	}
-	if account == "" {
-		return fmt.Errorf("the mail server does not have the mailbox %s@%s", localPart, domain)
 	}
 	folder, err := c.fileNode(ctx, account, KeyFolder, "", "Directory")
 	if err != nil {
@@ -62,7 +49,7 @@ func (c *Client) SetKeyFile(ctx context.Context, domain, localPart, privateKeys 
 	blobID := ""
 	if privateKeys != "" {
 		var err error
-		if blobID, err = c.upload(ctx, account, privateKeys); err != nil {
+		if blobID, err = c.upload(ctx, account, "application/pgp-keys", strings.NewReader(privateKeys), int64(len(privateKeys))); err != nil {
 			return err
 		}
 	}
@@ -141,54 +128,13 @@ func (c *Client) fileSet(ctx context.Context, account string, args object) (obje
 	return result, nil
 }
 
-func (c *Client) httpClient() *http.Client {
-	if c.HTTP != nil {
-		return c.HTTP
-	}
-	return &http.Client{Timeout: 30 * time.Second}
-}
-
-// upload puts a blob in the account and gives its ID.
-func (c *Client) upload(ctx context.Context, account, content string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.URL, "/")+"/jmap/upload/"+url.PathEscape(account)+"/", bytes.NewReader([]byte(content)))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/pgp-keys")
-	req.SetBasicAuth(AdminUser, c.Password)
-	resp, err := c.httpClient().Do(req)
-	if err != nil {
-		return "", fmt.Errorf("mail server: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	var out struct {
-		BlobID string `json:"blobId"`
-	}
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated || json.Unmarshal(raw, &out) != nil || out.BlobID == "" {
-		return "", fmt.Errorf("mail server: upload: status %d: %s", resp.StatusCode, short(raw))
-	}
-	return out.BlobID, nil
-}
-
-// download gives the content of a blob of the account.
+// download gives the content of the key file with the blob ID.
 func (c *Client) download(ctx context.Context, account, blobID string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.URL, "/")+"/jmap/download/"+url.PathEscape(account)+"/"+url.PathEscape(blobID)+"/"+KeyFile, nil)
+	body, err := c.openBlob(ctx, account, blobID, KeyFile)
 	if err != nil {
 		return "", err
 	}
-	req.SetBasicAuth(AdminUser, c.Password)
-	resp, err := c.httpClient().Do(req)
-	if err != nil {
-		return "", fmt.Errorf("mail server: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("mail server: download: status %d: %s", resp.StatusCode, short(raw))
-	}
-	return string(raw), nil
+	defer body.Close()
+	raw, err := io.ReadAll(io.LimitReader(body, 1<<20))
+	return string(raw), err
 }
