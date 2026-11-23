@@ -24,6 +24,8 @@ import type {
   DnsRecordType,
   Deploy,
   DeployTrigger,
+  Preview,
+  Previews,
   MailAlias,
   DomainKind,
   FileContent,
@@ -624,6 +626,46 @@ export function startDeploy(websiteId: string): Promise<{ job: Promise<Job> }> {
 /** Makes a release that the server keeps the live release again. */
 export function activateRelease(websiteId: string, releaseId: string): Promise<{ job: Promise<Job> }> {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/deploy/releases/${releaseId}/activate`)).then((r) => ({ job: track(r.job) }));
+}
+
+// The preview websites of pull requests
+
+export function readPreviews(websiteId: string): Promise<Previews> {
+  return call(() => live.request<Previews>("GET", `/websites/${websiteId}/previews`));
+}
+
+export interface PreviewSettingsInput {
+  enabled: boolean;
+  domain: string;
+  limit: number;
+  copyEnvironment: boolean;
+}
+
+/** Turns the previews on or off, or changes their settings. The panel removes the previews when they go off. */
+export async function setPreviewSettings(websiteId: string, input: PreviewSettingsInput): Promise<Previews> {
+  const body = { ...input, domain: input.domain.trim() || null };
+  const answer = await call(() => live.request<Previews>("PUT", `/websites/${websiteId}/previews`, body));
+  if (!input.enabled) void reload();
+  return answer;
+}
+
+export interface PreviewAnswer {
+  status: "started" | "queued" | "waiting" | "removing";
+  message: string;
+  preview: Preview;
+}
+
+/** Makes the preview of a pull request, or deploys it again. */
+export async function makePreview(websiteId: string, input: { number: number; branch: string; title?: string }): Promise<PreviewAnswer> {
+  const answer = await call(() => live.request<PreviewAnswer>("POST", `/websites/${websiteId}/previews`, { ...input, branch: input.branch.trim() }));
+  // A new preview is a new website.
+  void reload();
+  return answer;
+}
+
+/** Removes the preview of a pull request. The job promise resolves when the preview website is gone. */
+export function removePreview(websiteId: string, number: number): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<{ job: live.ApiJob | null }>("DELETE", `/websites/${websiteId}/previews/${number}`)).then((r) => ({ job: track(r.job) }));
 }
 
 // SFTP

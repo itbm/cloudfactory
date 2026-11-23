@@ -11,9 +11,11 @@ use App\Models\Release;
 use App\Models\Website;
 use App\Services\Audit;
 use App\Services\Deploys\Deploys;
+use App\Services\Deploys\PullRequest;
 use App\Services\Deploys\Webhook;
 use App\Services\Deploys\WebhookEvent;
 use App\Services\JobDispatcher;
+use App\Services\Previews;
 use App\Services\SshKey;
 use App\Validation\Input;
 use App\Validation\InputRules;
@@ -54,6 +56,7 @@ class DeployController extends Controller
     public function update(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         $data = $request->validate([
             'repository' => ['required', 'string', Input::rule('gitRepository')],
             'branch' => ['required', 'string', Input::rule('gitBranch')],
@@ -111,7 +114,10 @@ class DeployController extends Controller
     public function destroy(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         abort_if($website->releases()->where('state', Release::BUILDING)->exists(), 409, 'A deploy is in progress. Wait until it is complete.');
+        // The previews of the pull requests go with the Git source.
+        app(Previews::class)->removeAll($website, $request);
         $website->gitSource()->delete();
         $website->releases()->delete();
         Audit::record($request, 'Disconnected Git repository', $website->name, $website->customer_id);
@@ -126,6 +132,7 @@ class DeployController extends Controller
     public function newWebhook(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         $this->source($website)->update(GitSource::newWebhook());
         Audit::record($request, 'Changed webhook address', $website->name, $website->customer_id);
 
@@ -136,6 +143,7 @@ class DeployController extends Controller
     public function setSecret(Request $request, string $websiteId, string $name): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         $source = $this->source($website);
         if (! Input::valid('secretName', $name)) {
             throw ValidationException::withMessages(['name' => InputRules::MESSAGES['secretName']]);
@@ -156,6 +164,7 @@ class DeployController extends Controller
     public function removeSecret(Request $request, string $websiteId, string $name): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         $source = $this->source($website);
         $secrets = $source->secrets ?? [];
         abort_unless(isset($secrets[$name]), 404);
@@ -205,6 +214,10 @@ class DeployController extends Controller
      * the request must have a correct signature from the webhook secret (Webhook::verify). A
      * push to the branch of the website starts a deploy when the trigger is "webhook". A push
      * during a deploy starts a deploy when that deploy is complete (Deploys::jobFinished).
+     *
+     * A pull request event makes, deploys or removes the preview of the pull request
+     * (App\Services\Previews). It does not need the trigger "webhook": a website can deploy
+     * its branch by hand and get previews of its pull requests.
      */
     public function hook(Request $request, string $token): JsonResponse
     {
@@ -218,8 +231,23 @@ class DeployController extends Controller
         return match ($event->kind) {
             WebhookEvent::PING => response()->json(['status' => 'ok', 'message' => 'The webhook operates.']),
             WebhookEvent::PUSH => $this->pushed($request, $source, $event),
+            WebhookEvent::PULL_REQUEST => $this->pullRequest($request, $source),
             default => response()->json(['status' => 'ignored', 'message' => 'The panel does not use this event.']),
         };
+    }
+
+    /**
+     * A pull request event from the Git host: the preview of the pull request changes. The
+     * panel reads the event only when the website has previews.
+     */
+    private function pullRequest(Request $request, GitSource $source): JsonResponse
+    {
+        if (! $source->previews) {
+            return response()->json(['status' => 'ignored', 'message' => 'The previews of this website are off.']);
+        }
+        [$status, $answer] = app(Previews::class)->hook($source, PullRequest::from($request), $request);
+
+        return response()->json($answer, $status);
     }
 
     /** A push from the Git host. */

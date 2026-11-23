@@ -27,6 +27,8 @@ tags:
   - name: Cron jobs
   - name: Deploys
     description: Deploys of a website from a Git repository.
+  - name: Previews
+    description: The preview websites of the pull requests of a website that deploys from Git.
   - name: Databases
   - name: DNS
     description: DNS hosting. The zones of the customers and their records.
@@ -1803,6 +1805,109 @@ paths:
         '409': { description: 'A deploy is in progress, or the customer of the website is suspended.' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/websites/{websiteId}/previews:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Previews]
+      summary: Show the preview settings and the previews of a website
+      responses:
+        '200':
+          description: The settings and the previews.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Previews' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Previews]
+      summary: Turn the previews of pull requests on or off, or change their settings
+      description: >-
+        A website that deploys from Git can get a preview website for each pull request to its
+        branch. The webhook of the website (`webhookUrl` of the deploy settings) gets the pull
+        request events of GitHub, GitLab, Gitea, Forgejo and Bitbucket Cloud. A preview is a
+        website of the plan, with the name `pr-<number>.<domain>`, on the server of the website.
+        It deploys the head branch of the pull request. The panel removes it when the pull
+        request closes, and removes all previews when the previews go off.
+
+
+        The customer must control `domain`: it is a sub-domain of a verified domain of the
+        customer, or it is in a DNS zone of the customer that the public DNS delegates to the
+        panel. Add a wildcard DNS record `*.<domain>` that points to the server of the website.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+                domain: { type: [string, 'null'], example: preview.example.com, description: Required when enabled is true. }
+                limit: { type: integer, minimum: 1, maximum: 10, default: 3, description: The largest number of previews at the same time. }
+                copyEnvironment: { type: boolean, default: false, description: True gives the environment variables and the build secrets of the website to each preview. }
+      responses:
+        '200':
+          description: The settings and the previews.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Previews' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+    post:
+      tags: [Previews]
+      summary: Make the preview of a pull request, or deploy it again
+      description: >-
+        For a Git host whose pull request events the panel does not read, or for a CI pipeline.
+        The webhook does the same for each pull request event. The panel makes no preview when
+        the website has `limit` previews, or when the plan has no space for one more website
+        (422).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [number, branch]
+              properties:
+                number: { type: integer, minimum: 1, maximum: 999999, description: The number of the pull request. }
+                branch: { type: string, example: feature/export, description: The head branch of the pull request. It must be in the repository of the website. }
+                title: { type: [string, 'null'], maxLength: 200 }
+                url: { type: [string, 'null'], maxLength: 500, description: The page of the pull request on the Git host. }
+      responses:
+        '202':
+          description: The panel makes the preview or deploys it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [started, queued, waiting, removing] }
+                  message: { type: string }
+                  preview: { $ref: '#/components/schemas/Preview' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/previews/{number}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: number, in: path, required: true, schema: { type: integer } }
+    delete:
+      tags: [Previews]
+      summary: Remove the preview of a pull request
+      description: The panel removes the preview website. A preview that the panel could not make has no job.
+      responses:
+        '202':
+          description: The removal started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/hooks/deploy/{token}:
     parameters:
       - { name: token, in: path, required: true, schema: { type: string } }
@@ -1823,6 +1928,14 @@ paths:
         different branch, a tag, a removed branch and a different event start no deploy
         (`ignored`). A push while a deploy is in progress starts a deploy when that deploy is
         complete (`queued`). At most 30 requests in one minute from one address.
+
+
+        A pull request event of GitHub, GitLab, Gitea, Forgejo, Gogs or Bitbucket Cloud (the
+        event header of the Git host) makes, deploys or removes the preview of the pull request,
+        when the website has previews. It needs the same signature. It never deploys the branch
+        of the website, and it does not need the trigger `webhook`. The panel ignores a pull
+        request from a different repository, for example a fork, and a pull request to a
+        different branch.
       security: []
       parameters:
         - { name: X-Hub-Signature-256, in: header, required: false, schema: { type: string, example: 'sha256=5d1f...' } }
@@ -1838,12 +1951,12 @@ paths:
                 after: { type: string, description: The ID of the new commit. }
       responses:
         '200':
-          description: 'A test request of the Git host (`ok`), or a request that starts no deploy (`ignored`).'
+          description: 'A test request of the Git host (`ok`), a request that starts no deploy (`ignored`), a pull request event that changes no preview, or a preview that the panel could not make (`failed`).'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HookAnswer' }
         '202':
-          description: 'The deploy started, or it starts when the deploy in progress is complete.'
+          description: 'The deploy started, or it starts when the deploy in progress is complete, or the panel makes, deploys or removes a preview.'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HookAnswer' }
@@ -6416,6 +6529,15 @@ components:
           items: { $ref: '#/components/schemas/Domain' }
         sftp: { $ref: '#/components/schemas/Sftp' }
         stagingOf: { type: [string, 'null'] }
+        previewOf:
+          type: [object, 'null']
+          description: The pull request of a preview website. The panel removes the preview when the pull request closes.
+          properties:
+            websiteId: { type: string, description: The website of the Git source. }
+            number: { type: integer }
+            branch: { type: string }
+            title: { type: string }
+            url: { type: [string, 'null'] }
         diskLimitApplied:
           type: [boolean, 'null']
           description: >-
@@ -6497,9 +6619,38 @@ components:
     HookAnswer:
       type: object
       properties:
-        status: { type: string, enum: [ok, started, queued, ignored] }
+        status: { type: string, enum: [ok, started, queued, ignored, waiting, removing, updated, failed, refused] }
         message: { type: string }
         releaseId: { type: string }
+        previewWebsiteId: { type: string, description: The preview website of a pull request event. }
+    Previews:
+      type: object
+      properties:
+        settings:
+          type: [object, 'null']
+          description: Null when the website has no Git source, or is a preview itself.
+          properties:
+            enabled: { type: boolean }
+            domain: { type: [string, 'null'], example: preview.example.com }
+            limit: { type: integer }
+            copyEnvironment: { type: boolean }
+        suggestedDomain: { type: [string, 'null'], description: A domain for the previews. Null for a website with no domain. }
+        maxLimit: { type: integer, example: 10 }
+        previews: { type: array, items: { $ref: '#/components/schemas/Preview' } }
+    Preview:
+      type: object
+      properties:
+        number: { type: integer, description: The number of the pull request. }
+        title: { type: string }
+        branch: { type: string, description: The head branch of the pull request. }
+        url: { type: [string, 'null'], description: The page of the pull request on the Git host. }
+        websiteId: { type: [string, 'null'], description: The preview website. Null when the panel could not make it. }
+        name: { type: [string, 'null'], example: pr-12.preview.example.com }
+        state: { type: string, enum: [creating, deploying, live, failed, removing] }
+        release: { oneOf: [{ $ref: '#/components/schemas/Release' }, { type: 'null' }], description: The last deploy of the preview. }
+        error: { type: [string, 'null'], description: Why the panel could not make the preview, or could not start its deploy. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
