@@ -1189,6 +1189,37 @@ export interface LogLine {
   text: string;
 }
 
+export type FirewallMode = "off" | "detect" | "block";
+
+/** The protection of a website in the edge proxy. The API never gives the passwords. */
+export interface WebsiteSecurity {
+  firewall: { mode: FirewallMode; excludedRules: number[]; skippedPaths: string[] };
+  ipRules: { allow: string[]; block: string[] };
+  protectedPaths: { path: string; users: { name: string }[] }[];
+  signInLimit: { requestsPerMinute: number; paths: string[] };
+}
+
+/** A change of the protection. Each part replaces the part that the website has. */
+export interface WebsiteSecurityChange {
+  firewall?: { mode: FirewallMode; excludedRules?: number[]; skippedPaths?: string[] };
+  ipRules?: { allow?: string[]; block?: string[] };
+  /** A user with no password keeps the password that the same user of the same path has. */
+  protectedPaths?: { path: string; users: { name: string; password?: string | null }[] }[];
+  signInLimit?: { requestsPerMinute: number; paths?: string[] };
+}
+
+/** A request that the firewall blocked or detected. */
+export interface FirewallEvent {
+  at: string | null;
+  clientIp: string;
+  /** Only an event that the firewall blocked has the host. */
+  host: string | null;
+  uri: string;
+  action: "blocked" | "detected";
+  score: number;
+  rules: { id: number; message: string; data: string }[];
+}
+
 export interface CronJob {
   id: string;
   schedule: string;

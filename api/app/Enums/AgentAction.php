@@ -54,6 +54,7 @@ enum AgentAction: string
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
     case SetPacks = 'SetPacks';
     case ExportWebsite = 'ExportWebsite';
+    case SetWebsiteSecurity = 'SetWebsiteSecurity';
     case SetCertificates = 'SetCertificates';
     // The import of an account from a different panel (docs/imports.md).
     case FetchImport = 'FetchImport';
@@ -117,6 +118,7 @@ enum AgentAction: string
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
             // An account export: the agent sends each part to the panel while it makes it.
             self::ExportWebsite => ['Send database dumps', 'Send files'],
+            self::SetWebsiteSecurity => ['Set edge proxy rules'],
             self::SetCertificates => ['Load certificates', 'Check certificates'],
             // A download for a server that only copies a part has no second step.
             self::FetchImport => ['Download archive', 'Read archive'],
