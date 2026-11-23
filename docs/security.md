@@ -467,6 +467,18 @@ not trust it:
   `cf-edge`, with no symbolic links. The worker gives only the ID of a website that the agent
   knows, and gets only the events of that website.
 
+## Malware scan
+
+- The malware scan runs as the Unix user of the website, in a gVisor container with no
+  network. The website and the signatures are read-only. Refer to
+  [architecture.md](architecture.md#malware-scan).
+- The service user `cf-scan` updates the signatures. The worker can run only `podman image
+  exists` and `podman pull` with the scan image as `cf-scan`, and start or reload its units.
+  It cannot run a program of its choice as `cf-scan`.
+- A scan changes no file. The owner of the website deletes a file that the scan found.
+- A scan does not find all malware. It finds only the malware of the ClamAV signatures. A
+  clean scan does not prove that a website is safe.
+
 ## The agent
 
 - The agent accepts only the typed actions in `agent.proto`. It checks each value, for example

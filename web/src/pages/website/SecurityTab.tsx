@@ -5,6 +5,7 @@ import type { FirewallEvent, FirewallMode, Website, WebsiteSecurity, WebsiteSecu
 import { Card, ConfirmButton, Field, FormError, JobRow, Modal, Status, TableWrap } from "../../components/ui";
 import { relativeTime } from "../../lib/format";
 import { jobActive } from "../../lib/labels";
+import { MalwareScanCard } from "./MalwareScanCard";
 
 /** The title of the job that applies a change (SecurityController::update). */
 const JOB_TITLE = "Set website protection";
@@ -45,7 +46,7 @@ function errorOf(error: ApiError | null, key: string, values: (string | number)[
 /**
  * The protection of a website in the edge proxy: the firewall, the sign-in limit, the IP address
  * rules and the password-protected paths. The panel saves a change at once, and a job applies
- * it to the edge proxy. The website does not restart.
+ * it to the edge proxy. The website does not restart. The tab also has the malware scan.
  */
 export function SecurityTab({ website }: { website: Website }) {
   const state = useStore();
@@ -78,6 +79,7 @@ export function SecurityTab({ website }: { website: Website }) {
         <IpRulesCard key={JSON.stringify(s.ipRules)} security={s} save={save} />
         <ProtectedPathsCard security={s} save={save} />
       </div>
+      <MalwareScanCard website={website} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ use App\Models\Customer;
 use App\Models\DatabaseServer;
 use App\Models\DnsZone;
 use App\Models\Domain;
+use App\Models\MalwareScan;
 use App\Models\NotificationDelivery;
 use App\Models\Release;
 use App\Models\Server;
@@ -237,6 +238,28 @@ class Notifier
             'server' => $server->name,
             'lastSeen' => $server->last_seen_at?->format('j M Y H:i T') ?? 'never',
         ], "offline:{$server->id}:".($server->last_seen_at?->timestamp ?? 0));
+    }
+
+    /**
+     * A malware scan found infected files. The users of the customer of the website, its
+     * reseller and the administrators get one email for each scan.
+     */
+    public function malwareFound(MalwareScan $scan): void
+    {
+        $website = $scan->website;
+        if (! $website) {
+            return;
+        }
+        $files = collect($scan->findings ?? [])->take(10)->map(fn (array $f) => "{$f['path']} ({$f['signature']})");
+        if ($scan->infected_files > $files->count()) {
+            $files->push(sprintf('and %d more', $scan->infected_files - $files->count()));
+        }
+        $this->send(NotificationEvent::MalwareFound, self::usersOf($website->customer)->concat(self::administrators()), [
+            'website' => $website->name,
+            'count' => (string) $scan->infected_files,
+            'files' => $files->implode("\n"),
+            'time' => ($scan->created_at ?? now())->format('j M Y H:i T'),
+        ], "malware:{$scan->id}");
     }
 
     /**

@@ -111,6 +111,13 @@ func (d *Deps) allowRunuser(args []string) error {
 			return err
 		}
 		return allowImage(podman, []string{d.MailImage, d.MailDBImage, d.MailKeepImage})
+	case user == host.ScanUser:
+		// The root helper makes the user before the first command (scan.prepare).
+		podman, err := d.podmanOf(user, command)
+		if err != nil {
+			return err
+		}
+		return allowImage(podman, []string{d.ScanImage})
 	case user == host.WebmailUser:
 		// The root helper makes the user before the first command (webmail.prepare).
 		podman, err := d.podmanOf(user, command)

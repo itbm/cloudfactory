@@ -1,0 +1,29 @@
+# The malware scanner (docs/architecture.md#malware-scan). It has two uses:
+# - The Unix user cf-scan runs freshclam in it to update the ClamAV signatures of the server.
+# - The Unix user of a website runs clamscan in it to scan the files of the website, with the
+#   signatures and the files of the website mounted read-only, and with no network.
+#   podman build -t scan images/scan
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/library/alpine:3.23
+
+# clamav-scanner has clamscan. The image has no signatures: they change each day, so the
+# server keeps them in /var/lib/cf-scan/signatures. The image does not have the RAR module
+# (clamav-libunrar), because its licence is not a free software licence.
+RUN apk add --no-cache clamav-scanner freshclam \
+ && command -v clamscan freshclam >/dev/null \
+ && rm -f /etc/clamav/freshclam.conf
+
+# CVE scan, finding 1: take the Alpine security fixes that are newer than the base image. The
+# release workflow gives CF_REFRESH a new value for each build, so this step never comes from
+# the build cache.
+ARG CF_REFRESH
+RUN apk upgrade --no-cache
+
+# freshclam runs as the user of the container, which is the Unix user cf-scan on the host. It
+# does not notify a clamd: the server has no clamd.
+COPY freshclam.conf /etc/clamav/freshclam.conf
+VOLUME /var/lib/clamav
+CMD ["clamscan", "--version"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory malware scanner (ClamAV)"
