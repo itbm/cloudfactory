@@ -51,7 +51,7 @@ func TestRealCaddy(t *testing.T) {
 	}
 	t.Logf("www.acme.example → %d %s", resp.StatusCode, resp.Header.Get("Location"))
 
-	if err := c.ApplyPanel(ctx, "panel.example.com", PanelInternal, 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.example.com", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Remove(ctx, site.WebsiteID); err != nil {
@@ -64,7 +64,7 @@ func TestRealCaddy(t *testing.T) {
 // the HTTPS address of the edge proxy, for example 127.0.0.1:18443.
 func testPanelCertificate(t *testing.T, c *Client) {
 	ctx := context.Background()
-	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	if m, err := c.PanelCertificate(ctx, "panel.localhost"); err != nil || m != PanelInternal {
@@ -183,7 +183,7 @@ func TestRealCaddyCertificates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081, 19082); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.SetCertificates(ctx, []Certificate{a, b}); err != nil {

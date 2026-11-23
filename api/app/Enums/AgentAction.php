@@ -46,6 +46,7 @@ enum AgentAction: string
     case SetCronJobs = 'SetCronJobs';
     case RunCronJob = 'RunCronJob';
     case RunCommand = 'RunCommand';
+    case OpenTerminal = 'OpenTerminal';
     case Deploy = 'Deploy';
     case ActivateRelease = 'ActivateRelease';
     case InstallDependencies = 'InstallDependencies';
@@ -105,6 +106,7 @@ enum AgentAction: string
             self::SetCronJobs => ['Save the cron jobs'],
             self::RunCronJob => ['Run the command'],
             self::RunCommand => ['Run the command'],
+            self::OpenTerminal => ['Open the terminal'],
             // The steps after "Build" are the steps of SetRuntime: the agent starts the website
             // from the new release with no stop.
             self::Deploy => ['Get the code', 'Build', 'Migrate the database', ...self::SetRuntime->steps(), 'Remove old releases'],

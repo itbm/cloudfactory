@@ -10,6 +10,12 @@ on:
       # The test of the Valkey image uses the access rules and the server options of the agent.
       - agent/internal/actions/valkey*.go
       - agent/internal/quadlet/quadlet.go
+      # The panel API image has the terminal relay.
+      - agent/cmd/cf-terminal-relay/**
+      - agent/internal/relay/**
+      - agent/internal/wsock/**
+      - agent/go.mod
+      - agent/go.sum
       # The panel-api image has the OpenAPI document. The panel images use .dockerignore.
       - openapi/openapi.yaml
       - .dockerignore
@@ -54,7 +60,7 @@ jobs:
               { "image": "sftp", "context": "images/sftp", "file": "images/sftp/Containerfile", "args": "", "paths": ["images/sftp/"] },
               { "image": "adminer", "context": "images/adminer", "file": "images/adminer/Containerfile", "args": "", "paths": ["images/adminer/"] },
               { "image": "dns", "context": "images/dns", "file": "images/dns/Containerfile", "args": "", "paths": ["images/dns/"] },
-              { "image": "panel-api", "context": ".", "file": "images/panel-api/Containerfile", "args": "", "paths": ["images/panel-api/", "api/", "openapi/openapi.yaml", ".dockerignore"] },
+              { "image": "panel-api", "context": ".", "file": "images/panel-api/Containerfile", "args": "", "paths": ["images/panel-api/", "api/", "openapi/openapi.yaml", ".dockerignore", "agent/cmd/cf-terminal-relay/", "agent/internal/relay/", "agent/internal/wsock/", "agent/go.mod", "agent/go.sum"] },
               { "image": "panel-web", "context": ".", "file": "images/panel-web/Containerfile", "args": "", "paths": ["images/panel-web/", "web/", ".dockerignore"] },
               { "image": "mariadb", "context": "images/mariadb", "file": "images/mariadb/Containerfile", "args": "", "paths": ["images/mariadb/"] },
               { "image": "postgresql", "context": "images/postgresql", "file": "images/postgresql/Containerfile", "args": "", "paths": ["images/postgresql/"] },
@@ -345,6 +351,21 @@ jobs:
             check 401 -H "X-Cloudfactory-Direct-Cert-Sha256: $agent_fingerprint" http://127.0.0.1:18080/api/agent/v1/report
             # A client of the HTTPS port cannot pass as the edge proxy.
             check 401 -H 'X-Cloudfactory-Edge: 1' -H "X-Client-Cert-Sha256: $agent_fingerprint" https://127.0.0.1:18443/api/agent/v1/report
+            # The terminal relay of the unit cf-panel-terminal: the same image, a read-only root
+            # file system, no capabilities, and only APP_KEY.
+            docker run -d --name smoke-relay --cap-drop=all --security-opt no-new-privileges --read-only --tmpfs /tmp \
+              -p 127.0.0.1:18090:8090 -e "APP_KEY=base64:$(openssl rand -base64 32)" panel-api:test cf-terminal-relay --listen :8090
+            code=000
+            for _ in $(seq 1 15); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18090/up || true)
+              [ "$code" = 200 ] && break
+              sleep 1
+            done
+            docker logs smoke-relay
+            [ "$code" = 200 ]
+            # A connection with no valid ticket gets no terminal.
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:18090/api/terminal/01m82jppdpt215s2n6f4p03hwd/browser?ticket=1.00")
+            [ "$code" = 403 ]
             exit 0
           fi
           if [ "$IMAGE" != "${IMAGE#node}" ] || [ "$IMAGE" != "${IMAGE#python}" ]; then

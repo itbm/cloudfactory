@@ -1017,3 +1017,14 @@ a.stat-link .stat-value { margin-bottom: 8px; }
 .scope-list li { display: flex; gap: 10px; align-items: baseline; }
 .scope-list code, .scope-list strong { flex: none; }
 .manifest-input { font-family: var(--font-mono); font-size: 12px; min-height: 160px; }
+
+/* The web terminal (FR-802). The terminal is dark in the light and in the dark theme. */
+.terminal-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.terminal-actions { display: flex; gap: 8px; }
+.terminal-box { height: 420px; padding: 8px; background: #0f1b33; border-radius: var(--radius-sm); overflow: hidden; }
+.terminal-box-hidden { display: none; }
+.terminal-recording { height: 360px; overflow-x: auto; }
+@media (max-width: 640px) { .terminal-box { height: 60vh; } }
+.command-list { margin: 0 0 14px; padding-left: 22px; display: grid; gap: 4px; }
+.command-list code { word-break: break-all; }
+.terminal-box .xterm-viewport, .terminal-box .xterm-scrollable-element { background-color: #0f1b33 !important; }

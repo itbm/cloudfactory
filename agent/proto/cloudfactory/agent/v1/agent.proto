@@ -57,6 +57,12 @@ service AgentService {
   // website, the same as a cron job. The job succeeds when the command ran, also when its exit
   // code is not 0. The result has the exit code and the end of the output.
   rpc RunCommand(RunCommandRequest) returns (JobAccepted);
+  // Opens a shell in the container of a website for the web terminal of the panel. The agent
+  // connects to the terminal relay of the panel, and the relay connects the agent to the
+  // browser. The shell runs as the Unix user of the website, in the gVisor sandbox. The job
+  // succeeds when the shell started. The agent then sends the commands of the session and its
+  // end to the panel (/api/agent/v1/terminal-sessions/...).
+  rpc OpenTerminal(OpenTerminalRequest) returns (JobAccepted);
   rpc Deploy(DeployRequest) returns (JobAccepted);
   rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
   rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
@@ -944,6 +950,22 @@ message RunCommandRequest {
   string command = 3;
   // The longest time of the command, in seconds: 0 to 3600. 0 is 600.
   uint32 timeout_seconds = 4;
+}
+
+// OpenTerminal opens a shell in the container of a website for the web terminal.
+message OpenTerminalRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The session of the terminal (an ID).
+  string session_id = 3;
+  // The address of the terminal relay of the panel, for example "https://panel.example.com".
+  // The agent connects to <relay_url>/api/terminal/<session_id>/agent.
+  string relay_url = 4;
+  // The ticket of the agent for the relay. It is good for one connection.
+  string ticket = 5;
+  // The first size of the terminal: 10 to 1000 columns and 2 to 500 rows.
+  uint32 cols = 6;
+  uint32 rows = 7;
 }
 
 // Deploy gets the code of a Git repository into a new release directory, runs the build

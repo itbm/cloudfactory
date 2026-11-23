@@ -67,6 +67,8 @@ class AgentClient
                     'RESTIC_PASSWORD' => $shared ? (string) BackupController::sharedRepositoryPassword() : $server->backupPassword(),
                 ]] : []),
                 ...($job->action === AgentAction::Deploy ? self::deploySecrets($job) : []),
+                // The ticket of the terminal relay is not in the job either.
+                ...($job->action === AgentAction::OpenTerminal ? TerminalTickets::forAgent($job, $server) : []),
             ])
             ->throw();
     }
