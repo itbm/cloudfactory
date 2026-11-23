@@ -178,6 +178,19 @@ type Job struct {
 	WebsiteID  *string  `json:"websiteId"`
 	CreatedAt  string   `json:"createdAt"`
 	FinishedAt *string  `json:"finishedAt"`
+	// Result is the summary of a job that has one, for example of an archive.
+	Result *JobResult `json:"result,omitempty"`
+}
+
+// JobResult is the summary of a job that makes or extracts an archive.
+type JobResult struct {
+	Files        int      `json:"files"`
+	Directories  int      `json:"directories"`
+	Links        int      `json:"links"`
+	SizeBytes    int64    `json:"sizeBytes"`
+	Kept         int      `json:"kept"`
+	Skipped      int      `json:"skipped"`
+	SkippedNames []string `json:"skippedNames"`
 }
 
 // Finished reports whether the job has a result.

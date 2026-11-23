@@ -108,6 +108,10 @@ func (s *Service) Deploy(_ context.Context, r *connect.Request[agentv1.DeployReq
 	return s.submit(s.Deps.Deploy(r.Msg))
 }
 
+func (s *Service) ExtractArchive(_ context.Context, r *connect.Request[agentv1.ExtractArchiveRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ExtractArchive(r.Msg))
+}
+
 func (s *Service) FetchImport(_ context.Context, r *connect.Request[agentv1.FetchImportRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.FetchImport(r.Msg))
 }
@@ -130,6 +134,10 @@ func (s *Service) InstallDependencies(_ context.Context, r *connect.Request[agen
 
 func (s *Service) InstallHostUpdates(_ context.Context, r *connect.Request[agentv1.HostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.InstallHostUpdates(r.Msg))
+}
+
+func (s *Service) MakeArchive(_ context.Context, r *connect.Request[agentv1.MakeArchiveRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.MakeArchive(r.Msg))
 }
 
 func (s *Service) OpenTerminal(_ context.Context, r *connect.Request[agentv1.OpenTerminalRequest]) (*connect.Response[agentv1.JobAccepted], error) {
@@ -357,6 +365,18 @@ func (s *Service) DeleteFile(ctx context.Context, r *connect.Request[agentv1.Fil
 		return nil, err
 	}
 	return connect.NewResponse(&agentv1.FileDeleted{}), nil
+}
+
+func (s *Service) SetFileMode(ctx context.Context, r *connect.Request[agentv1.SetFileModeRequest]) (*connect.Response[agentv1.FileModeSet], error) {
+	m := r.Msg
+	resp, err := s.files(ctx, m.GetWebsiteId(), sitefiles.Request{Op: sitefiles.OpChmod, Path: m.GetPath(), Mode: m.GetMode(), Recursive: m.GetRecursive(), FileMode: m.GetFileMode()})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Entry == nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("the file manager gave no entry"))
+	}
+	return connect.NewResponse(&agentv1.FileModeSet{File: actions.FileEntry(*resp.Entry), Changed: int64(resp.Changed)}), nil
 }
 
 func (s *Service) GetLogs(ctx context.Context, r *connect.Request[agentv1.GetLogsRequest]) (*connect.Response[agentv1.Logs], error) {

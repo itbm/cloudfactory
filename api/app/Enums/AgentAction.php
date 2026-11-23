@@ -27,6 +27,7 @@ enum AgentAction: string
     case DeleteWebsite = 'DeleteWebsite';
     case Deploy = 'Deploy';
     case ExportWebsite = 'ExportWebsite';
+    case ExtractArchive = 'ExtractArchive';
     // The import of an account from a different panel (docs/imports.md).
     case FetchImport = 'FetchImport';
     case ImportDatabase = 'ImportDatabase';
@@ -34,6 +35,7 @@ enum AgentAction: string
     case ImportMail = 'ImportMail';
     case InstallDependencies = 'InstallDependencies';
     case InstallHostUpdates = 'InstallHostUpdates';
+    case MakeArchive = 'MakeArchive';
     case OpenTerminal = 'OpenTerminal';
     case PrepareMailNode = 'PrepareMailNode';
     case PruneBackups = 'PruneBackups';
@@ -93,6 +95,7 @@ enum AgentAction: string
             self::Deploy => ['Get the code', 'Build', 'Migrate the database', ...self::SetRuntime->steps(), 'Remove old releases'],
             // An account export: the agent sends each part to the panel while it makes it.
             self::ExportWebsite => ['Send database dumps', 'Send files'],
+            self::ExtractArchive => ['Extract the archive'],
             // A download for a server that only copies a part has no second step.
             self::FetchImport => ['Download archive', 'Read archive'],
             self::ImportDatabase => ['Check archive', 'Load dump'],
@@ -102,6 +105,7 @@ enum AgentAction: string
             // again with no stop.
             self::InstallDependencies => ['Install dependencies', ...self::SetRuntime->steps()],
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
+            self::MakeArchive => ['Make the archive'],
             self::OpenTerminal => ['Open the terminal'],
             self::PrepareMailNode => ['Make keys'],
             self::PruneBackups => ['Remove backups of deleted and moved websites', 'Remove unused data'],
@@ -137,6 +141,15 @@ enum AgentAction: string
             self::SetWebsiteSecurity => ['Set edge proxy rules'],
             self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],
         };
+    }
+
+    /**
+     * The actions whose result the panel keeps for the user: the summary of an archive
+     * (agent/internal/sitefiles.Summary). The API gives it with the job.
+     */
+    public function keepsResult(): bool
+    {
+        return in_array($this, [self::MakeArchive, self::ExtractArchive], true);
     }
 
     /** The actions that use the backup repository. The panel adds its credentials when it sends the job. */

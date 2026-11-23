@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Events\UsageAlertRaised;
 use App\Events\UsageAlertResolved;
 use App\Models\DatabaseServer;
+use App\Models\Mailbox;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\UsageAlert;
@@ -25,6 +26,9 @@ use Throwable;
  * percent. It closes when the use goes 5 points below the warning percent, so that a value
  * near the threshold does not open and close an alert at each report. CPU and memory use the
  * average of the last 30 minutes, so that a short peak does not open an alert.
+ *
+ * FR-603: the mail report of an agent gives the size of each mailbox (checkMailboxes). A
+ * mailbox alert opens at 90% of the size of the mailbox and becomes critical at 98%.
  */
 class UsageRecorder
 {
@@ -310,6 +314,67 @@ class UsageRecorder
         }
     }
 
+    /**
+     * FR-603: opens, changes or closes the alert of each mailbox of the server after a mail
+     * report. A mailbox alert opens at Mailbox::FULL_WARNING_PERCENT of the size of the
+     * mailbox, and becomes critical at Mailbox::FULL_CRITICAL_PERCENT. It closes 5 points
+     * below the warning percent, when the mailbox gets a larger size, or when the mailbox
+     * is removed.
+     *
+     * @param  iterable<Mailbox>  $mailboxes  all mailboxes of the mail domains on the server
+     */
+    public function checkMailboxes(Server $server, iterable $mailboxes, ?Carbon $now = null): void
+    {
+        $now ??= Carbon::now();
+        $open = UsageAlert::whereNull('resolved_at')->where(['subject_type' => UsageAlert::MAILBOX, 'server_id' => $server->id])
+            ->get()->keyBy('subject_id');
+        $seen = [];
+        foreach ($mailboxes as $mailbox) {
+            if ($mailbox->quota_bytes <= 0) {
+                continue;
+            }
+            $seen[$mailbox->id] = true;
+            $used = (float) $mailbox->used_bytes;
+            $limit = (float) $mailbox->quota_bytes;
+            $percent = round($used / $limit * 100, 1);
+            $critical = $percent >= Mailbox::FULL_CRITICAL_PERCENT;
+            $alert = $open->get($mailbox->id);
+            if (! $alert) {
+                if ($percent >= Mailbox::FULL_WARNING_PERCENT) {
+                    $alert = UsageAlert::create([
+                        'subject_type' => UsageAlert::MAILBOX, 'subject_id' => $mailbox->id, 'customer_id' => $mailbox->customer_id, 'server_id' => $server->id,
+                        'resource' => 'storage', 'level' => $critical ? UsageAlert::CRITICAL : UsageAlert::WARNING,
+                        'used' => $used, 'limit' => $limit, 'percent' => $percent, 'opened_at' => $now,
+                    ]);
+                    $this->raised($alert, true);
+                }
+
+                continue;
+            }
+            if ($percent < Mailbox::FULL_WARNING_PERCENT - self::HYSTERESIS) {
+                $this->resolve($alert, $now);
+
+                continue;
+            }
+            $level = match (true) {
+                $critical => UsageAlert::CRITICAL,
+                $alert->level === UsageAlert::CRITICAL && $percent >= Mailbox::FULL_CRITICAL_PERCENT - self::HYSTERESIS => UsageAlert::CRITICAL,
+                default => UsageAlert::WARNING,
+            };
+            $escalated = $level === UsageAlert::CRITICAL && $alert->level !== UsageAlert::CRITICAL;
+            $alert->update(['used' => $used, 'limit' => $limit, 'percent' => $percent, 'level' => $level]);
+            if ($escalated) {
+                $this->raised($alert, false);
+            }
+        }
+        // The alert of a mailbox that was removed, or that moved to a different server.
+        foreach ($open as $id => $alert) {
+            if (! isset($seen[$id])) {
+                $this->resolve($alert, $now);
+            }
+        }
+    }
+
     private function resolve(UsageAlert $alert, Carbon $now): void
     {
         $alert->update(['resolved_at' => $now]);
@@ -339,23 +404,29 @@ class UsageRecorder
     }
 
     /**
-     * The values of an alert for people, for example for an email.
+     * The values of an alert for people, for example for an email. "subject" names the
+     * website, the database server or the mailbox, for example "mailbox info@example.com".
      *
-     * @return array{resource: string, website: string, used: string, limit: string, percent: float, level: string}
+     * @return array{resource: string, website: string, subject: string, used: string, limit: string, percent: string, level: string}
      */
     public static function describe(UsageAlert $alert): array
     {
         $resource = UsageAlert::RESOURCE_NAMES[$alert->resource] ?? $alert->resource;
-        $website = '';
+        $website = $subject = '';
         if ($alert->subject_type === UsageAlert::WEBSITE) {
             $website = (string) Website::whereKey($alert->subject_id)->value('name');
+            $subject = "website {$website}";
         } elseif ($alert->subject_type === UsageAlert::DATABASE_SERVER) {
             $resource = 'Database server '.strtolower($resource);
+            $subject = 'database server '.DatabaseServer::whereKey($alert->subject_id)->value('name');
+        } elseif ($alert->subject_type === UsageAlert::MAILBOX) {
+            $subject = 'mailbox '.(Mailbox::with('domain')->find($alert->subject_id)?->address() ?? 'that was removed');
         }
 
         return [
             'resource' => $resource,
             'website' => $website,
+            'subject' => $subject,
             'used' => self::amount($alert, $alert->used),
             'limit' => self::amount($alert, $alert->limit),
             'percent' => (string) round($alert->percent),

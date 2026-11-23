@@ -53,7 +53,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `agent/internal/actions/observe.go`
 
-- Usage history and usage alerts: the agent reports the traffic of each website (from the metrics of the edge proxy) and of each server. The panel keeps buckets of 5 minutes for 8 days and of 1 hour for 400 days, and shows graphs of CPU, memory, disk and traffic for each website, server and database server (**Usage** tab, server page). A plan can have a bandwidth limit for each month. An alert opens at the warning threshold of a limit (80% by default) and becomes critical at the critical threshold (95%). The page **Usage alerts** shows the alerts of each role, and an administrator sets the thresholds. The events `UsageAlertRaised` and `UsageAlertResolved` and the email notifier deliver them. The panel does not stop a website at a limit because of an alert
+- Usage history and usage alerts: the agent reports the traffic of each website (from the metrics of the edge proxy) and of each server. The panel keeps buckets of 5 minutes for 8 days and of 1 hour for 400 days, and shows graphs of CPU, memory, disk and traffic for each website, server and database server (**Usage** tab, server page). A plan can have a bandwidth limit for each month. An alert opens at the warning threshold of a limit (80% by default) and becomes critical at the critical threshold (95%). The page **Usage alerts** shows the alerts of each role, and an administrator sets the thresholds. The events `UsageAlertRaised` and `UsageAlertResolved` and the email notifier deliver them. A mailbox gets an alert at 90% of its size limit, and a critical alert at 98% (FR-603). The panel does not stop a website at a limit because of an alert
 
   Where: `agent/internal/caddy/traffic.go`, `api/app/Services/UsageRecorder.php`, `api/app/Http/Controllers/Api/UsageController.php`, `web/src/components/UsageCharts.tsx`, `web/src/pages/AlertsPage.tsx`
 
@@ -81,7 +81,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `api/app/Services/DatabaseServers.php`, `api/app/Http/Controllers/Api/DatabaseServerController.php`, `agent/internal/actions/dbserver.go`, `agent/internal/actions/dbdisk.go`, `web/src/features/DatabaseServersPanel.tsx`, `cli/cmd/cf/dbservers.go`
 
-- Email: an administrator turns on a mail server (Stalwart) for a server. A customer adds mail domains with their DNS records, mailboxes with a size limit, aliases and forwarders. The plan gives the number and the total size of the mailboxes. Each mail server has a webmail (Bulwark). A mailbox can encrypt its stored mail with OpenPGP keys that the panel makes. An administrator makes mail clusters of 3 or 5 servers
+- Email: an administrator turns on a mail server (Stalwart) for a server. A customer adds mail domains with their DNS records, mailboxes with a size limit, aliases and forwarders. The email page shows the mailboxes that are 90% full or more. The plan gives the number and the total size of the mailboxes. Each mail server has a webmail (Bulwark). A mailbox can encrypt its stored mail with OpenPGP keys that the panel makes. An administrator makes mail clusters of 3 or 5 servers
 
   Where: `api/app/Http/Controllers/Api/MailDomainController.php`, `api/app/Services/Mail.php`, `agent/internal/actions/mail.go`, `agent/internal/stalwart`, `images/mail`, `web/src/pages/EmailPage.tsx`, `cli/cmd/cf/mail.go`
 
@@ -89,7 +89,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `api/app/Services/Uptime`, `api/app/Http/Controllers/Api/UptimeController.php`, `web/src/pages/website/UptimeTab.tsx`, `web/src/pages/UptimePage.tsx`, `cli/cmd/cf/uptime.go`
 
-- File manager, logs, cron jobs and deploys from Git for each website, in the API, the agent, the web panel and the CLI. The agent does all of this work as the Unix user of the website, and the root helper has no new operation for it
+- File manager, logs, cron jobs and deploys from Git for each website, in the API, the agent, the web panel and the CLI. The file manager makes and extracts archives (zip, tar, tar.gz and tar.bz2) as jobs, and changes permissions, also for a full directory. The agent does all of this work as the Unix user of the website, and the root helper has no new operation for it
 
   Where: `api/app/Http/Controllers/Api/FileController.php`, `LogController.php`, `CronJobController.php`, `DeployController.php`, `agent/internal/actions/files.go`, `cron.go`, `deploy.go`, `agent/internal/sitefiles`, `web/src/features/FileManager.tsx`, `web/src/pages/website/`, `cli/cmd/cf/sitetools.go`
 
@@ -209,7 +209,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
 - **Areas without an API**: The API of release 0.1 has no SSH shell and no system settings. The web panel has no pages for these areas. The web terminal and **Run a command** give a shell and commands in the container of a website. The CLI has no terminal.
 
-- **File manager**: The file manager reads files up to 2 MiB and writes files up to 5 MiB. It has no archive actions and no change of permissions. Use SFTP for large files.
+- **File manager**: The file manager reads files up to 2 MiB and writes files up to 5 MiB. Use SFTP or an archive for large files. It cannot make a `.tar.bz2` archive or extract a `.7z` or `.rar` archive, or an archive with a password. It cannot change the owner of a file.
 
 - **Logs**: The panel shows the last lines that the container of a website wrote. A website that was made before this release writes its log file after its next start. The panel has no search in old log lines and no access log of the edge proxy.
 

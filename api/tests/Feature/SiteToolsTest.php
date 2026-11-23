@@ -147,6 +147,90 @@ class SiteToolsTest extends TestCase
         $this->getJson("/api/v1/websites/{$website->id}/files")->assertJsonValidationErrors('website');
     }
 
+    public function test_a_change_of_permissions_goes_to_the_agent(): void
+    {
+        $website = $this->site();
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        Http::fake([self::AGENT.'SetFileMode' => Http::sequence()
+            ->push(['file' => ['name' => 'deploy.sh', 'type' => 'file', 'mode' => '0750'], 'changed' => '1'])
+            ->push(['file' => ['name' => 'public', 'type' => 'directory', 'mode' => '0755'], 'changed' => '214'])
+            ->push(['code' => 'invalid_argument', 'message' => 'a link has no permissions of its own; change the permissions of its target'], 400)]);
+
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/deploy.sh', 'mode' => '750'])->assertOk()
+            ->assertJsonPath('file.path', '/deploy.sh')->assertJsonPath('file.mode', '0750')->assertJsonPath('changed', 1);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/SetFileMode') && $r['mode'] === '0750' && $r['recursive'] === false && $r['fileMode'] === '');
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/public', 'mode' => '0755', 'recursive' => true, 'fileMode' => '644'])->assertOk()
+            ->assertJsonPath('changed', 214);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/SetFileMode') && $r['path'] === '/public' && $r['recursive'] === true && $r['fileMode'] === '0644');
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Changed permissions', 'target' => 'acme.example: /public to 0755 (folders), 0644 (files)']);
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/public/link', 'mode' => '0644'])->assertStatus(422)
+            ->assertJsonPath('message', 'A link has no permissions of its own; change the permissions of its target');
+
+        foreach (['4755', '0800', 'rwx', '', '00644'] as $mode) {
+            $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/a', 'mode' => $mode])->assertJsonValidationErrors('mode');
+        }
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/public', 'mode' => '0755', 'recursive' => true])->assertJsonValidationErrors('fileMode');
+        $this->putJson("/api/v1/websites/{$website->id}/files/permissions", ['path' => '/../a', 'mode' => '0644'])->assertJsonValidationErrors('path');
+        Http::assertSentCount(3);
+    }
+
+    public function test_an_archive_and_an_extract_are_jobs_with_a_summary(): void
+    {
+        $website = $this->site();
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        Http::fake([self::AGENT.'*' => Http::response(['jobId' => 'x'])]);
+        $base = "/api/v1/websites/{$website->id}/files";
+
+        $id = $this->postJson("{$base}/archives", ['paths' => ['/public', '/composer.json'], 'path' => '/site.tar.gz'])->assertAccepted()
+            ->assertJsonPath('job.action', 'MakeArchive')->assertJsonPath('job.ref', '/site.tar.gz')->assertJsonPath('job.steps', ['Make the archive'])
+            ->assertJsonPath('job.result', null)->json('job.id');
+        $job = AgentJob::findOrFail($id);
+        $this->assertSame(['websiteId' => $website->id, 'paths' => ['/public', '/composer.json'], 'path' => '/site.tar.gz'], $job->payload);
+        $this->assertSame($website->id, $job->website_id);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Made archive', 'target' => 'acme.example: /site.tar.gz']);
+
+        // The panel keeps the known fields of the summary only.
+        $this->finish($job, JobState::Succeeded, ['files' => 120, 'directories' => 14, 'links' => 1, 'sizeBytes' => 48213, 'skipped' => 1, 'skippedNames' => ['/public/fifo', 7], 'other' => 'x']);
+        $this->getJson("/api/v1/jobs/{$id}")->assertOk()->assertJsonPath('data.result', [
+            'files' => 120, 'directories' => 14, 'links' => 1, 'sizeBytes' => 48213, 'kept' => 0, 'skipped' => 1, 'skippedNames' => ['/public/fifo'],
+        ]);
+
+        // The default destination of an extract is the folder of the archive.
+        $id = $this->postJson("{$base}/extract", ['path' => '/backups/site.zip'])->assertAccepted()->assertJsonPath('job.action', 'ExtractArchive')->json('job.id');
+        $this->assertSame(['websiteId' => $website->id, 'path' => '/backups/site.zip', 'to' => '/backups', 'overwrite' => false], AgentJob::findOrFail($id)->payload);
+        $id = $this->postJson("{$base}/extract", ['path' => '/site.TAR.BZ2', 'to' => '/public', 'overwrite' => true])->assertAccepted()->json('job.id');
+        $this->assertSame(['websiteId' => $website->id, 'path' => '/site.TAR.BZ2', 'to' => '/public', 'overwrite' => true], AgentJob::findOrFail($id)->payload);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Extracted archive', 'target' => 'acme.example: /site.TAR.BZ2 to /public (replace files)']);
+        // A failed job has no summary. Other actions keep no result.
+        $this->finish(AgentJob::findOrFail($id), JobState::Failed, [], 'the archive is not complete');
+        $this->assertNull(AgentJob::findOrFail($id)->result);
+        $cron = $this->postJson("/api/v1/websites/{$website->id}/cron-jobs", ['schedule' => '* * * * *', 'command' => 'true'])->json('job.id');
+        $this->finish(AgentJob::findOrFail($cron), JobState::Succeeded, ['files' => 1]);
+        $this->assertNull(AgentJob::findOrFail($cron)->result);
+
+        foreach ([
+            [['paths' => ['/public'], 'path' => '/site.rar'], 'path'],
+            [['paths' => ['/public'], 'path' => '/site.tar.bz2'], 'path'],
+            [['paths' => [], 'path' => '/site.zip'], 'paths'],
+            [['paths' => ['/../x'], 'path' => '/site.zip'], 'paths.0'],
+            [['paths' => ['/a/css', '/b/css'], 'path' => '/site.zip'], 'paths'],
+            [['paths' => ['/', '/public'], 'path' => '/site.zip'], 'paths'],
+            [['paths' => ['/a', '/a'], 'path' => '/site.zip'], 'paths.0'],
+            [['paths' => array_fill(0, 2001, '/a'), 'path' => '/site.zip'], 'paths'],
+        ] as [$body, $error]) {
+            $this->postJson("{$base}/archives", $body)->assertJsonValidationErrors($error);
+        }
+        $this->postJson("{$base}/extract", ['path' => '/site.rar'])->assertJsonValidationErrors('path');
+        $this->postJson("{$base}/extract", ['path' => '/site.zip', 'to' => '/a/../b'])->assertJsonValidationErrors('to');
+
+        // A suspended customer cannot change files.
+        $website->customer->update(['suspended' => true]);
+        $this->postJson("{$base}/archives", ['paths' => ['/public'], 'path' => '/site.zip'])->assertStatus(409);
+        $this->postJson("{$base}/extract", ['path' => '/site.zip'])->assertStatus(409);
+        $this->putJson("{$base}/permissions", ['path' => '/a', 'mode' => '0644'])->assertStatus(409);
+        $this->assertSame(3, AgentJob::whereIn('action', [AgentAction::MakeArchive, AgentAction::ExtractArchive])->count());
+    }
+
     public function test_logs_give_the_lines_of_one_stream(): void
     {
         $website = $this->site();

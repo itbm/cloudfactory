@@ -119,12 +119,12 @@
             {
                 "event": "usage.alert",
                 "label": "Usage alerts",
-                "description": "A website or the account uses almost all of a limit of its plan.",
+                "description": "A website, a database server or a mailbox uses almost all of its limit.",
                 "subject": "{{account}} uses {{percent}}% of its {{resource}} limit",
-                "body": "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit. Website: {{website}}\n\nWhen it uses all of the limit, changes can fail. Remove data that you do not need, or ask for a larger plan:\n{{panelUrl}}/account",
+                "body": "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit.\nFor: {{subject}}\n\nWhen it uses all of the limit, changes can fail. A full mailbox refuses new mail. Remove data that you do not need, or ask for a larger limit:\n{{panelUrl}}/alerts",
                 "changed": false,
                 "originalSubject": "{{account}} uses {{percent}}% of its {{resource}} limit",
-                "originalBody": "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit. Website: {{website}}\n\nWhen it uses all of the limit, changes can fail. Remove data that you do not need, or ask for a larger plan:\n{{panelUrl}}/account",
+                "originalBody": "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit.\nFor: {{subject}}\n\nWhen it uses all of the limit, changes can fail. A full mailbox refuses new mail. Remove data that you do not need, or ask for a larger limit:\n{{panelUrl}}/alerts",
                 "variables": [
                     "name",
                     "brand",
@@ -132,6 +132,7 @@
                     "account",
                     "resource",
                     "website",
+                    "subject",
                     "used",
                     "limit",
                     "percent",

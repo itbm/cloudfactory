@@ -21,6 +21,7 @@ export const RESOURCE_LABEL: Record<UsageAlert["resource"], string> = {
   disk: "Disk",
   bandwidth: "Bandwidth this month",
   processes: "Processes",
+  storage: "Mailbox storage",
 };
 
 const pct = (v: number) => `${v >= 10 || Number.isInteger(v) ? Math.round(v) : v.toFixed(1)}%`;
@@ -241,6 +242,7 @@ export const ALERT_ADVICE: Record<UsageAlert["resource"], string> = {
   disk: "At the limit, the website cannot write files and uploads fail. Remove old files and backups, or move to a plan with more disk space.",
   bandwidth: "The panel does not stop the website at the limit. Your provider can ask you to move to a larger plan.",
   processes: "At the limit, the website cannot start new processes. Look for processes that do not stop.",
+  storage: "When the mailbox is full, the mail server refuses new mail. Remove old mail, or make the mailbox larger.",
 };
 
 /**

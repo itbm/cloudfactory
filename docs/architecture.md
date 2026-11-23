@@ -631,6 +631,13 @@ The status report of the agent has the state of the mail server and the size of 
 of each mailbox. The plan of a customer gives the number of its mailboxes and the total size
 of these mailboxes.
 
+When a mailbox uses 90% of its size limit, the panel opens a usage alert (FR-603). At 98%, the
+alert becomes critical. When the mailbox uses less than 85%, the panel closes the alert. These
+values are fixed: the thresholds of the usage alerts do not change them. The panel also closes
+the alert of a mailbox that the status report does not have, for example a removed mailbox.
+The users get the usage alert email, and the email page shows the mailboxes that are almost
+full. A full mailbox refuses new mail.
+
 ### Encryption of the stored mail (OpenPGP)
 
 A mailbox can have an OpenPGP public key. The mail server then encrypts each new message with
@@ -928,7 +935,8 @@ lists.
 ### File manager and logs
 
 The panel does not make a job for a file operation or for the logs. The API calls the agent
-and gives the answer in the same request.
+and gives the answer in the same request. The exceptions are the archives: refer to
+[Archives](#archives).
 
 ```text
  web panel or cf ──► API ──► worker ──► runuser -u <user> -- cf-agent site-files <directory>
@@ -940,6 +948,36 @@ and gives the answer in the same request.
 - A path starts with `/`. `/` is the directory of the website, which is `/app` in the
   container.
 - The limits are 2 MiB for a read, 5 MiB for a write and 2000 entries for a list.
+- A change of permissions (`PUT /websites/{id}/files/permissions`) sets the mode of one file
+  or one directory. With `recursive`, it sets one mode on each directory and a second mode on
+  each file in the directory. The agent does not change a symbolic link, and it does not go
+  through a link. A mode has 3 octal digits (the rule `fileMode`). The bits setuid, setgid
+  and sticky are not possible. A directory must keep read and search permission for its
+  owner.
+
+#### Archives
+
+An archive can take a long time, so the panel makes a job for each archive operation:
+
+| Request | Job action | What the agent does |
+| ------- | ---------- | ------------------- |
+| `POST /websites/{id}/files/archives` | `MakeArchive` | Puts up to 2000 selected files and directories, with all that the directories contain, in a new `.zip`, `.tar.gz` or `.tar` archive. |
+| `POST /websites/{id}/files/extract` | `ExtractArchive` | Extracts a `.zip`, `.tar`, `.tar.gz` or `.tar.bz2` archive into a directory of the website. |
+
+- The job runs `cf-agent site-files` as the website user with `nice -n 10`, so that the
+  websites on the server stay fast. The job has the long time limit of the agent.
+- The key of the job is `files:<website ID>`. Two archive jobs of one website do not run at
+  the same time, but an archive job does not stop the other jobs of the website.
+- A new archive is a temporary file (`.cf-archive-*`) until it is complete. Then the agent
+  gives it its name. A stopped job thus leaves no part of an archive. The agent removes the
+  temporary file when it gets `SIGTERM`.
+- An extract keeps the files that exist, unless the request has `overwrite`. It skips the
+  names that are not safe, the devices, the FIFOs and the sockets.
+- The limits of an extract are 1,000,000 entries and 64 GiB for the total size of the files.
+  The disk limit of the website applies too.
+- The job keeps a summary in the `result` field: the number of files, directories and links,
+  the size, the number of files that it kept and skipped, and the names of up to 20 skipped
+  entries. The web panel and `cf files archive` and `cf files extract` show the summary.
 - The unit of a website container has the log driver `k8s-file`. The container writes its
   standard output and its standard error to `website.log` in the home directory of the
   website user. Podman starts a new file at 10 MB. For the logs, the agent reads the last

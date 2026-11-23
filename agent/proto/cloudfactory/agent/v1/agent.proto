@@ -36,6 +36,7 @@ service AgentService {
   // of a website to the panel, as parts of an export. Each part goes to
   // /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
   rpc ExportWebsite(ExportWebsiteRequest) returns (JobAccepted);
+  rpc ExtractArchive(ExtractArchiveRequest) returns (JobAccepted);
   // The import of an account from a different hosting panel, for example cPanel or
   // DirectAdmin (docs/imports.md): FetchImport, ImportFiles, ImportDatabase, ImportMail and
   // DeleteImport. The worker of the agent keeps the backup archive in its own directory and
@@ -48,6 +49,9 @@ service AgentService {
   rpc ImportMail(ImportMailRequest) returns (JobAccepted);
   rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
+  // The archives of the file manager. The agent does each job as the Unix user of the
+  // website, in the directory of the website, as the methods of the file manager below.
+  rpc MakeArchive(MakeArchiveRequest) returns (JobAccepted);
   // Opens a shell in the container of a website for the web terminal of the panel. The agent
   // connects to the terminal relay of the panel, and the relay connects the agent to the
   // browser. The shell runs as the Unix user of the website, in the gVisor sandbox. The job
@@ -124,6 +128,7 @@ service AgentService {
   rpc MakeDirectory(FileRequest) returns (FileEntry);
   rpc MoveFile(MoveFileRequest) returns (FileEntry);
   rpc ReadFile(FileRequest) returns (FileContent);
+  rpc SetFileMode(SetFileModeRequest) returns (FileModeSet);
   rpc WriteFile(WriteFileRequest) returns (FileEntry);
 }
 
@@ -1126,6 +1131,55 @@ message MoveFileRequest {
 }
 
 message FileDeleted {}
+
+// Changes the permission bits of a file or a directory. The agent does not change a link.
+message SetFileModeRequest {
+  string website_id = 1;
+  string path = 2;
+  // The permission bits: 3 octal digits, for example "0644" or "755". The bits setuid,
+  // setgid and sticky are not permitted. The owner of a directory must keep the read and the
+  // search permission.
+  string mode = 3;
+  // True also changes each file and each directory in the directory. mode is then the mode
+  // of the directory and of each directory in it.
+  bool recursive = 4;
+  // With recursive: the mode of each file in the directory.
+  string file_mode = 5;
+}
+
+message FileModeSet {
+  FileEntry file = 1;
+  // The number of files and directories that the agent changed.
+  int64 changed = 2;
+}
+
+// Puts files and directories of a website in a new archive in the files of the website. The
+// job result has the fields of sitefiles.Summary: files, directories, links, sizeBytes,
+// skipped and skippedNames.
+message MakeArchiveRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The files and the directories for the archive. Each one goes in the archive with its
+  // name, at the top level. "/" alone puts all files of the website in the archive.
+  repeated string paths = 3;
+  // The path of the new archive. The end of the name gives the format: ".zip", ".tar.gz",
+  // ".tgz" or ".tar". The agent does not replace a file.
+  string path = 4;
+}
+
+// Extracts an archive of a website into a directory of the website. The job result has the
+// fields of sitefiles.Summary: files, directories, links, sizeBytes, kept, skipped and
+// skippedNames.
+message ExtractArchiveRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The path of the archive: ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2" or ".tbz2".
+  string path = 3;
+  // The directory for the files of the archive. The agent makes it when it does not exist.
+  string to = 4;
+  // True replaces the files and the links that exist. False keeps them.
+  bool overwrite = 5;
+}
 
 message BranchCheck {
   // The website of the Git source. The agent takes the Unix user, the image and the limits

@@ -26,6 +26,15 @@ class Mailbox extends Model
 
     public const MAX_QUOTA = 1024 ** 4;
 
+    /**
+     * FR-603: the panel shows a warning when a mailbox is 90% full. At 98%, the warning is
+     * critical: the mail server soon refuses new mail. The thresholds of the usage alerts of
+     * the plans do not change these values.
+     */
+    public const FULL_WARNING_PERCENT = 90;
+
+    public const FULL_CRITICAL_PERCENT = 98;
+
     /** The largest public key block: 64 KB. A block can have more than one key. */
     public const MAX_PUBLIC_KEY = 64 * 1024;
 
