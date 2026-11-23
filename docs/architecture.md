@@ -937,42 +937,152 @@ and gives the answer in the same request.
 
 ### Deploys from Git
 
-A website can have one Git source: a repository, a branch, a web directory, build commands
-and secrets. The panel makes an Ed25519 deploy key for the source and shows the public key.
+A website can have one Git source: a repository, a branch, a web directory, build commands,
+a migration command and secrets. The panel makes an Ed25519 deploy key for the source and
+shows the public key.
 
 The job `Deploy` has these steps:
 
 1. **Get the code.** The agent clones the branch into `releases/<release ID>` in the
    directory of the website.
 2. **Build.** The agent runs the build commands in that directory.
-3. The steps of a runtime change (refer to
+3. **Migrate the database.** The agent runs the migration command, if the source has one.
+   This step is the last step before the switch. When a build command fails, no migration
+   runs.
+4. The steps of a runtime change (refer to
    [Change of runtime without downtime](#change-of-runtime-without-downtime)): the agent
    starts a second container with the document root `releases/<release ID>/<web directory>`,
    does a health check, changes the route, and stops the old container.
-4. **Remove old releases.** The agent removes the release directories that the panel does
+5. **Remove old releases.** The agent removes the release directories that the panel does
    not keep. The panel keeps the live release and the last 4 releases before it.
 
-- Steps 1 and 2 run in a build container, not in the live container. The build container
+- Steps 1, 2 and 3 run in a build container, not in the live container. The build container
   uses the runtime image of the website and gVisor, has the same limits as a website, and
   runs as the website user. It sees the directory of the website as `/app`.
 - The agent writes the deploy key and the secrets to files that only the website user can
-  read, for the time of the build, and then removes them. The secrets are environment
-  variables of the build commands. The panel adds the key and the secrets to the job when
-  it sends the job, so they are not in the `agent_jobs` table.
+  read, for the time of the build and the migration, and then removes them. The secrets are
+  environment variables of the build commands and of the migration command. The panel adds
+  the key and the secrets to the job when it sends the job, so they are not in the
+  `agent_jobs` table.
 - The link `current` in the directory of the website points to the live release. The
   directory `shared` is for files that all releases use, for example `.env` and uploads.
   A build command can make a link to it.
 - When a step fails, the old container continues, and the agent removes the new release
   directory. The release has the state `failed` and shows the cause.
-- **Go back** makes the job `ActivateRelease`. It does step 3 with a release that the server
+- **Go back** makes the job `ActivateRelease`. It does step 4 with a release that the server
   keeps.
-- A Git host starts a deploy with `POST /api/v1/hooks/deploy/<token>`. The request needs no
-  sign-in: the token in the address is the secret. The panel ignores a push to a different
-  branch.
 - While a website deploys from Git, the panel refuses a change of the document root on the
   Runtime tab. Change the web directory of the Git source.
 - For a Node.js or Python website, the install command is the first build command. It runs in
   the web directory of the release. The default web directory is `.`.
+
+#### The health check after the switch (FR-1008 and FR-1009)
+
+After the switch, the agent watches the website for 5 minutes (`JobDispatcher::HEALTH_CHECK`).
+The website must give the expected status, and at most 5% of the checks can fail. The
+agent counts a status of 500 or more and a connection error as a failure.
+
+- When the check fails and the deploy ran no migration, the agent changes the route back to
+  the previous release. The release has the state `failed`, and its error starts with
+  `the health check failed after the switch`. The web panel shows **Went back**.
+- When the check fails and the deploy ran the migration command, the agent keeps the new
+  release. The previous release possibly does not operate with the changed database. The
+  job completes, and the release records the error in `health_error`. The panel sends the
+  email `deploy.attention` to the users of the customer and of its reseller, one time for
+  each release. The web panel shows an alert on the **Deploys** tab.
+- An owner sees the number of failed checks, not the last error of the check. The last
+  error can have the internal address of the website.
+
+#### What starts a deploy (FR-1004)
+
+The trigger of the Git source is `manual`, `webhook` or `schedule`.
+
+- **manual:** a user selects **Deploy now**, or runs `cf deploys start`.
+- **webhook:** the Git host calls `POST /api/v1/hooks/deploy/<token>` on each push. The
+  panel finds the source by the SHA-256 hash of the token. Then it checks the signature of
+  the request with the webhook secret of the source (`App\Services\Deploys\Webhook`):
+
+  | Git host | Header |
+  | -------- | ------ |
+  | GitHub | `X-Hub-Signature-256: sha256=<HMAC-SHA256 of the body>` |
+  | Gitea, Forgejo, Gogs | `X-Gitea-Signature`, `X-Forgejo-Signature` or `X-Gogs-Signature`: the HMAC-SHA256 of the body in hexadecimal |
+  | Bitbucket | `X-Hub-Signature: sha256=<HMAC-SHA256 of the body>` |
+  | GitLab | `X-Gitlab-Token`: the secret |
+  | Other | `X-Hub-Signature-256` or `X-Signature-256` |
+
+  The panel compares each value in constant time, and refuses a request with no correct
+  signature (status 401). It reads the event of the request. A ping gives `ok`. A push to a
+  different branch, a push of a tag and a removal of the branch give `ignored`. When a
+  deploy is in progress, the panel keeps the commit of the push (`deploy_queued`). When the
+  deploy is complete, the panel deploys the branch again, unless the deploy got that
+  commit (`Deploys::jobFinished`).
+- **schedule:** the command `cloudfactory:check-branches` runs each minute. It finds each
+  source whose check is due (`check_minutes`, the default is 5). For each server, it sends
+  one request `CheckBranches` to the agent, with at most 20 checks. This request does not
+  make a job. The agent runs `git ls-remote` in the build container of each website, at
+  most 4 at a time, and gives the last commit of each branch. When the commit is not the
+  commit of the last release, the panel deploys that commit. The panel deploys each commit
+  one time: when the deploy of a commit fails, the next check does not deploy it again. The
+  panel records the time and the error of the last check in `checked_at` and `check_error`.
+
+### Previews of pull requests
+
+A public website that deploys from Git can have previews. A preview is a website of the plan
+for one pull request to the branch of the Git source. The panel makes the preview when the
+pull request opens. It deploys the preview again for each new commit. It removes the preview
+when the pull request closes or merges.
+
+The settings are on the Git source (table `git_sources`):
+
+- `previews`: on or off.
+- `preview_domain`: the domain of the previews. Each preview gets the name
+  `pr-<number>.<domain>`, for example `pr-42.preview.example.com`.
+- `preview_limit`: the number of previews at the same time, from 1 to 10. The default is 3.
+- `preview_environment`: give the environment variables and the build secrets of the website
+  to the previews. The default is off.
+
+The table `previews` keeps one row for each pull request: the number, the branch, the title,
+the address of the pull request, the preview website, and the last error.
+
+To turn on the previews:
+
+1. Open the Deploys tab of the website.
+2. Select **Turn on previews**.
+3. Type the domain of the previews.
+4. Add a DNS record `*.<domain>` that points to the server of the website.
+5. On the Git host, send the pull request events to the webhook address of the website, with
+   the webhook secret.
+
+How the panel makes a preview:
+
+1. The webhook gets a pull request event with a correct signature. The panel reads the event
+   of GitHub, GitLab, Gitea, Forgejo, Gogs and Bitbucket Cloud.
+2. The panel copies the website to a new website. The copy has the same server, plan, image,
+   runtime and limits. It does not get the files, the databases, the SFTP access or the
+   cron jobs of the website.
+3. The panel gives the preview its own Git source: the same repository, deploy key, web
+   directory and build commands, with the branch of the pull request. The source has its own
+   webhook token and secret, and the trigger `manual`. A preview does not run the migration
+   command, because the code of a pull request is not reviewed.
+4. The job `CreateWebsite` makes the container. When the job succeeds, the panel starts the
+   first deploy.
+5. For each new commit, the panel starts a deploy. If a deploy runs, the panel starts the
+   deploy again after it ends.
+6. When the pull request closes, the panel removes the preview website with its files.
+
+- The domain of the previews must be in a verified domain of the customer, or in a DNS zone
+  of the customer in the panel. Thus the panel verifies the name of each preview at once.
+- The panel ignores a pull request from a fork, and a pull request to a different branch.
+- When the number of previews is at the limit, or the customer is at the website limit of
+  the plan, the panel does not make the preview. It keeps the cause on the row of the pull
+  request. The next commit tries again.
+- A preview takes its deploy settings from the website of the pull request. The panel
+  refuses a change of the Git source and the secrets of a preview.
+- When the previews go off, when the Git source disconnects, or when the website goes, the
+  panel removes all preview websites.
+- A CI pipeline can make a preview with `POST /api/v1/websites/<id>/previews`, or with
+  `cf previews create`. This is for a Git host that the panel does not read.
+- The plugin events `website.created` and `website.removed` also occur for a preview.
 
 ## Databases
 
@@ -1695,7 +1805,9 @@ The agent uses a blue and green method:
    operate.
 
 After the change, the agent watches the website for the time of the health check. If the error
-rate is more than the limit, the agent changes the website back to the old image.
+rate is more than the limit, the agent changes the website back to the old image. A deploy
+that ran a migration command is the exception: refer to
+[The health check after the switch](#the-health-check-after-the-switch-fr-1008-and-fr-1009).
 
 ## Rollouts
 

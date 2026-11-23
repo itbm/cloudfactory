@@ -29,8 +29,11 @@ class Events
      */
     public const NAMED = [
         'Created website' => 'website.created',
+        // A preview of a pull request is a website of the plan too.
+        'Made preview' => 'website.created',
         'Changed website' => 'website.changed',
         'Removed website' => 'website.removed',
+        'Removed preview' => 'website.removed',
         'Added domain' => 'domain.added',
         'Verified domain' => 'domain.verified',
         'Removed domain' => 'domain.removed',
@@ -40,6 +43,7 @@ class Events
         'Restored from backup' => 'restore.started',
         'Started deploy' => 'deploy.started',
         'Started deploy from webhook' => 'deploy.started',
+        'Started deploy from branch check' => 'deploy.started',
         'Created customer' => 'customer.created',
         'Changed customer' => 'customer.changed',
         'Created user' => 'user.created',

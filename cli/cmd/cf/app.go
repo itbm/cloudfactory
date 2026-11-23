@@ -71,17 +71,30 @@ Usage:
   cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
   cf cron delete WEBSITE CRON_ID
   cf deploys show WEBSITE                              The Git repository, the deploy key, the webhook and the releases.
-  cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR] [--trigger manual|webhook]
-                             [--build COMMAND]... [--no-build]
+  cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR]
+                             [--trigger manual|webhook|schedule] [--check-minutes N]
+                             [--build COMMAND]... [--no-build] [--migration COMMAND | --no-migration]
                                                        Also changes the settings. For a private repository, add the deploy key
-                                                       that the command shows to the repository.
+                                                       that the command shows to the repository. The trigger schedule checks
+                                                       the branch each N minutes (default 5). The migration command runs
+                                                       before the switch. After a migration, the panel does not go back
+                                                       when the health check fails: it sends an email.
   cf deploys secret set WEBSITE NAME                   An environment variable of the build commands. The value is read
                                                        from CF_SECRET or stdin.
   cf deploys secret remove WEBSITE NAME
   cf deploys start WEBSITE [--forget-host-key]         Deploy the branch now. The website changes to the new release with no stop.
                                                        --forget-host-key: after the Git server got a new SSH host key.
+  cf deploys webhook WEBSITE                           Make a new webhook address and secret. The old ones stop at once.
   cf deploys activate WEBSITE RELEASE_ID               Go back to a release that is on the server.
   cf deploys disconnect WEBSITE
+  cf previews list WEBSITE                             The settings and the preview websites of the pull requests.
+  cf previews set WEBSITE [--on | --off] [--domain DOMAIN] [--limit N] [--copy-environment | --no-copy-environment]
+                                                       Each preview is a website pr-NUMBER.DOMAIN. Use a sub-domain of a
+                                                       verified domain. The webhook of the website gets the pull request events.
+                                                       --off removes the preview websites.
+  cf previews create WEBSITE --number N --branch BRANCH [--title TITLE] [--url URL]
+                                                       Make the preview of a pull request, or deploy it again. For a CI pipeline.
+  cf previews remove WEBSITE NUMBER                    Remove the preview website of a pull request.
   cf database-servers list [--customer ID] [--server SERVER] [--engine mariadb|postgresql|valkey]
   cf database-servers get DATABASE_SERVER
   cf database-servers create --engine mariadb|postgresql|valkey [--name NAME] [--customer ID] [--plan ID] [--server SERVER]
@@ -542,6 +555,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.cron(ctx, sub, rest)
 	case "deploys", "deploy":
 		return a.deploys(ctx, sub, rest)
+	case "previews", "preview":
+		return a.previews(ctx, sub, rest)
 	case "plugins", "plugin":
 		return a.plugins(ctx, sub, rest)
 	case "packs", "pack":

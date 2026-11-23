@@ -167,7 +167,7 @@ interface ApiWebsite {
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null; bandwidthBytes?: number;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null; source?: CertificateSource; certificateId?: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
-  stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
+  stagingOf: string | null; previewOf?: Website["previewOf"] | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
@@ -291,7 +291,7 @@ export function toWebsite(w: ApiWebsite): Website {
     })),
     sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
     lastChange: { at: w.updatedAt, summary: "" },
-    stagingOf: w.stagingOf ?? undefined, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
+    stagingOf: w.stagingOf ?? undefined, previewOf: w.previewOf ?? undefined, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
   };
 }
 

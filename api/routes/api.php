@@ -40,6 +40,7 @@ use App\Http\Controllers\Api\PasskeyController;
 use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PluginController;
+use App\Http\Controllers\Api\PreviewController;
 use App\Http\Controllers\Api\RolloutController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
@@ -163,10 +164,16 @@ Route::prefix('v1')->group(function () {
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);
             Route::put('websites/{websiteId}/deploy', [DeployController::class, 'update']);
             Route::delete('websites/{websiteId}/deploy', [DeployController::class, 'destroy']);
+            Route::post('websites/{websiteId}/deploy/webhook', [DeployController::class, 'newWebhook']);
             Route::put('websites/{websiteId}/deploy/secrets/{name}', [DeployController::class, 'setSecret']);
             Route::delete('websites/{websiteId}/deploy/secrets/{name}', [DeployController::class, 'removeSecret']);
             Route::post('websites/{websiteId}/deploy/releases', [DeployController::class, 'start'])->middleware('throttle:30,1,post-websites-x-deploy-releases');
             Route::post('websites/{websiteId}/deploy/releases/{releaseId}/activate', [DeployController::class, 'activate'])->middleware('throttle:30,1,post-websites-x-deploy-releases-x-activate');
+            // The preview websites of the pull requests (App\Services\Previews).
+            Route::get('websites/{websiteId}/previews', [PreviewController::class, 'index']);
+            Route::put('websites/{websiteId}/previews', [PreviewController::class, 'update']);
+            Route::post('websites/{websiteId}/previews', [PreviewController::class, 'store'])->middleware('throttle:30,1,post-websites-x-previews');
+            Route::delete('websites/{websiteId}/previews/{number}', [PreviewController::class, 'destroy'])->whereNumber('number');
             Route::get('runtime-images', [ImageController::class, 'runtimes']);
         });
 
