@@ -209,9 +209,9 @@ describe("the deploys of a website", () => {
     let deploy = {} as Deploy;
     api.change<Deploy>(`/websites/${id}/deploy`, (d) => { deploy = structuredClone(d); });
     api.on(`PUT /websites/${id}/deploy`, () => ({ ...deploy, source: { ...deploy.source!, trigger: "schedule", checkMinutes: 15, migrationCommand: null, webhookUrl: null } }));
-    // The card of the previews also has "Change", and it can load first.
-    const repository = within((await screen.findByRole("heading", { name: "Git repository" })).closest("section")!);
-    await repository.findByText("git@github.com:acme-example/api.git");
+    await screen.findByText("git@github.com:acme-example/api.git");
+    // The card of the previews also has a "Change" button, when its settings load first.
+    const repository = within(screen.getByRole("heading", { name: "Git repository" }).closest("section")!);
     fireEvent.click(repository.getByRole("button", { name: "Change" }));
     fireEvent.click(screen.getByRole("radio", { name: /^Schedule/ }));
     fireEvent.change(screen.getByLabelText("Check the branch every"), { target: { value: "15" } });
