@@ -284,14 +284,20 @@ func (a *app) cron(ctx context.Context, sub string, args []string) error {
 
 type deployState struct {
 	Source *struct {
-		Repository    string   `json:"repository"`
-		Branch        string   `json:"branch"`
-		WebDirectory  string   `json:"webDirectory"`
-		Trigger       string   `json:"trigger"`
-		BuildCommands []string `json:"buildCommands"`
-		DeployKey     string   `json:"deployKey"`
-		WebhookURL    string   `json:"webhookUrl"`
-		Secrets       []string `json:"secrets"`
+		Repository       string   `json:"repository"`
+		Branch           string   `json:"branch"`
+		WebDirectory     string   `json:"webDirectory"`
+		Trigger          string   `json:"trigger"`
+		CheckMinutes     int      `json:"checkMinutes"`
+		CheckedAt        string   `json:"checkedAt"`
+		CheckError       string   `json:"checkError"`
+		BuildCommands    []string `json:"buildCommands"`
+		MigrationCommand string   `json:"migrationCommand"`
+		DeployKey        string   `json:"deployKey"`
+		WebhookURL       string   `json:"webhookUrl"`
+		WebhookSecret    string   `json:"webhookSecret"`
+		DeployQueued     bool     `json:"deployQueued"`
+		Secrets          []string `json:"secrets"`
 	} `json:"source"`
 	Releases []map[string]any `json:"releases"`
 }
@@ -306,18 +312,36 @@ func (a *app) printDeploy(d deployState) error {
 	}
 	s := d.Source
 	fmt.Fprintf(a.out, "Repository:     %s\nBranch:         %s\nWeb directory:  %s\nTrigger:        %s\n", s.Repository, s.Branch, s.WebDirectory, s.Trigger)
+	switch s.Trigger {
+	case "schedule":
+		fmt.Fprintf(a.out, "Check:          each %d min, last %s\n", s.CheckMinutes, cell(s.CheckedAt))
+		if s.CheckError != "" {
+			fmt.Fprintf(a.out, "Check error:    %s\n", s.CheckError)
+		}
+	case "webhook":
+		if s.DeployQueued {
+			fmt.Fprintln(a.out, "Queued:         a push came during the deploy. The panel deploys it next.")
+		}
+	}
 	for i, c := range s.BuildCommands {
 		fmt.Fprintf(a.out, "Build %d:        %s\n", i+1, c)
 	}
-	fmt.Fprintf(a.out, "Secrets:        %s\nDeploy key:     %s\nWebhook:        %s\n", cell(strings.Join(s.Secrets, ", ")), s.DeployKey, s.WebhookURL)
+	fmt.Fprintf(a.out, "Migration:      %s\nSecrets:        %s\nDeploy key:     %s\n", cell(s.MigrationCommand), cell(strings.Join(s.Secrets, ", ")), s.DeployKey)
+	if s.Trigger == "webhook" {
+		fmt.Fprintf(a.out, "Webhook:        %s\nWebhook secret: %s\n", cell(s.WebhookURL), cell(s.WebhookSecret))
+	}
 	if len(d.Releases) > 0 {
 		fmt.Fprintln(a.out)
 		for _, r := range d.Releases {
 			if c, ok := r["commit"].(string); ok && len(c) > 7 {
 				r["commit"] = c[:7]
 			}
+			// The health check failed after a migration, and the website kept the release.
+			if h, ok := r["healthError"].(string); ok && h != "" {
+				r["state"] = fmt.Sprint(r["state"]) + ", check failed"
+			}
 		}
-		a.table(d.Releases, []string{"id", "createdAt", "state", "live", "commit", "message"})
+		a.table(d.Releases, []string{"id", "createdAt", "state", "live", "trigger", "migration", "commit", "message"})
 	}
 	return nil
 }
@@ -351,7 +375,10 @@ func (a *app) deploys(ctx context.Context, sub string, args []string) error {
 		repository := fs.String("repository", "", "the address of the Git repository, for example git@github.com:acme/shop.git")
 		branch := fs.String("branch", "", "the branch")
 		webDirectory := fs.String("web-directory", "", `the directory that the web server serves, for example public, or "." for the repository`)
-		trigger := fs.String("trigger", "", "manual or webhook")
+		trigger := fs.String("trigger", "", "manual, webhook or schedule")
+		checkMinutes := fs.Int("check-minutes", 0, "for the trigger schedule: the minutes between two checks of the branch (1 to 1440)")
+		migration := fs.String("migration", "", "a command that changes the database, for example php artisan migrate --force")
+		noMigration := fs.Bool("no-migration", false, "remove the migration command")
 		noBuild := fs.Bool("no-build", false, "remove the build commands")
 		var build multi
 		fs.Var(&build, "build", "a build command; give the option one time for each command")
@@ -379,10 +406,18 @@ func (a *app) deploys(ctx context.Context, sub string, args []string) error {
 		if *trigger != "" {
 			body["trigger"] = *trigger
 		}
+		if *checkMinutes != 0 {
+			body["checkMinutes"] = *checkMinutes
+		}
 		if len(build) > 0 {
 			body["buildCommands"] = []string(build)
 		} else if *noBuild {
 			body["buildCommands"] = []string{}
+		}
+		if *migration != "" {
+			body["migrationCommand"] = *migration
+		} else if *noMigration {
+			body["migrationCommand"] = nil
 		}
 		if err := a.api.Do(ctx, http.MethodPut, base, nil, body, &state); err != nil {
 			return err
@@ -435,6 +470,16 @@ func (a *app) deploys(ctx context.Context, sub string, args []string) error {
 			body = map[string]any{"forgetHostKey": true}
 		}
 		return a.change(ctx, http.MethodPost, base+"/releases", body)
+	case "webhook":
+		// A new address and a new secret. The old ones stop at once.
+		if err := a.api.Do(ctx, http.MethodPost, base+"/webhook", nil, nil, &state); err != nil {
+			return err
+		}
+		if a.json || state.Source == nil {
+			return a.printDeploy(state)
+		}
+		fmt.Fprintf(a.out, "Webhook:        %s\nWebhook secret: %s\nGive the new address and secret to the Git host. The old ones do not operate.\n", cell(state.Source.WebhookURL), cell(state.Source.WebhookSecret))
+		return nil
 	case "activate", "go-back":
 		if err := need(args, 2, "a website and the ID of a release (cf deploys show WEBSITE)"); err != nil {
 			return err

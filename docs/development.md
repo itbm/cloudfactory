@@ -68,6 +68,18 @@ job completes with no server.
 Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
 is `password`. The sample users have no TOTP.
 
+To try passkeys, open the web panel at `http://localhost:5173`, not at `127.0.0.1`. A browser
+makes a passkey only on HTTPS or on `localhost`. The passkeys of the sample data are for the
+domain `panel.cloudfactory.io`, so you cannot sign in with them. Add a new passkey in
+**Settings**. `CF_PASSKEY_LOCAL_ORIGINS` gives the other origins of `localhost` that the API
+accepts in development.
+
+Single sign-on also works on `localhost` in development, with HTTP. The providers of the
+sample data are examples: they do not work. To try single sign-on, add a provider of your own
+in **Settings > Single sign-on**, for example a Keycloak container. In development, the
+addresses of the provider can use HTTP. Register the redirect URI that the panel shows, for
+example `http://localhost:5173/api/v1/auth/sso/oidc/callback`.
+
 The sample data (`api/database/seeders/DemoSeeder.php`) has an example of each state that a
 page can show: a website that the panel could not make, a server with updates, a degraded
 server, a suspended customer, a domain that waits for its DNS record.
@@ -77,6 +89,9 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 - a new website or a new domain with a name that starts with `fail.`;
 - a new database with a name that ends with `_fail`;
 - a deploy from a repository with `fail` in its address (the build step fails);
+- a deploy from a repository with `unhealthy` in its address (the health check after the
+  switch fails, and the website goes back to the previous release). With a migration
+  command, the website keeps the new release, and the owner gets an alert;
 - a cron job with `fail` in its command, when you select **Run now**;
 - a WordPress update of a plugin with `fail` in its name (the health check fails, and the
   agent puts back the restore point);

@@ -4,6 +4,7 @@ namespace App\Demo;
 
 use App\Models\AgentJob;
 use App\Models\Server;
+use App\Models\Website;
 use App\Services\AgentClient;
 
 /**
@@ -18,9 +19,19 @@ class DemoAgentClient extends AgentClient
         RunDemoJob::dispatch($job->id);
     }
 
-    /** The file manager and the logs, with the sample files of the demonstration mode. */
-    public function call(Server $server, string $method, array $payload): array
+    /**
+     * The file manager and the logs, with the sample files of the demonstration mode. A check
+     * of a branch gives the commit of the last release, so that no deploy starts.
+     */
+    public function call(Server $server, string $method, array $payload, int $timeout = 75): array
     {
+        if ($method === 'CheckBranches') {
+            return ['heads' => array_map(fn (array $check) => array_filter([
+                'websiteId' => $check['websiteId'] ?? '',
+                'commit' => Website::find($check['websiteId'] ?? '')?->releases()->whereNotNull('commit')->value('commit'),
+            ]), (array) ($payload['checks'] ?? []))];
+        }
+
         return DemoSite::call($method, $payload);
     }
 

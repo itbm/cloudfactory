@@ -28,6 +28,7 @@ use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use App\Services\Networks;
 use App\Services\Plugins\Hooks;
+use App\Services\Previews;
 use App\Services\WebsiteRemoval;
 use App\Services\WordPress;
 use App\Validation\Input;
@@ -68,7 +69,7 @@ class WebsiteController extends Controller
     {
         $request->validate(['status' => ['nullable', Rule::enum(WebsiteStatus::class)], 'q' => ['nullable', 'string', 'max:200']]);
         $websites = $this->visibleWebsites($request)
-            ->with(['image', 'domains', 'server'])
+            ->with(['image', 'domains', 'server', 'previewOf'])
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
             // whereLike ignores the case of the letters in each database engine.
             ->when($request->query('q'), fn ($q, $s) => $q->whereLike('name', '%'.$s.'%'))
@@ -294,6 +295,8 @@ class WebsiteController extends Controller
     {
         $website = $this->findWebsite($request, $id);
         app(Hooks::class)->check('website.removing', ['id' => $website->id, 'name' => $website->name, 'customerId' => $website->customer_id], $request->user());
+        // The previews of the pull requests go with the website.
+        app(Previews::class)->removeAll($website, $request);
         // A website with a database on a different server gets a job for that server first
         // (WebsiteRemoval).
         $job = app(WebsiteRemoval::class)->start($website);
@@ -510,10 +513,11 @@ class WebsiteController extends Controller
     /**
      * CF-09: the plan limits the number of websites of a customer. The caller runs this in a
      * transaction. The lock on the customer row stops two requests from passing at the same time.
+     * A staging copy and a preview are websites of the plan too.
      *
      * @throws ValidationException
      */
-    private static function checkWebsiteLimit(Customer $customer): void
+    public static function checkWebsiteLimit(Customer $customer): void
     {
         $customer = Customer::with('plan')->lockForUpdate()->findOrFail($customer->id);
         if ($customer->websites()->count() >= $customer->plan->websites) {

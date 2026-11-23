@@ -178,7 +178,7 @@ class WordPressTest extends TestCase
 
         // A failed update after the restore point: the agent put it back.
         $jobId = $this->postJson("/api/v1/websites/{$website->id}/wordpress/updates", ['core' => 'latest'])->assertAccepted()->json('job.id');
-        $this->finish(AgentJob::findOrFail($jobId), JobState::Failed, [], 'Health check: 12 of 30 health checks failed: status 500; the agent put back the restore point', step: 5);
+        $this->finish(AgentJob::findOrFail($jobId), JobState::Failed, [], 'Health check: the health check failed after the update: 12 of 30 checks failed, last error: status 500; the agent put back the restore point', step: 5);
         $site->refresh();
         $this->assertSame(['rolledBack', '6.8.3'], [$site->last_update['state'], $site->restore_point['version']]);
         $this->assertStringContainsString('put back the restore point', $site->error);

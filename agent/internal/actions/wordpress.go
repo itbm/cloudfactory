@@ -637,7 +637,11 @@ func (d *Deps) wpHealthCheck(ctx context.Context, site *Site, hc *agentv1.Health
 	if hc == nil {
 		hc = wpHealth
 	}
-	return d.watch(ctx, site.Port, primaryDomain(site.Website), hc)
+	// An update has no switch: the error names the update, not the switch of a deploy.
+	if err := d.watch(ctx, site.Port, primaryDomain(site.Website), hc); err != nil {
+		return fmt.Errorf("the health check failed after the update: %s", strings.TrimPrefix(err.Error(), healthFailed+": "))
+	}
+	return nil
 }
 
 // UpdateWordPress saves a restore point, updates WordPress, plugins and themes, and checks the

@@ -256,7 +256,7 @@ func TestUpdateWordPressPutsBackTheRestorePointWhenTheSiteFails(t *testing.T) {
 	req := updateRequest()
 	req.HealthCheck = &agentv1.HealthCheck{Seconds: 1}
 	err := run(t)(d.UpdateWordPress(req))
-	if err == nil || !strings.Contains(err.Error(), "health checks failed") || !strings.Contains(err.Error(), "put back the restore point") {
+	if err == nil || !strings.Contains(err.Error(), "the health check failed after the update: 1 of 1 checks failed, last error: status 500") || !strings.Contains(err.Error(), "put back the restore point") {
 		t.Fatalf("err = %v", err)
 	}
 }

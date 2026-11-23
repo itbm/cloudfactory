@@ -219,9 +219,7 @@ class RolloutEngine
             $payload['website']['imageDigest'] = $image->available_digest;
             $payload['previousImageId'] = $image->id;
             $payload['previousTag'] = $website->currentTag();
-            // Batch 1, finding 6: status 0 accepts each answer below 500, for example a redirect
-            // to a login page. The agent makes about 30 checks in 5 minutes.
-            $payload['healthCheck'] = ['status' => 0, 'maxErrorRate' => 0.05, 'seconds' => 300];
+            $payload['healthCheck'] = JobDispatcher::HEALTH_CHECK;
             $website->update(['image_tag' => $rollout->to_tag]);
             $this->dispatcher->dispatch($website->server, AgentAction::SetRuntime, $payload, "Update {$image->name} to {$rollout->to_tag}", $website, $rollout->to_tag, $rollout->id);
         }

@@ -119,9 +119,10 @@ describe("the deploys of a website", () => {
     await open("api.acme.example.com", "deploys");
     expect(await screen.findByText("git@github.com:acme-example/api.git")).toBeTruthy();
     expect(screen.getByLabelText("Deploy key").textContent).toMatch(/^ssh-ed25519 /);
-    expect(screen.getByText("Live")).toBeTruthy();
-    expect(screen.getByText("Failed")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /^Go back/ }).length).toBeGreaterThan(0);
+    const releases = within(screen.getByRole("heading", { name: "Releases" }).closest("section")!);
+    expect(releases.getByText("Live")).toBeTruthy();
+    expect(releases.getByText("Failed")).toBeTruthy();
+    expect(releases.getAllByRole("button", { name: /^Go back/ }).length).toBeGreaterThan(0);
   });
 
   it("starts a deploy", async () => {
@@ -134,10 +135,64 @@ describe("the deploys of a website", () => {
     await waitFor(() => expect(api.changes.at(-1)?.path).toBe(`/websites/${id}/deploy/releases`));
   });
 
+  it("shows the migration command, and a release that went back after the health check", async () => {
+    await open("api.acme.example.com", "deploys");
+    expect(await screen.findByText("php artisan migrate --force")).toBeTruthy();
+    expect(screen.getByText("Went back")).toBeTruthy();
+    expect(screen.getByText("the health check failed after the switch: 9 of 30 checks failed.")).toBeTruthy();
+    expect(screen.getByLabelText("Webhook secret").textContent).not.toBe("");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows an alert when the live release failed its health check after a migration", async () => {
+    const api = await signedIn("owner");
+    const id = website("api.acme.example.com").id;
+    const healthError = "the health check failed after the switch: 9 of 30 checks failed.";
+    api.change<Deploy>(`/websites/${id}/deploy`, (d) => { d.releases.find((r) => r.live)!.healthError = healthError; });
+    render(<MemoryRouter initialEntries={[`/websites/${id}/deploys`]}><App /></MemoryRouter>);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("The live release failed its health check after a migration.");
+    expect(within(alert).getByText(healthError)).toBeTruthy();
+    expect(screen.getByText("Check failed")).toBeTruthy();
+  });
+
+  it("changes the trigger to a schedule with a migration command", async () => {
+    const { api, id } = await open("api.acme.example.com", "deploys");
+    let deploy = {} as Deploy;
+    api.change<Deploy>(`/websites/${id}/deploy`, (d) => { deploy = structuredClone(d); });
+    api.on(`PUT /websites/${id}/deploy`, () => ({ ...deploy, source: { ...deploy.source!, trigger: "schedule", checkMinutes: 15, migrationCommand: null, webhookUrl: null } }));
+    // The card of the previews also has "Change", and it can load first.
+    const repository = within((await screen.findByRole("heading", { name: "Git repository" })).closest("section")!);
+    await repository.findByText("git@github.com:acme-example/api.git");
+    fireEvent.click(repository.getByRole("button", { name: "Change" }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Schedule/ }));
+    fireEvent.change(screen.getByLabelText("Check the branch every"), { target: { value: "15" } });
+    fireEvent.change(screen.getByLabelText("Migration command"), { target: { value: "  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/The panel checks the branch every 15 minutes/)).toBeTruthy();
+    expect(api.changes.at(-1)?.body).toMatchObject({ trigger: "schedule", checkMinutes: 15, migrationCommand: null });
+    expect(screen.queryByLabelText("Webhook secret")).toBeNull();
+  });
+
+  it("makes a new webhook address and secret", async () => {
+    const { api, id } = await open("api.acme.example.com", "deploys");
+    let deploy = {} as Deploy;
+    api.change<Deploy>(`/websites/${id}/deploy`, (d) => { deploy = structuredClone(d); });
+    api.on(`POST /websites/${id}/deploy/webhook`, () => ({ ...deploy, source: { ...deploy.source!, webhookUrl: "https://panel/api/v1/hooks/deploy/new", webhookSecret: "new-secret" } }));
+    await screen.findByText("git@github.com:acme-example/api.git");
+    fireEvent.click(screen.getByRole("button", { name: "New address and secret" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Make new address" }));
+    await waitFor(() => expect(screen.getByLabelText("Webhook secret").textContent).toBe("new-secret"));
+    expect(api.changes.at(-1)?.path).toBe(`/websites/${id}/deploy/webhook`);
+  });
+
   it("connects a repository to a website that has none", async () => {
     const { api, id } = await open("shop.acme.example.com", "deploys");
     const answer: Deploy = {
-      source: { repository: "https://example.com/shop.git", branch: "main", webDirectory: ".", trigger: "manual", buildCommands: ["composer install"], deployKey: "ssh-ed25519 AAAA key", webhookUrl: "https://panel/hook", secrets: [] },
+      source: {
+        repository: "https://example.com/shop.git", branch: "main", webDirectory: ".", trigger: "manual", checkMinutes: 5, checkedAt: null, checkError: null,
+        buildCommands: ["composer install"], migrationCommand: null, deployKey: "ssh-ed25519 AAAA key", webhookUrl: "https://panel/hook", webhookSecret: "s3cret", deployQueued: false, secrets: [],
+      },
       releases: [],
     };
     api.on(`PUT /websites/${id}/deploy`, () => answer);
@@ -146,6 +201,85 @@ describe("the deploys of a website", () => {
     fireEvent.change(screen.getByLabelText("Build commands"), { target: { value: "composer install\n\n" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect repository" }));
     expect(await screen.findByLabelText("Deploy key")).toBeTruthy();
-    expect(api.changes.at(-1)?.body).toEqual({ repository: "https://example.com/shop.git", branch: "main", webDirectory: ".", trigger: "manual", buildCommands: ["composer install"] });
+    expect(api.changes.at(-1)?.body).toEqual({ repository: "https://example.com/shop.git", branch: "main", webDirectory: ".", trigger: "manual", checkMinutes: 5, buildCommands: ["composer install"], migrationCommand: null });
+  });
+});
+
+describe("the previews of pull requests", () => {
+  /** The card of the previews on the Deploys tab of the website. */
+  const card = async () => within((await screen.findByRole("heading", { name: "Previews of pull requests" })).closest("section")!);
+
+  it("shows the settings, the webhook address and the previews", async () => {
+    await open("api.acme.example.com", "deploys");
+    const previews = await card();
+    expect(await previews.findByRole("link", { name: "pr-42.preview.acme.example.com" })).toBeTruthy();
+    expect(previews.getByText("pr-NUMBER.preview.acme.example.com")).toBeTruthy();
+    expect(previews.getByText("1 preview at the same time")).toBeTruthy();
+    // The website deploys with the webhook, so the card points to the webhook of the repository.
+    expect(previews.getByText("Access to the repository")).toBeTruthy();
+    expect(previews.getByRole("link", { name: /Add the export of invoices as CSV/ }).getAttribute("href")).toBe("https://github.com/acme-example/api/pull/42");
+    expect(previews.getByRole("link", { name: /Visit preview/ }).getAttribute("href")).toBe("https://pr-42.preview.acme.example.com");
+    // The panel could not make the preview of #47: the limit is 1.
+    expect(previews.getByText(/The limit of the previews of this website is 1/)).toBeTruthy();
+    expect(previews.getByText("No website")).toBeTruthy();
+  });
+
+  it("shows the webhook address and secret when the website deploys by hand", async () => {
+    const api = await signedIn("owner");
+    const id = website("api.acme.example.com").id;
+    api.change<Deploy>(`/websites/${id}/deploy`, (d) => { d.source!.trigger = "manual"; });
+    render(<MemoryRouter initialEntries={[`/websites/${id}/deploys`]}><App /></MemoryRouter>);
+    const previews = await card();
+    expect((await previews.findByLabelText("Webhook address")).textContent).toMatch(/\/hooks\/deploy\//);
+    expect(previews.getByLabelText("Webhook secret").textContent).not.toBe("");
+  });
+
+  it("changes the limit of the previews", async () => {
+    const { api, id } = await open("api.acme.example.com", "deploys");
+    const previews = await card();
+    await previews.findByText("1 preview at the same time");
+    api.on(`PUT /websites/${id}/previews`, (body) => {
+      const b = body as { limit: number };
+      return { settings: { enabled: true, domain: "preview.acme.example.com", limit: b.limit, copyEnvironment: false }, suggestedDomain: "preview.api.acme.example.com", maxLimit: 10, previews: [] };
+    });
+    fireEvent.click(previews.getByRole("button", { name: "Change" }));
+    fireEvent.change(previews.getByLabelText("Previews at the same time"), { target: { value: "3" } });
+    fireEvent.click(previews.getByRole("button", { name: "Save" }));
+    expect(await previews.findByText("3 previews at the same time")).toBeTruthy();
+    expect(api.changes.at(-1)?.body).toEqual({ enabled: true, domain: "preview.acme.example.com", limit: 3, copyEnvironment: false });
+  });
+
+  it("makes a preview by hand and shows the error of the API", async () => {
+    const { api, id } = await open("api.acme.example.com", "deploys");
+    const previews = await card();
+    fireEvent.click(await previews.findByRole("button", { name: "Make a preview by hand" }));
+    api.on(`POST /websites/${id}/previews`, () => [422, { message: "The limit of the previews of this website is 1.", errors: { number: ["The limit of the previews of this website is 1."] } }]);
+    fireEvent.change(previews.getByLabelText("Pull request"), { target: { value: "#51" } });
+    fireEvent.change(previews.getByLabelText("Branch"), { target: { value: " feature/menu " } });
+    fireEvent.click(previews.getByRole("button", { name: "Make preview" }));
+    expect(await previews.findByText("The limit of the previews of this website is 1.")).toBeTruthy();
+    expect(api.changes.at(-1)).toEqual({ method: "POST", path: `/websites/${id}/previews`, body: { number: 51, branch: "feature/menu" } });
+  });
+
+  it("removes a preview after a confirmation", async () => {
+    const { api, id } = await open("api.acme.example.com", "deploys");
+    const previews = await card();
+    fireEvent.click(await previews.findByRole("button", { name: /^Remove\s*the preview of #42$/ }));
+    api.on(`DELETE /websites/${id}/previews/42`, () => [202, { job: null }]);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(api.changes.at(-1)).toEqual({ method: "DELETE", path: `/websites/${id}/previews/42`, body: undefined }));
+  });
+
+  it("shows on a preview website where its deploy settings come from", async () => {
+    await open("pr-42.preview.acme.example.com", "deploys");
+    expect(await screen.findByText(/This website is the preview of pull request #42/)).toBeTruthy();
+    expect(screen.getByText("Preview", { selector: ".tag" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "api.acme.example.com" }).getAttribute("href")).toMatch(/\/deploys$/);
+    expect(await screen.findByText("feature/invoice-csv", { selector: "td code" })).toBeTruthy();
+    // The preview takes the settings and the secrets from the website of the pull request.
+    expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Build secrets" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Previews of pull requests" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Deploy now" })).toBeTruthy();
   });
 });
