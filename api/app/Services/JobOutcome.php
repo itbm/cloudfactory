@@ -19,6 +19,7 @@ use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Certificates\Certificates;
+use App\Services\Deploys\Deploys;
 use App\Services\Dns\Zones;
 use App\Services\Imports\Runner;
 use App\Services\Notifications\Notifier;
@@ -26,6 +27,7 @@ use App\Services\Packs\Packs;
 use App\Services\Plugins\Events;
 use App\Services\Plugins\Hosting;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -111,6 +113,8 @@ class JobOutcome
             DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
             // The container of a plugin that the panel runs.
             Hosting::jobFinished($job, $state === JobState::Succeeded);
+            // A preview of a pull request: the first deploy after the website, or a deploy again.
+            Previews::jobFinished($job, $state === JobState::Succeeded);
             if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
                 Zones::jobFinished($job, $state === JobState::Succeeded);
             }
@@ -142,6 +146,18 @@ class JobOutcome
         // The users who want it get an email about the failure.
         if ($state === JobState::Failed) {
             app(Notifier::class)->jobFailed($job, $website);
+        }
+        // FR-1009: the website kept a release that failed its health check after a migration.
+        if ($state === JobState::Succeeded && $job->action === AgentAction::Deploy && $website
+            && ($release = Release::whereKey($job->payload['releaseId'] ?? '')->whereNotNull('health_error')->first())) {
+            app(Notifier::class)->deployNeedsAttention($website, $release);
+        }
+        // A push came during the deploy: the panel deploys it now. An error does not change the
+        // result of the job.
+        try {
+            Deploys::jobFinished($job, app(JobDispatcher::class));
+        } catch (\Throwable $e) {
+            Log::warning("The panel could not start the queued deploy after job {$job->id}: {$e->getMessage()}");
         }
 
         Events::emit(Events::JOB_FINISHED, [
@@ -289,9 +305,11 @@ class JobOutcome
             AgentAction::Reboot => $job->server->update(['state' => 'degraded']),
             // The command failed, or it did not start. The error has the end of its output.
             AgentAction::RunCronJob => self::cronRan($job, preg_match('/exit code (-?\d+)/', (string) $job->error, $m) ? (int) $m[1] : -1, (string) preg_replace('/^the command ended with exit code -?\d+: /', '', (string) $job->error)),
-            // The website continues from the release that it had.
+            // The website continues from the release that it had (FR-1008). The release records
+            // a migration command that ran: the database can have changes.
             AgentAction::Deploy => Release::whereKey($p['releaseId'] ?? '')->where('website_id', $job->website_id)->where('state', Release::BUILDING)
-                ->update(['state' => Release::FAILED, 'error' => $job->error, 'duration_seconds' => self::seconds($job)]),
+                ->update(['state' => Release::FAILED, 'error' => $job->error, 'duration_seconds' => self::seconds($job),
+                    'migration' => ($p['migrationCommand'] ?? '') !== '' && $job->step >= array_search('Migrate the database', AgentAction::Deploy->steps(), true)]),
             AgentAction::SetDatabaseServer => $this->databaseServerKept($job, $p),
             // The database server is on the server still.
             AgentAction::DeleteDatabaseServer => $this->databaseServerStays($job, $p),
@@ -448,11 +466,18 @@ class JobOutcome
     private static function deployed(AgentJob $job, Website $website, array $result): bool
     {
         $id = (string) ($job->payload['releaseId'] ?? '');
-        Release::whereKey($id)->where('website_id', $website->id)->update([
+        $health = is_string($result['healthError'] ?? null) && $result['healthError'] !== '' ? Str::limit($result['healthError'], 2000) : null;
+        $release = Release::whereKey($id)->where('website_id', $website->id)->first();
+        $release?->update([
             'state' => Release::READY,
-            'commit' => is_string($result['commit'] ?? null) ? substr($result['commit'], 0, 64) : null,
+            // A release from a webhook or a check has the commit of the push. The agent gives the
+            // commit that it got.
+            'commit' => is_string($result['commit'] ?? null) && $result['commit'] !== '' ? substr($result['commit'], 0, 64) : $release->commit,
             'message' => is_string($result['message'] ?? null) ? Str::limit($result['message'], 200) : '',
             'duration_seconds' => self::seconds($job),
+            'migration' => (bool) ($result['migrated'] ?? false),
+            // FR-1009: the health check failed after the migration. The website kept the release.
+            'health_error' => $health,
         ]);
         $removed = array_filter((array) ($result['removed'] ?? []), 'is_string');
         if ($removed) {

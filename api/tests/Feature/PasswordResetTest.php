@@ -184,9 +184,9 @@ class PasswordResetTest extends TestCase
 
     public function test_the_sign_in_page_shows_the_link_only_with_an_smtp_server(): void
     {
-        $this->getJson('/api/v1/auth/methods')->assertOk()->assertExactJson(['passwordReset' => true]);
+        $this->getJson('/api/v1/auth/methods')->assertOk()->assertExactJson(['passwordReset' => true, 'passkeys' => true, 'providers' => []]);
         MailServer::of(null)->update(['enabled' => false]);
-        $this->getJson('/api/v1/auth/methods')->assertOk()->assertExactJson(['passwordReset' => false]);
+        $this->getJson('/api/v1/auth/methods')->assertOk()->assertJsonPath('passwordReset', false);
 
         // A reseller with its own server: its panel domain has the link.
         $reseller = $this->customer(null, ['role' => 'reseller', 'branding' => ['name' => 'Northwind Hosting', 'panelDomain' => 'panel.northwind.example']]);

@@ -93,6 +93,11 @@ service AgentService {
   rpc MoveFile(MoveFileRequest) returns (FileEntry);
   rpc DeleteFile(FileRequest) returns (FileDeleted);
   rpc GetLogs(GetLogsRequest) returns (Logs);
+
+  // Gives the last commit of the branch of each Git source, for the deploys on a schedule
+  // (FR-1004). This method does not make a job. The agent runs `git ls-remote` in a build
+  // container of each website, as for the step "Get the code" of a deploy.
+  rpc CheckBranches(CheckBranchesRequest) returns (BranchHeads);
 }
 
 message JobAccepted {
@@ -892,6 +897,13 @@ message DeployRequest {
   // refuses a host with a different key. True removes the stored keys before this deploy,
   // for a Git host that changed its key.
   bool forget_host_key = 11;
+  // A command that changes the database, for example "php artisan migrate --force", or
+  // empty. It runs after the build commands, in the build container, before the switch.
+  // With a migration command, a failed health check after the switch does not stop the job:
+  // the website keeps the new release, because the previous release possibly does not
+  // operate with the changed database (FR-1009). The result then has the error of the
+  // health check in "healthError".
+  string migration_command = 12;
 }
 
 // ActivateRelease starts the website from a release that is on the server.
@@ -961,6 +973,34 @@ message MoveFileRequest {
 }
 
 message FileDeleted {}
+
+message BranchCheck {
+  // The website of the Git source. The agent takes the Unix user, the image and the limits
+  // of the website from its state, so that the check uses the image that the website runs.
+  string website_id = 1;
+  string repository = 2;
+  string branch = 3;
+  // The private SSH key for the repository, or empty. The agent does not keep it.
+  string deploy_key = 4;
+}
+
+message CheckBranchesRequest {
+  // At most 20 checks. The agent does at most 4 checks at the same time.
+  repeated BranchCheck checks = 1;
+}
+
+message BranchHead {
+  string website_id = 1;
+  // The ID of the last commit of the branch, or empty when the check failed.
+  string commit = 2;
+  // The cause of a failed check, for example "the branch is not in the repository".
+  string error = 3;
+}
+
+message BranchHeads {
+  // One head for each check, in the order of the checks.
+  repeated BranchHead heads = 1;
+}
 
 message GetLogsRequest {
   string website_id = 1;
