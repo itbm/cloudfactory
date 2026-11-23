@@ -44,6 +44,7 @@ use App\Models\Rollout;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Snapshot;
+use App\Models\TerminalSession;
 use App\Models\UsageAlert;
 use App\Models\User;
 use App\Models\Website;
@@ -1227,8 +1228,9 @@ class DemoSeeder extends Seeder
     }
 
     /**
-     * The command log (FR-802): commands that users ran with "Run a command". The owner sees the
-     * commands of the administrator as "Administrator", with no address.
+     * The command log (FR-802): commands that users ran with "Run a command" and in the web
+     * terminal. The owner sees the commands of the administrator as "Administrator", with no
+     * address.
      */
     private function commandLog(): void
     {
@@ -1253,6 +1255,43 @@ class DemoSeeder extends Seeder
                 'started_at' => now()->subMinutes($minutes), 'finished_at' => now()->subMinutes($minutes)->addSeconds($seconds),
             ]);
             $entry->created_at = $entry->updated_at = now()->subMinutes($minutes);
+            $entry->save();
+        }
+
+        // A session of the web terminal: its commands are in the log, and it has a recording.
+        $website = $this->websites['api.acme.example.com'];
+        $start = now()->subMinutes(60);
+        $session = new TerminalSession([
+            'website_id' => $website->id, 'customer_id' => $website->customer_id, 'user_id' => $owner->id, 'actor' => $owner->name,
+            'ip' => '203.0.113.'.(10 + $owner->id), 'state' => TerminalSession::ENDED, 'cols' => 100, 'rows' => 30,
+            'end_reason' => 'The shell ended.', 'exit_code' => 0, 'started_at' => $start, 'ended_at' => $start->copy()->addSeconds(48),
+        ]);
+        $session->created_at = $session->updated_at = $start;
+        // seconds after the start, command, output
+        $steps = [
+            [6, 'cd storage/logs', ''],
+            [11, 'ls -lh', "total 1.4G\r\n-rw-r--r-- 1 app app 1.4G Nov 22 09:12 laravel.log\r\n"],
+            [24, 'tail -n 2 laravel.log', "[2026-11-22 09:11:58] production.INFO: Order 10482 paid.\r\n[2026-11-22 09:12:03] production.ERROR: The export directory is not writable.\r\n"],
+            [45, 'exit', "logout\r\n"],
+        ];
+        $events = [[0.4, 'app@api:/app$ ']];
+        foreach ($steps as [$second, $command, $output]) {
+            // The shell shows the keys, and then the output and the next prompt.
+            $events[] = [$second - 2.5, $command];
+            $events[] = [$second, "\r\n".$output.($command === 'exit' ? '' : 'app@api:/app/storage/logs$ ')];
+        }
+        $session->recording = json_encode(['version' => 2, 'width' => 100, 'height' => 30, 'timestamp' => $start->getTimestamp(), 'env' => ['TERM' => 'xterm-256color']])."\n"
+            .implode('', array_map(fn ($e) => json_encode([$e[0], 'o', $e[1]], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n", $events));
+        $session->command_count = count($steps);
+        $session->save();
+        foreach ($steps as [$second, $command]) {
+            $at = $start->copy()->addSeconds($second);
+            $entry = new WebsiteCommand([
+                'website_id' => $website->id, 'customer_id' => $website->customer_id, 'user_id' => $owner->id, 'actor' => $owner->name,
+                'ip' => $session->ip, 'source' => WebsiteCommand::SOURCE_TERMINAL, 'terminal_session_id' => $session->id,
+                'command' => $command, 'state' => WebsiteCommand::DONE, 'started_at' => $at, 'finished_at' => $at,
+            ]);
+            $entry->created_at = $entry->updated_at = $at;
             $entry->save();
         }
     }

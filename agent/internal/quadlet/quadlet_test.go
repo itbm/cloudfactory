@@ -102,9 +102,21 @@ func TestEdgeUnitHasNoSitesAndNoAdminPort(t *testing.T) {
 
 func TestPanelUnits(t *testing.T) {
 	units := PanelUnits(Panel{Registry: "ghcr.io/cloudfactory", Version: "0.1.0", Domain: "panel.example.com", DataDir: "/var/lib/cloudfactory/panel", Gvisor: Runtime{"/usr/local/bin/runsc", "systrap"},
-		APIPort: PanelAPIPort, WebPort: PanelWebPort, AgentPort: PanelAgentPort, DatabasePort: PanelDatabasePort})
-	if len(units) != 5 {
+		APIPort: PanelAPIPort, WebPort: PanelWebPort, AgentPort: PanelAgentPort, DatabasePort: PanelDatabasePort, TerminalPort: PanelTerminalPort})
+	if len(units) != 6 {
 		t.Fatalf("units = %d", len(units))
+	}
+	// The terminal relay is in the image of the API. It has the key of the API for the tickets,
+	// and no database.
+	relay := units["cf-panel-terminal.container"]
+	for _, want := range []string{"Image=ghcr.io/cloudfactory/panel-api:0.1.0\n", "Exec=cf-terminal-relay --listen :8090\n", "PublishPort=169.254.77.1:19082:8090\n",
+		"EnvironmentFile=/var/lib/cloudfactory/panel/panel.env\n", "ReadOnly=true\n", "DropCapability=all\n"} {
+		if !strings.Contains(relay, want) {
+			t.Errorf("the relay unit does not contain %q:\n%s", want, relay)
+		}
+	}
+	if strings.Contains(relay, "DB_") || strings.Contains(relay, "db.env") {
+		t.Errorf("the relay has the database settings:\n%s", relay)
 	}
 	if !strings.Contains(units["cf-panel-queue.container"], "Exec=php artisan queue:work") || !strings.Contains(units["cf-panel-api.container"], "--runtime=/usr/local/bin/runsc") ||
 		!strings.Contains(units["cf-panel-scheduler.container"], "Exec=php artisan schedule:work") ||

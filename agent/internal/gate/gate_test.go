@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -242,5 +243,106 @@ func TestOnlyTheWorkerUserCanConnect(t *testing.T) {
 	c, _ := startFor(t, nil)
 	if _, err := c.Run(context.Background(), "echo", "x"); err == nil {
 		t.Fatal("a user that is not in the list could connect")
+	}
+}
+
+// lockedBuffer is a buffer for the output of a terminal and the test at the same time.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func eventually(t *testing.T, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); !cond(); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the condition did not become true")
+		}
+	}
+}
+
+func TestATerminalOfTheHelperSendsKeysSizesAndTheExitCode(t *testing.T) {
+	if _, err := os.Stat("/dev/ptmx"); err != nil {
+		t.Skip("no pseudo-terminals on this computer")
+	}
+	c, s := start(t)
+	for name, g := range map[string]Gate{"socket": c, "local": s.Local()} {
+		t.Run(name, func(t *testing.T) {
+			out := &lockedBuffer{}
+			term, err := g.Terminal(context.Background(), execx.TerminalSize{Cols: 90, Rows: 20}, out,
+				"sh", "-c", `stty size; read a; stty size; echo "got $a"; exit 7`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			eventually(t, func() bool { return strings.Contains(out.String(), "20 90") })
+			if err := term.Resize(execx.TerminalSize{Cols: 132, Rows: 43}); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(200 * time.Millisecond)
+			if _, err := term.Write([]byte("keys\r")); err != nil {
+				t.Fatal(err)
+			}
+			code, err := term.Wait()
+			if err != nil || code != 7 {
+				t.Fatalf("code %d, err %v", code, err)
+			}
+			for _, want := range []string{"43 132", "got keys"} {
+				if !strings.Contains(out.String(), want) {
+					t.Fatalf("the output %q does not have %q", out.String(), want)
+				}
+			}
+		})
+	}
+}
+
+func TestTheHelperRefusesATerminalThatIsNotInItsPolicy(t *testing.T) {
+	c, s := start(t)
+	for _, g := range []Gate{c, s.Local()} {
+		term, err := g.Terminal(context.Background(), execx.TerminalSize{Cols: 80, Rows: 24}, io.Discard, "bash")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := term.Wait(); err == nil || !strings.Contains(err.Error(), "not in the list") {
+			t.Fatalf("got %v", err)
+		}
+		term, _ = g.Terminal(context.Background(), execx.TerminalSize{Cols: 2, Rows: 24}, io.Discard, "sh")
+		if _, err := term.Wait(); err == nil || !strings.Contains(err.Error(), "size") {
+			t.Fatalf("got %v", err)
+		}
+	}
+}
+
+func TestClosingATerminalStopsTheCommand(t *testing.T) {
+	if _, err := os.Stat("/dev/ptmx"); err != nil {
+		t.Skip("no pseudo-terminals on this computer")
+	}
+	c, s := start(t)
+	for _, g := range []Gate{c, s.Local()} {
+		out := &lockedBuffer{}
+		term, err := g.Terminal(context.Background(), execx.TerminalSize{Cols: 80, Rows: 24}, out, "sh", "-c", "echo ready; sleep 60")
+		if err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, func() bool { return strings.Contains(out.String(), "ready") })
+		term.Close()
+		done := make(chan struct{})
+		go func() { term.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the command did not stop")
+		}
 	}
 }

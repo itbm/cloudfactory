@@ -9473,6 +9473,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd0000000001/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd0000000001/deploy": {
         "status": 200,
         "body": {
@@ -10350,6 +10361,7 @@
                     "id": "01m7cqzs805jjpn10000000005",
                     "websiteId": "01m7cqzs80jjfnwd0000000003",
                     "source": "run",
+                    "sessionId": null,
                     "command": "php artisan orders:export --since=yesterday",
                     "state": "done",
                     "exitCode": 1,
@@ -10366,6 +10378,7 @@
                     "id": "01m7cqzs805jjpn10000000004",
                     "websiteId": "01m7cqzs80jjfnwd0000000003",
                     "source": "run",
+                    "sessionId": null,
                     "command": "php artisan queue:restart",
                     "state": "done",
                     "exitCode": 0,
@@ -10379,9 +10392,78 @@
                     "finishedAt": "2026-11-14T09:18:01+00:00"
                 },
                 {
+                    "id": "01m7cqzs805jjpn1000000000b",
+                    "websiteId": "01m7cqzs80jjfnwd0000000003",
+                    "source": "terminal",
+                    "sessionId": "01m7cqzs8049qmn40000000001",
+                    "command": "exit",
+                    "state": "done",
+                    "exitCode": null,
+                    "timedOut": false,
+                    "timeoutSeconds": null,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:00:45+00:00",
+                    "startedAt": "2026-11-14T09:00:45+00:00",
+                    "finishedAt": "2026-11-14T09:00:45+00:00"
+                },
+                {
+                    "id": "01m7cqzs805jjpn1000000000a",
+                    "websiteId": "01m7cqzs80jjfnwd0000000003",
+                    "source": "terminal",
+                    "sessionId": "01m7cqzs8049qmn40000000001",
+                    "command": "tail -n 2 laravel.log",
+                    "state": "done",
+                    "exitCode": null,
+                    "timedOut": false,
+                    "timeoutSeconds": null,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:00:24+00:00",
+                    "startedAt": "2026-11-14T09:00:24+00:00",
+                    "finishedAt": "2026-11-14T09:00:24+00:00"
+                },
+                {
+                    "id": "01m7cqzs805jjpn10000000009",
+                    "websiteId": "01m7cqzs80jjfnwd0000000003",
+                    "source": "terminal",
+                    "sessionId": "01m7cqzs8049qmn40000000001",
+                    "command": "ls -lh",
+                    "state": "done",
+                    "exitCode": null,
+                    "timedOut": false,
+                    "timeoutSeconds": null,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:00:11+00:00",
+                    "startedAt": "2026-11-14T09:00:11+00:00",
+                    "finishedAt": "2026-11-14T09:00:11+00:00"
+                },
+                {
+                    "id": "01m7cqzs805jjpn10000000008",
+                    "websiteId": "01m7cqzs80jjfnwd0000000003",
+                    "source": "terminal",
+                    "sessionId": "01m7cqzs8049qmn40000000001",
+                    "command": "cd storage/logs",
+                    "state": "done",
+                    "exitCode": null,
+                    "timedOut": false,
+                    "timeoutSeconds": null,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:00:06+00:00",
+                    "startedAt": "2026-11-14T09:00:06+00:00",
+                    "finishedAt": "2026-11-14T09:00:06+00:00"
+                },
+                {
                     "id": "01m7cqzs805jjpn10000000003",
                     "websiteId": "01m7cqzs80jjfnwd0000000003",
                     "source": "run",
+                    "sessionId": null,
                     "command": "du -sh storage/logs",
                     "state": "done",
                     "exitCode": 0,
@@ -10398,6 +10480,7 @@
                     "id": "01m7cqzs805jjpn10000000002",
                     "websiteId": "01m7cqzs80jjfnwd0000000003",
                     "source": "run",
+                    "sessionId": null,
                     "command": "php artisan config:cache",
                     "state": "done",
                     "exitCode": 0,
@@ -10414,6 +10497,7 @@
                     "id": "01m7cqzs805jjpn10000000001",
                     "websiteId": "01m7cqzs80jjfnwd0000000003",
                     "source": "run",
+                    "sessionId": null,
                     "command": "php artisan migrate --force",
                     "state": "done",
                     "exitCode": 0,
@@ -10430,7 +10514,35 @@
             "meta": {
                 "currentPage": 1,
                 "lastPage": 1,
-                "total": 5
+                "total": 9
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd0000000003/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7cqzs8049qmn40000000001",
+                    "websiteId": "01m7cqzs80jjfnwd0000000003",
+                    "state": "ended",
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "endReason": "The shell ended.",
+                    "exitCode": 0,
+                    "commandCount": 4,
+                    "hasRecording": true,
+                    "recordingCut": false,
+                    "createdAt": "2026-11-14T09:00:00+00:00",
+                    "startedAt": "2026-11-14T09:00:00+00:00",
+                    "endedAt": "2026-11-14T09:00:48+00:00"
+                }
+            ],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 1
             }
         }
     },
@@ -11089,6 +11201,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd0000000007/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd0000000007/deploy": {
         "status": 200,
         "body": {
@@ -11679,6 +11802,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd000000000d/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd000000000d/deploy": {
         "status": 200,
         "body": {
@@ -12102,6 +12236,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd0000000009/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd0000000009/deploy": {
         "status": 200,
         "body": {
@@ -12322,6 +12467,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd0000000008/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd0000000008/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -12829,6 +12985,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd000000000a/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd000000000a/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -13362,6 +13529,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd0000000006/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd0000000006/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -13932,6 +14110,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd0000000005/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd0000000005/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -14532,6 +14721,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd000000000b/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd000000000b/deploy": {
         "status": 200,
         "body": {
@@ -15081,6 +15281,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd000000000f/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd000000000f/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -15740,6 +15951,17 @@
             }
         }
     },
+    "GET /websites/01m7cqzs80jjfnwd000000000c/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7cqzs80jjfnwd000000000c/deploy": {
         "status": 200,
         "body": {
@@ -16189,6 +16411,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd000000000e/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd000000000e/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
@@ -16896,6 +17129,7 @@
                     "id": "01m7cqzs805jjpn10000000007",
                     "websiteId": "01m7cqzs80jjfnwd0000000002",
                     "source": "run",
+                    "sessionId": null,
                     "command": "wp cache flush",
                     "state": "done",
                     "exitCode": 0,
@@ -16912,6 +17146,7 @@
                     "id": "01m7cqzs805jjpn10000000006",
                     "websiteId": "01m7cqzs80jjfnwd0000000002",
                     "source": "run",
+                    "sessionId": null,
                     "command": "wp plugin list --update=available",
                     "state": "done",
                     "exitCode": 0,
@@ -16929,6 +17164,17 @@
                 "currentPage": 1,
                 "lastPage": 1,
                 "total": 2
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd0000000002/terminal-sessions": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
             }
         }
     },
@@ -17750,6 +17996,17 @@
         }
     },
     "GET /websites/01m7cqzs80jjfnwd0000000004/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
+    "GET /websites/01m7cqzs80jjfnwd0000000004/terminal-sessions": {
         "status": 200,
         "body": {
             "data": [],
