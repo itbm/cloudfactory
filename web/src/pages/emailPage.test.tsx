@@ -151,7 +151,7 @@ describe("the email page", () => {
     fireEvent.click(screen.getByRole("button", { name: "I copied the password" }));
 
     api.change<List>("/mail/mailboxes", (b) => { b.data.find((m) => m.id === info.id)!.status = "removing"; });
-    api.on(`DELETE /mail/mailboxes/${info.id}`, () => [202, { job: apiJob({ id: "job-rm", action: "DeleteMailbox", state: "running", finishedAt: null }) }]);
+    api.on(`DELETE /mail/mailboxes/${info.id}`, () => [202, { job: apiJob({ id: "job-rm", action: "DeleteMailbox" }) }]);
     menu(row("info@acme.example.com"), "Remove");
     expect(screen.getByRole("dialog").textContent).toContain("all its messages");
     // The aliases of the mailbox go with it.
@@ -167,7 +167,7 @@ describe("the email page", () => {
       const input = body as { localPart: string };
       const added = { ...alias, id: `new-${input.localPart}`, address: `${input.localPart}@acme.example.com`, ...input, status: "pending" };
       api.change<List>("/mail/aliases", (b) => b.data.push(added));
-      return [202, { mailAlias: added, job: apiJob({ id: "job-al", action: "SetMailAlias", state: "running", finishedAt: null }) }];
+      return [202, { mailAlias: added, job: apiJob({ id: "job-al", action: "SetMailAlias" }) }];
     });
     menu(row("sales@acme.example.com"), "Add alias");
     const panel = screen.getByRole("group", { name: "Aliases of sales@acme.example.com" });
@@ -195,7 +195,7 @@ describe("the email page", () => {
       const input = body as { localPart: string };
       const added = { ...alias, id: `new-${input.localPart}`, address: `${input.localPart}@acme.example.com`, ...input, status: "pending" };
       api.change<List>("/mail/aliases", (b) => b.data.push(added));
-      return [202, { mailAlias: added, job: apiJob({ id: "job-al", action: "SetMailAlias", state: "running", finishedAt: null }) }];
+      return [202, { mailAlias: added, job: apiJob({ id: "job-al", action: "SetMailAlias" }) }];
     });
     tab(/^Forwarders/);
     fireEvent.click(screen.getByRole("button", { name: "New forwarder" }));
