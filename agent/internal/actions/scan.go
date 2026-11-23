@@ -18,6 +18,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -242,7 +243,7 @@ func parseClamscan(out string) (ScanResult, error) {
 		case "Known viruses":
 			r.Signatures = n
 		case "Engine version":
-			r.Engine = cleanText(value)
+			r.Engine = sitelogs.Clean(value)
 		}
 	}
 	for line := range strings.SplitSeq(files, "\n") {
@@ -261,7 +262,7 @@ func parseClamscan(out string) (ScanResult, error) {
 		if len(r.Findings) >= maxScanFindings {
 			break
 		}
-		r.Findings = append(r.Findings, ScanFinding{Path: cleanText(path.Clean("/" + strings.TrimPrefix(file, scanMount))), Signature: cleanText(signature)})
+		r.Findings = append(r.Findings, ScanFinding{Path: sitelogs.Clean(path.Clean("/" + strings.TrimPrefix(file, scanMount))), Signature: sitelogs.Clean(signature)})
 	}
 	r.Truncated = r.InfectedFiles > len(r.Findings)
 	return r, nil

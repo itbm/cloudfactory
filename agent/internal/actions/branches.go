@@ -11,6 +11,7 @@ import (
 	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -65,7 +66,7 @@ func (d *Deps) CheckBranches(ctx context.Context, req *agentv1.CheckBranchesRequ
 			for _, i := range byWebsite[website] {
 				commit, err := d.checkBranch(ctx, checks[i])
 				if err != nil {
-					heads[i].Error = cleanText(err.Error())
+					heads[i].Error = sitelogs.Clean(err.Error())
 					continue
 				}
 				heads[i].Commit = commit

@@ -13,6 +13,7 @@ import { Card, ConfirmButton, Empty, Field, FormError, JobRow, Meter, Modal, Pag
 import { relativeTime } from "../lib/format";
 import { HOST_POLICY_LABEL, jobActive, roleList, SERVER_ROLE, SERVER_STATE } from "../lib/labels";
 import { PluginActionsCard } from "../components/PluginActions";
+import { LogSearch } from "../features/LogSearch";
 
 /** The command that shows why a service does not run. The edge proxy and the panel are services of their own users. */
 function serviceCommand(name: string): string {
@@ -497,7 +498,29 @@ function ServerDetail({ id }: { id: string }) {
           <span id="usage-graphs" />
           <UsagePanel key={server.id} subject="server" id={server.id} />
         </div>
+        <ServerAccessLog key={`log-${server.id}`} server={server} />
       </main>
     </>
+  );
+}
+
+/**
+ * The access log of the edge proxy for the requests that are not for a website: the panel, the
+ * webmail and the host names with no website. It loads only when the administrator opens it.
+ */
+function ServerAccessLog({ server }: { server: Server }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card
+      title="Access log"
+      className="server-access-log"
+      actions={<button type="button" className="btn btn-sm" aria-expanded={open} aria-controls="server-access-log" onClick={() => setOpen(!open)}>{open ? "Hide the access log" : "Show the access log"}</button>}
+    >
+      <div className="card-body" id="server-access-log">
+        {open ? <LogSearch target={{ serverId: server.id }} name={`${server.name}-access`} /> : (
+          <p className="muted">The requests to this server that are not for a website: the panel, the webmail and the host names that have no website. The logs of a website are on the Logs tab of the website.</p>
+        )}
+      </div>
+    </Card>
   );
 }
