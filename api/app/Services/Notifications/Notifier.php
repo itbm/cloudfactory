@@ -16,6 +16,8 @@ use App\Models\MalwareScan;
 use App\Models\NotificationDelivery;
 use App\Models\Release;
 use App\Models\Server;
+use App\Models\UptimeCheck;
+use App\Models\UptimeIncident;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Certificates\Certificates;
@@ -258,6 +260,32 @@ class Notifier
             'files' => $files->implode("\n"),
             'time' => ($scan->created_at ?? now())->format('j M Y H:i T'),
         ], "malware:{$scan->id}");
+    }
+
+    /**
+     * An uptime check of a website is down. The users of the customer and of its reseller get
+     * the email, and the administrators who turned the event on. One email for each incident.
+     */
+    public function uptimeDown(UptimeCheck $check, UptimeIncident $incident): int
+    {
+        return $this->send(NotificationEvent::UptimeDown, self::usersOf($check->website?->customer)->concat(self::administrators()), [
+            'website' => $check->website?->name ?? '',
+            'url' => $check->url(),
+            'error' => $incident->error,
+            'since' => $incident->started_at->format('j M Y H:i T'),
+        ], "uptime:{$incident->id}:down");
+    }
+
+    /** The website of an incident answers again. The same users get the email. */
+    public function uptimeUp(UptimeCheck $check, UptimeIncident $incident, string $downtime): int
+    {
+        return $this->send(NotificationEvent::UptimeUp, self::usersOf($check->website?->customer)->concat(self::administrators()), [
+            'website' => $check->website?->name ?? '',
+            'url' => $check->url(),
+            'downtime' => $downtime,
+            'since' => $incident->started_at->format('j M Y H:i T'),
+            'until' => ($incident->resolved_at ?? now())->format('j M Y H:i T'),
+        ], "uptime:{$incident->id}:up");
     }
 
     /**
