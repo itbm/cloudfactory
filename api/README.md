@@ -77,16 +77,20 @@ To let a local agent report to `php artisan serve` with no TLS, set
 ## Run the tests
 
 ```sh
-php artisan test
-./vendor/bin/pint --test
+php artisan test --parallel
+./vendor/bin/pint --test --parallel
 ```
 
+`--parallel` runs one test process for each CPU. To run only the tests of one file or one
+name, use `--filter`, for example `php artisan test --filter=DemoTest`.
+
 The tests use SQLite in memory. To run them with PostgreSQL also, as the CI does, give the
-database in the environment:
+database in the environment. Each test process makes its own database, so the user must have
+the permission to make databases:
 
 ```sh
 DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=cloudfactory_test \
-  DB_USERNAME=cloudfactory DB_PASSWORD=secret php artisan test
+  DB_USERNAME=cloudfactory DB_PASSWORD=secret php artisan test --parallel
 ```
 
 ## Settings
