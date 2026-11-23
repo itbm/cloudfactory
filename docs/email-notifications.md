@@ -16,6 +16,7 @@ the emails that they get.
 | Sign-in from a new device     | `signin.new_device`    | All users (always on)              |
 | Usage alerts                  | `usage.alert`          | Administrators, resellers, owners  |
 | Servers that are offline      | `server.offline`       | Administrators                     |
+| Password reset                | `password.reset`       | All users (always on)              |
 
 Who gets the email of an event:
 
@@ -24,7 +25,9 @@ Who gets the email of an event:
 - **Certificate:** the users of the customer of the website, and the administrators. The panel
   renews a certificate 30 days before it expires. Each day at 08:00, the panel finds each
   certificate that expires in 14 days or less, and each domain that has no certificate because
-  the order failed. You get one email for each certificate and expiry date.
+  the order failed. You get one email for each certificate and expiry date. The panel cannot
+  renew a certificate that you uploaded. The value `{{advice}}` tells you what to do for each
+  type of certificate. Refer to [certificates.md](certificates.md).
 - **Suspension:** the users of the customer. When a reseller is suspended, the users of its
   customers also get the email.
 - **Sign-in from a new device:** the user. The web panel keeps a random device ID in the
@@ -33,6 +36,10 @@ Who gets the email of an event:
 - **Usage alert:** the users of the customer and of its reseller. The usage alerts feature
   makes the alert.
 - **Server offline:** the administrators, when a server does not report for 5 minutes.
+- **Password reset:** the user, when somebody asks for a link to set a new password on the
+  sign-in page. The template must have `{{resetUrl}}` in the text. **Sent emails** shows the
+  email with a placeholder in the place of the link, and you cannot send it again. Refer to
+  [security.md](security.md#users-and-api-tokens).
 
 ## Set up the SMTP server (administrators)
 
@@ -103,7 +110,7 @@ address becomes a link.
 ## Select the emails that you get (all users)
 
 Go to **Settings**, then **Notifications**. Turn each event on or off. You cannot turn off the
-security emails: account suspended, and sign-in from a new device.
+security emails: account suspended, sign-in from a new device, and password reset.
 
 With the command line tool:
 

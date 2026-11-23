@@ -617,6 +617,15 @@ var reservedRuntimeNames = []string{"frankenphp", "apache-php-fpm", "node", "pyt
 // MaxBuildCommands: The largest number of build commands of a deploy.
 const MaxBuildCommands = 10
 
+// MaxCertificateBytes: The largest size of a certificate chain or of a private key in PEM format, in bytes.
+const MaxCertificateBytes = 65536
+
+// MaxCertificateHosts: The largest number of hosts that use one certificate on one server.
+const MaxCertificateHosts = 5000
+
+// MaxCertificatesPerServer: The largest number of certificates from the panel on one server.
+const MaxCertificatesPerServer = 2000
+
 // MaxCommandArguments: The largest number of arguments of a start command.
 const MaxCommandArguments = 32
 

@@ -163,9 +163,13 @@ func (nopEdge) Remove(context.Context, string) error    { return nil }
 func (nopEdge) PanelCertificate(context.Context, string) (string, error) {
 	return "", nil
 }
-func (nopEdge) SetPanelCertificate(context.Context, string, string) error { return nil }
-func (nopEdge) PanelCARoot(context.Context) (string, error)               { return "", nil }
-func (nopEdge) SetPanelBrands(context.Context, string, []string) error    { return nil }
+func (nopEdge) SetPanelCertificate(context.Context, string, string) error  { return nil }
+func (nopEdge) PanelCARoot(context.Context) (string, error)                { return "", nil }
+func (nopEdge) SetPanelBrands(context.Context, string, []string) error     { return nil }
+func (nopEdge) SetCertificates(context.Context, []caddy.Certificate) error { return nil }
+func (nopEdge) Certificates(context.Context) ([]caddy.LoadedCertificate, error) {
+	return nil, nil
+}
 
 func TestTheMailErrorsHaveTheirCodes(t *testing.T) {
 	for err, want := range map[error]connect.Code{
