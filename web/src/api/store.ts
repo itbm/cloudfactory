@@ -247,6 +247,37 @@ export function resetPassword(email: string, token: string, password: string, co
   return call(() => live.resetPassword(email, token, password, confirmation));
 }
 
+/** FR-103: signs in with a passkey, in place of the password and the TOTP code. */
+export function signInWithPasskey() {
+  return call(async () => {
+    await live.signInWithPasskey();
+    session++;
+    loading = null;
+    replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
+    await refresh();
+  });
+}
+
+export const listPasskeys = () => call(() => live.listPasskeys());
+export const addPasskey = (name: string, password: string, totp: string) => call(() => live.addPasskey(name, password, totp));
+export const renamePasskey = (id: string, name: string) => call(() => live.renamePasskey(id, name));
+export const removePasskey = (id: string, password: string, totp: string) => call(() => live.removePasskey(id, password, totp));
+
+/** Single sign-on: changes the ticket from the provider into a session, with a TOTP code when TOTP is on. */
+export function completeSignOn(ticket: string, totp = "") {
+  return call(async () => {
+    await live.completeSignOn(ticket, totp);
+    session++;
+    loading = null;
+    replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
+    await refresh();
+  });
+}
+
+export const listIdentities = () => call(() => live.listIdentities());
+export const connectIdentity = (providerId: string, password: string, totp: string) => call(() => live.connectIdentity(providerId, password, totp));
+export const disconnectIdentity = (providerId: string, password: string, totp: string) => call(() => live.disconnectIdentity(providerId, password, totp));
+
 export function signOut() {
   live.signOut();
   session++;
@@ -1790,6 +1821,22 @@ export function testPlugin(pluginId: string): Promise<PluginDelivery> {
 
 export function retryPluginDelivery(pluginId: string, deliveryId: string): Promise<PluginDelivery> {
   return call(() => live.request<PluginDelivery>("POST", `/plugins/${pluginId}/deliveries/${deliveryId}/retry`));
+}
+
+// Single sign-on providers (administrator)
+
+export const listIdentityProviders = () => call(() => live.listIdentityProviders());
+
+export function addIdentityProvider(input: live.IdentityProviderInput, confirm: Confirmation): Promise<live.IdentityProvider> {
+  return call(() => live.request<live.IdentityProvider>("POST", "/identity-providers", { ...input, ...confirmation(confirm) }));
+}
+
+export function changeIdentityProvider(id: string, input: live.IdentityProviderInput, confirm: Confirmation): Promise<live.IdentityProvider> {
+  return call(() => live.request<live.IdentityProvider>("PUT", `/identity-providers/${encodeURIComponent(id)}`, { ...input, ...confirmation(confirm) }));
+}
+
+export function removeIdentityProvider(id: string, confirm: Confirmation): Promise<void> {
+  return call(() => live.request("DELETE", `/identity-providers/${encodeURIComponent(id)}`, confirmation(confirm)).then(() => undefined));
 }
 
 /** Trusts the public key of a publisher, for plugins and packs. */
