@@ -4,7 +4,7 @@
 #   signatures and the files of the website mounted read-only, and with no network.
 #   podman build -t scan images/scan
 # SPDX-License-Identifier: AGPL-3.0-only
-FROM docker.io/library/alpine:3.23
+FROM docker.io/library/alpine:3.24
 
 # clamav-scanner has clamscan. The image has no signatures: they change each day, so the
 # server keeps them in /var/lib/cf-scan/signatures. The image does not have the RAR module
